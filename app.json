@@ -21,7 +21,8 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.perhan35.vanstorage"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -30,6 +31,12 @@
       "expo-router",
       "expo-sqlite"
     ],
-    "scheme": "van-storage"
+    "scheme": "van-storage",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "76674d13-e082-4583-ba76-b50f2a5a569c"
+      }
+    }
   }
 }
