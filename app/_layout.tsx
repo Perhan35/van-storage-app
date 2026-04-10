@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
-import { Stack } from "expo-router";
-import { PaperProvider, MD3LightTheme } from "react-native-paper";
+import { View } from "react-native";
+import { Stack, useRouter } from "expo-router";
+import { PaperProvider, MD3LightTheme, IconButton, Text } from "react-native-paper";
 import { useAppStore } from "../src/store/useAppStore";
 
 const theme = {
@@ -11,6 +12,40 @@ const theme = {
     secondary: "#FF8A65",
   },
 };
+
+function HeaderRight() {
+  const router = useRouter();
+  const editMode = useAppStore((s) => s.editMode);
+  const toggleEditMode = useAppStore((s) => s.toggleEditMode);
+
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center" }}>
+      <IconButton
+        icon="magnify"
+        size={24}
+        iconColor="#fff"
+        onPress={() => router.push("/search")}
+      />
+      {editMode && (
+        <Text style={{ color: "#fff", fontWeight: "600", fontSize: 12 }}>
+          Édition
+        </Text>
+      )}
+      <IconButton
+        icon={editMode ? "check" : "cursor-move"}
+        size={24}
+        iconColor={editMode ? "#FFD54F" : "#fff"}
+        onPress={toggleEditMode}
+      />
+      <IconButton
+        icon="cog"
+        size={24}
+        iconColor="#fff"
+        onPress={() => router.push("/settings")}
+      />
+    </View>
+  );
+}
 
 export default function RootLayout() {
   const init = useAppStore((s) => s.init);
@@ -30,7 +65,10 @@ export default function RootLayout() {
       >
         <Stack.Screen
           name="index"
-          options={{ title: "Mon Van - Inventaire" }}
+          options={{
+            title: "My Van Inventory",
+            headerRight: () => <HeaderRight />,
+          }}
         />
         <Stack.Screen
           name="zone/[id]"

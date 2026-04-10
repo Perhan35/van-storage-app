@@ -3,7 +3,6 @@ import { View, StyleSheet, ScrollView, Pressable } from "react-native";
 import { useRouter } from "expo-router";
 import {
   FAB,
-  IconButton,
   Portal,
   Dialog,
   TextInput,
@@ -34,7 +33,6 @@ export default function VanMapScreen() {
   const zones = useAppStore((s) => s.zones);
   const addZone = useAppStore((s) => s.addZone);
   const editMode = useAppStore((s) => s.editMode);
-  const toggleEditMode = useAppStore((s) => s.toggleEditMode);
 
   const [fabOpen, setFabOpen] = useState(false);
   const [addZoneVisible, setAddZoneVisible] = useState(false);
@@ -72,31 +70,6 @@ export default function VanMapScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.topBar}>
-        <IconButton
-          icon="magnify"
-          size={28}
-          onPress={() => router.push("/search")}
-        />
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          {editMode && (
-            <Text variant="labelMedium" style={styles.editLabel}>
-              Mode édition
-            </Text>
-          )}
-          <IconButton
-            icon={editMode ? "check" : "cursor-move"}
-            size={28}
-            iconColor={editMode ? "#4A90D9" : undefined}
-            onPress={toggleEditMode}
-          />
-          <IconButton
-            icon="cog"
-            size={28}
-            onPress={() => router.push("/settings")}
-          />
-        </View>
-      </View>
       <ZoomableContainer enabled={!editMode}>
         <VanLayoutSVG
           onZonePress={(zoneId) => router.push(`/zone/${zoneId}`)}
@@ -198,16 +171,6 @@ export default function VanMapScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F5F5F5" },
-  topBar: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingHorizontal: 4,
-    paddingTop: 4,
-  },
-  editLabel: {
-    color: "#4A90D9",
-    fontWeight: "600",
-  },
   fab: {
     backgroundColor: "#4A90D9",
   },

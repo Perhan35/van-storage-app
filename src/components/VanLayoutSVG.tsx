@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from "react";
-import { View, LayoutChangeEvent, StyleSheet } from "react-native";
+import { View, LayoutChangeEvent, StyleSheet, Pressable } from "react-native";
 import Svg, { Text as SvgText } from "react-native-svg";
 import { VanOutline } from "./VanOutline";
 import { ZoneOverlay } from "./ZoneOverlay";
@@ -76,12 +76,30 @@ export function VanLayoutSVG({ onZonePress }: Props) {
             key={zone.id}
             zone={zone}
             highlighted={highlightedZoneId === zone.id}
-            onPress={() => {
-              if (!editMode) onZonePress(zone.id);
-            }}
           />
         ))}
       </Svg>
+
+      {/* Native pressable overlays for zone tapping (works reliably on Android) */}
+      {!editMode &&
+        layout &&
+        zones.map((zone) => {
+          const { x, y, w, h } = zone.geometry;
+          return (
+            <Pressable
+              key={zone.id}
+              onPress={() => onZonePress(zone.id)}
+              style={{
+                position: "absolute",
+                left: x * svgScale + svgOffsetX,
+                top: y * svgScale + svgOffsetY,
+                width: w * svgScale,
+                height: h * svgScale,
+                borderRadius: 8,
+              }}
+            />
+          );
+        })}
 
       {/* Edit mode overlays */}
       {editMode &&

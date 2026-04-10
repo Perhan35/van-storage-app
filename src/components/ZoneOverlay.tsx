@@ -35,10 +35,9 @@ function wrapText(text: string, maxWidth: number, fontSize: number): string[] {
 type Props = {
   zone: ZoneWithCount;
   highlighted: boolean;
-  onPress: () => void;
 };
 
-export function ZoneOverlay({ zone, highlighted, onPress }: Props) {
+export function ZoneOverlay({ zone, highlighted }: Props) {
   const { x, y, w, h } = zone.geometry;
   const cx = x + w / 2;
   const cy = y + h / 2;
@@ -62,7 +61,7 @@ export function ZoneOverlay({ zone, highlighted, onPress }: Props) {
   }));
 
   return (
-    <G onPress={onPress}>
+    <G>
       <AnimatedRect
         x={x}
         y={y}
