@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, FlatList, StyleSheet, Alert } from "react-native";
+import { View, FlatList, StyleSheet, Alert, ScrollView } from "react-native";
 import { useLocalSearchParams, useRouter, useNavigation } from "expo-router";
 import {
   Text,
@@ -27,13 +27,15 @@ export default function ZoneDetailScreen() {
   const moveItem = useAppStore((s) => s.moveItem);
   const updateZone = useAppStore((s) => s.updateZone);
   const deleteZone = useAppStore((s) => s.deleteZone);
+  const splitZone = useAppStore((s) => s.splitZone);
 
   const [items, setItems] = useState<Item[]>([]);
   const [newItemName, setNewItemName] = useState("");
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [editName, setEditName] = useState("");
   const [editNotes, setEditNotes] = useState("");
-  const [moveMenuVisible, setMoveMenuVisible] = useState<string | null>(null);
+  const [menuVisible, setMenuVisible] = useState<string | null>(null);
+  const [movingItem, setMovingItem] = useState<Item | null>(null);
   const [zoneEditVisible, setZoneEditVisible] = useState(false);
   const [zoneName, setZoneName] = useState("");
   const [zoneColor, setZoneColor] = useState("");
@@ -68,21 +70,18 @@ export default function ZoneDetailScreen() {
   };
 
   const handleDeleteItem = (item: Item) => {
-    Alert.alert(
-      "Supprimer",
-      `Supprimer "${item.name}" ?`,
-      [
-        { text: "Annuler", style: "cancel" },
-        {
-          text: "Supprimer",
-          style: "destructive",
-          onPress: async () => {
-            await deleteItem(item.id);
-            await loadItems();
-          },
+    setMenuVisible(null);
+    Alert.alert("Supprimer", `Supprimer "${item.name}" ?`, [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Supprimer",
+        style: "destructive",
+        onPress: async () => {
+          await deleteItem(item.id);
+          await loadItems();
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const handleSaveEdit = async () => {
@@ -94,7 +93,7 @@ export default function ZoneDetailScreen() {
 
   const handleMoveItem = async (itemId: string, newZoneId: string) => {
     await moveItem(itemId, newZoneId);
-    setMoveMenuVisible(null);
+    setMovingItem(null);
     await loadItems();
   };
 
@@ -124,6 +123,30 @@ export default function ZoneDetailScreen() {
     );
   };
 
+  const handleSplitZone = () => {
+    if (!zone) return;
+    const { w, h } = zone.geometry;
+    const direction = w >= h ? "gauche / droite" : "haut / bas";
+    Alert.alert(
+      "Splitter la zone",
+      `Diviser "${zone.name}" en deux (${direction}) ?\n\nLes objets existants seront déplacés dans la première zone.`,
+      [
+        { text: "Annuler", style: "cancel" },
+        {
+          text: "Splitter",
+          onPress: async () => {
+            if (id) {
+              const newZoneId = await splitZone(id);
+              if (newZoneId) {
+                router.replace(`/zone/${newZoneId}`);
+              }
+            }
+          },
+        },
+      ]
+    );
+  };
+
   if (!zone) {
     return (
       <View style={styles.center}>
@@ -143,6 +166,11 @@ export default function ZoneDetailScreen() {
           <Text variant="titleMedium" style={styles.headerTitle}>
             {zone.name}
           </Text>
+          <IconButton
+            icon="call-split"
+            size={20}
+            onPress={handleSplitZone}
+          />
           <IconButton
             icon="pencil"
             size={20}
@@ -181,43 +209,51 @@ export default function ZoneDetailScreen() {
           <List.Item
             title={item.name}
             description={item.notes || undefined}
+            onPress={() => {
+              setEditingItem(item);
+              setEditName(item.name);
+              setEditNotes(item.notes);
+            }}
             right={() => (
-              <View style={styles.itemActions}>
-                <Menu
-                  visible={moveMenuVisible === item.id}
-                  onDismiss={() => setMoveMenuVisible(null)}
-                  anchor={
-                    <IconButton
-                      icon="arrow-right-bold"
-                      size={20}
-                      onPress={() => setMoveMenuVisible(item.id)}
-                    />
-                  }
-                >
-                  {otherZones.map((z) => (
-                    <Menu.Item
-                      key={z.id}
-                      title={z.name}
-                      onPress={() => handleMoveItem(item.id, z.id)}
-                    />
-                  ))}
-                </Menu>
-                <IconButton
-                  icon="pencil-outline"
-                  size={20}
+              <Menu
+                visible={menuVisible === item.id}
+                onDismiss={() => setMenuVisible(null)}
+                anchor={
+                  <IconButton
+                    icon="dots-vertical"
+                    size={24}
+                    onPress={() => setMenuVisible(item.id)}
+                  />
+                }
+              >
+                <Menu.Item
+                  leadingIcon="pencil-outline"
+                  title="Modifier"
                   onPress={() => {
+                    setMenuVisible(null);
                     setEditingItem(item);
                     setEditName(item.name);
                     setEditNotes(item.notes);
                   }}
                 />
-                <IconButton
-                  icon="delete-outline"
-                  size={20}
-                  iconColor="#D32F2F"
+                {otherZones.length > 0 && (
+                  <Menu.Item
+                    leadingIcon="arrow-right-bold"
+                    title="Déplacer"
+                    onPress={() => {
+                      setMenuVisible(null);
+                      setMovingItem(item);
+                    }}
+                  />
+                )}
+                <Divider />
+                <Menu.Item
+                  leadingIcon="delete-outline"
+                  title="Supprimer"
+                  titleStyle={styles.deleteText}
                   onPress={() => handleDeleteItem(item)}
                 />
-              </View>
+              </Menu>
             )}
           />
         )}
@@ -231,8 +267,8 @@ export default function ZoneDetailScreen() {
         }
       />
 
-      {/* Edit item dialog */}
       <Portal>
+        {/* Edit item dialog */}
         <Dialog
           visible={!!editingItem}
           onDismiss={() => setEditingItem(null)}
@@ -259,6 +295,35 @@ export default function ZoneDetailScreen() {
             <Button onPress={() => setEditingItem(null)}>Annuler</Button>
             <Button onPress={handleSaveEdit}>Enregistrer</Button>
           </Dialog.Actions>
+        </Dialog>
+
+        {/* Move item dialog */}
+        <Dialog
+          visible={!!movingItem}
+          onDismiss={() => setMovingItem(null)}
+        >
+          <Dialog.Title>Déplacer vers...</Dialog.Title>
+          <Dialog.ScrollArea style={styles.scrollArea}>
+            <ScrollView>
+              {otherZones.map((z) => (
+                <List.Item
+                  key={z.id}
+                  title={z.name}
+                  left={() => (
+                    <View
+                      style={[
+                        styles.zoneColorDot,
+                        { backgroundColor: z.color },
+                      ]}
+                    />
+                  )}
+                  onPress={() => {
+                    if (movingItem) handleMoveItem(movingItem.id, z.id);
+                  }}
+                />
+              ))}
+            </ScrollView>
+          </Dialog.ScrollArea>
         </Dialog>
 
         {/* Edit zone dialog */}
@@ -298,15 +363,33 @@ export default function ZoneDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 32 },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 32,
+  },
   header: { padding: 16 },
   headerRow: { flexDirection: "row", alignItems: "center" },
   colorDot: { width: 16, height: 16, borderRadius: 8, marginRight: 8 },
   headerTitle: { flex: 1 },
   itemCount: { color: "#757575", marginTop: 4 },
-  addRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 4 },
+  addRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
   addInput: { flex: 1 },
-  itemActions: { flexDirection: "row", alignItems: "center" },
+  deleteText: { color: "#D32F2F" },
   emptyText: { color: "#9E9E9E" },
   dialogInput: { marginBottom: 12 },
+  scrollArea: { maxHeight: 400 },
+  zoneColorDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    marginLeft: 8,
+    alignSelf: "center",
+  },
 });

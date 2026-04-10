@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { Rect, G, Text as SvgText } from "react-native-svg";
+import { Rect, G, Text as SvgText, TSpan } from "react-native-svg";
 import Animated, {
   useSharedValue,
   useAnimatedProps,
@@ -11,6 +11,26 @@ import { ItemCountBadge } from "./ItemCountBadge";
 import { ZoneWithCount } from "../db/database";
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
+
+function wrapText(text: string, maxWidth: number, fontSize: number): string[] {
+  const charWidth = fontSize * 0.58;
+  const maxChars = Math.max(Math.floor(maxWidth / charWidth), 4);
+  if (text.length <= maxChars) return [text];
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let currentLine = "";
+  for (const word of words) {
+    const test = currentLine ? `${currentLine} ${word}` : word;
+    if (test.length <= maxChars) {
+      currentLine = test;
+    } else {
+      if (currentLine) lines.push(currentLine);
+      currentLine = word;
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+  return lines.slice(0, 3);
+}
 
 type Props = {
   zone: ZoneWithCount;
@@ -66,13 +86,17 @@ export function ZoneOverlay({ zone, highlighted, onPress }: Props) {
       />
       <SvgText
         x={cx}
-        y={y + 18}
+        y={y + 14}
         textAnchor="middle"
         fill="#FFFFFF"
         fontSize={11}
         fontWeight="600"
       >
-        {zone.name.length > 18 ? zone.name.slice(0, 16) + "..." : zone.name}
+        {wrapText(zone.name, w - 16, 11).map((line, i) => (
+          <TSpan key={i} x={cx} dy={i === 0 ? 0 : 13}>
+            {line}
+          </TSpan>
+        ))}
       </SvgText>
       <ItemCountBadge cx={cx} cy={cy + 10} count={zone.item_count} />
     </G>
