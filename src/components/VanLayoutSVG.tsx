@@ -53,7 +53,7 @@ export function VanLayoutSVG({ onZonePress }: Props) {
         <VanOutline />
         <SvgText
           x={150}
-          y={55}
+          y={15}
           textAnchor="middle"
           fill="#78909C"
           fontSize={13}
