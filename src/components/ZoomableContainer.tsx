@@ -15,7 +15,7 @@ type Props = {
   enabled?: boolean;
 };
 
-const MIN_SCALE = 1;
+const MIN_SCALE = 0.5;
 const MAX_SCALE = 4;
 
 export function ZoomableContainer({ children, enabled = true }: Props) {

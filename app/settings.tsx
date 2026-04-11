@@ -148,13 +148,14 @@ export default function SettingsScreen() {
         if (content) await importData(content);
       } else {
         const DocumentPicker = await import("expo-document-picker");
-        const { readAsStringAsync } = await import("expo-file-system");
+        const { File } = await import("expo-file-system/next");
         const result = await DocumentPicker.getDocumentAsync({
           type: "application/json",
           copyToCacheDirectory: true,
         });
         if (result.canceled) return;
-        const content = await readAsStringAsync(result.assets[0].uri);
+        const file = new File(result.assets[0].uri);
+        const content = await file.text();
         await importData(content);
       }
     } catch (e) {
