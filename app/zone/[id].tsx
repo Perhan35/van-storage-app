@@ -25,6 +25,7 @@ export default function ZoneDetailScreen() {
   const deleteItem = useAppStore((s) => s.deleteItem);
   const updateItem = useAppStore((s) => s.updateItem);
   const moveItem = useAppStore((s) => s.moveItem);
+  const setItemOutOfVan = useAppStore((s) => s.setItemOutOfVan);
   const updateZone = useAppStore((s) => s.updateZone);
   const deleteZone = useAppStore((s) => s.deleteZone);
   const splitZone = useAppStore((s) => s.splitZone);
@@ -94,6 +95,12 @@ export default function ZoneDetailScreen() {
   const handleMoveItem = async (itemId: string, newZoneId: string) => {
     await moveItem(itemId, newZoneId);
     setMovingItem(null);
+    await loadItems();
+  };
+
+  const handleToggleOutOfVan = async (item: Item) => {
+    setMenuVisible(null);
+    await setItemOutOfVan(item.id, !item.out_of_van);
     await loadItems();
   };
 
@@ -214,6 +221,11 @@ export default function ZoneDetailScreen() {
               setEditName(item.name);
               setEditNotes(item.notes);
             }}
+            left={(props) =>
+              item.out_of_van ? (
+                <List.Icon {...props} icon="exit-to-app" color="#E57373" />
+              ) : null
+            }
             right={() => (
               <Menu
                 visible={menuVisible === item.id}
@@ -246,6 +258,17 @@ export default function ZoneDetailScreen() {
                     }}
                   />
                 )}
+                <Menu.Item
+                  leadingIcon={
+                    item.out_of_van ? "tray-arrow-down" : "exit-to-app"
+                  }
+                  title={
+                    item.out_of_van
+                      ? "Remettre dans le van"
+                      : "Sortir du van"
+                  }
+                  onPress={() => handleToggleOutOfVan(item)}
+                />
                 <Divider />
                 <Menu.Item
                   leadingIcon="delete-outline"

@@ -52,9 +52,19 @@ export default function SearchScreen() {
         renderItem={({ item }) => (
           <List.Item
             title={item.name}
-            description={`📍 ${item.zone_name}`}
+            description={
+              item.out_of_van
+                ? `📍 ${item.zone_name} • Sorti du van`
+                : `📍 ${item.zone_name}`
+            }
             onPress={() => handleItemPress(item)}
-            left={(props) => <List.Icon {...props} icon="package-variant" />}
+            left={(props) => (
+              <List.Icon
+                {...props}
+                icon={item.out_of_van ? "exit-to-app" : "package-variant"}
+                color={item.out_of_van ? "#E57373" : undefined}
+              />
+            )}
           />
         )}
         ItemSeparatorComponent={Divider}

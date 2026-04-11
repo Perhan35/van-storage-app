@@ -15,6 +15,8 @@ type AppState = {
   updateItem: (itemId: string, name: string, notes: string) => Promise<void>;
   moveItem: (itemId: string, newZoneId: string) => Promise<void>;
   searchItems: (query: string) => Promise<(Item & { zone_name: string })[]>;
+  setItemOutOfVan: (itemId: string, outOfVan: boolean) => Promise<void>;
+  getOutOfVanItems: () => Promise<(Item & { zone_name: string })[]>;
   setHighlightedZoneId: (zoneId: string | null) => void;
   updateZone: (zoneId: string, name: string, color: string) => Promise<void>;
   deleteZone: (zoneId: string) => Promise<void>;
@@ -107,6 +109,25 @@ export const useAppStore = create<AppState>((set, get) => ({
        WHERE i.name LIKE ?1 COLLATE NOCASE OR i.notes LIKE ?1 COLLATE NOCASE
        ORDER BY i.name COLLATE NOCASE`,
       [`%${query}%`]
+    );
+  },
+
+  setItemOutOfVan: async (itemId, outOfVan) => {
+    const db = await getDb();
+    await db.runAsync(
+      "UPDATE items SET out_of_van = ?, updated_at = datetime('now') WHERE id = ?",
+      [outOfVan ? 1 : 0, itemId]
+    );
+    await get().loadZones();
+  },
+
+  getOutOfVanItems: async () => {
+    const db = await getDb();
+    return db.getAllAsync<Item & { zone_name: string }>(
+      `SELECT i.*, z.name as zone_name
+       FROM items i JOIN zones z ON i.zone_id = z.id
+       WHERE i.out_of_van = 1
+       ORDER BY i.name COLLATE NOCASE`
     );
   },
 

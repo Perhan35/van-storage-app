@@ -1,5 +1,5 @@
 import * as SQLite from "expo-sqlite";
-import { MIGRATIONS } from "./schema";
+import { ITEM_COLUMNS_TO_ADD, MIGRATIONS } from "./schema";
 import { SEED_ZONES } from "./seed";
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -11,6 +11,17 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
   await db.execAsync("PRAGMA foreign_keys = ON;");
   for (const migration of MIGRATIONS) {
     await db.execAsync(migration);
+  }
+  // Add new columns conditionally (checked via PRAGMA table_info, since the
+  // web SQLite worker crashes on duplicate-column ALTER TABLE errors).
+  const itemColumns = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(items)"
+  );
+  const existing = new Set(itemColumns.map((c) => c.name));
+  for (const col of ITEM_COLUMNS_TO_ADD) {
+    if (!existing.has(col.name)) {
+      await db.execAsync(col.ddl);
+    }
   }
   // Seed default zones if empty
   const count = await db.getFirstAsync<{ c: number }>(
@@ -40,6 +51,7 @@ export type Item = {
   name: string;
   zone_id: string;
   notes: string;
+  out_of_van: number;
 };
 
 export type ZoneWithCount = Zone & { item_count: number };

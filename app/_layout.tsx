@@ -21,6 +21,12 @@ function HeaderRight() {
   return (
     <View style={{ flexDirection: "row", alignItems: "center" }}>
       <IconButton
+        icon="exit-to-app"
+        size={24}
+        iconColor="#fff"
+        onPress={() => router.push("/out-of-van")}
+      />
+      <IconButton
         icon="magnify"
         size={24}
         iconColor="#fff"
@@ -77,6 +83,10 @@ export default function RootLayout() {
         <Stack.Screen
           name="search"
           options={{ title: "Rechercher un objet" }}
+        />
+        <Stack.Screen
+          name="out-of-van"
+          options={{ title: "Sortis du van" }}
         />
         <Stack.Screen
           name="settings"

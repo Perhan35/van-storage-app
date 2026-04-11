@@ -111,12 +111,13 @@ export default function SettingsScreen() {
 
         for (const item of data.items as Record<string, unknown>[]) {
           await db.runAsync(
-            "INSERT INTO items (id, name, zone_id, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO items (id, name, zone_id, notes, out_of_van, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
             [
               item.id as string,
               item.name as string,
               item.zone_id as string,
               (item.notes as string) ?? "",
+              (item.out_of_van as number) ?? 0,
               item.created_at as string,
               item.updated_at as string,
             ]
