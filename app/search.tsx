@@ -4,11 +4,13 @@ import { useRouter } from "expo-router";
 import { Searchbar, List, Divider, Text } from "react-native-paper";
 import { useAppStore } from "../src/store/useAppStore";
 import { Item } from "../src/db/database";
+import { useTranslation } from "react-i18next";
 
 type SearchResult = Item & { zone_name: string };
 
 export default function SearchScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const searchItems = useAppStore((s) => s.searchItems);
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
   const [query, setQuery] = useState("");
@@ -40,7 +42,7 @@ export default function SearchScreen() {
   return (
     <View style={styles.container}>
       <Searchbar
-        placeholder="Chercher un objet..."
+        placeholder={t("search.placeholder")}
         value={query}
         onChangeText={handleSearch}
         autoFocus
@@ -54,7 +56,7 @@ export default function SearchScreen() {
             title={item.name}
             description={
               item.out_of_van
-                ? `📍 ${item.zone_name} • Sorti du van`
+                ? `📍 ${item.zone_name} • ${t("search.out_of_van")}`
                 : `📍 ${item.zone_name}`
             }
             onPress={() => handleItemPress(item)}
@@ -72,13 +74,13 @@ export default function SearchScreen() {
           searched ? (
             <View style={styles.emptyContainer}>
               <Text variant="bodyMedium" style={styles.emptyText}>
-                Aucun objet trouvé pour "{query}"
+                {t("search.no_results", { query })}
               </Text>
             </View>
           ) : (
             <View style={styles.emptyContainer}>
               <Text variant="bodyMedium" style={styles.emptyText}>
-                Tapez le nom d'un objet pour le localiser dans le van
+                {t("search.empty")}
               </Text>
             </View>
           )

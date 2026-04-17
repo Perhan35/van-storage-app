@@ -3,6 +3,7 @@ import { View, StyleSheet, Alert, ScrollView, Platform } from "react-native";
 import { Text, Button, Divider } from "react-native-paper";
 import { getDb } from "../src/db/database";
 import { useAppStore } from "../src/store/useAppStore";
+import { useTranslation } from "react-i18next";
 
 function downloadJsonWeb(data: string, filename: string) {
   const blob = new Blob([data], { type: "application/json" });
@@ -29,6 +30,7 @@ function pickFileWeb(): Promise<string | null> {
 }
 
 export default function SettingsScreen() {
+  const { t } = useTranslation();
   const loadZones = useAppStore((s) => s.loadZones);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -56,11 +58,11 @@ export default function SettingsScreen() {
             UTI: "public.json",
           });
         } else {
-          Alert.alert("Export", "Fichier sauvegardé");
+          Alert.alert(t("settings.import_confirm_title"), t("settings.export_success"));
         }
       }
     } catch (e) {
-      Alert.alert("Erreur", "Export échoué: " + (e as Error).message);
+      Alert.alert(t("settings.error"), t("settings.export_error") + " " + (e as Error).message);
     }
     setExporting(false);
   };
@@ -70,7 +72,7 @@ export default function SettingsScreen() {
     try {
       data = JSON.parse(content);
     } catch {
-      Alert.alert("Erreur", "Le fichier n'est pas un JSON valide.");
+      Alert.alert(t("settings.error"), t("settings.import_invalid_json"));
       return;
     }
 
@@ -81,8 +83,8 @@ export default function SettingsScreen() {
       !Array.isArray(data.items)
     ) {
       Alert.alert(
-        "Erreur",
-        "Format de fichier invalide. Le fichier doit contenir des zones et des objets."
+        t("settings.error"),
+        t("settings.import_invalid_format")
       );
       return;
     }
@@ -125,19 +127,22 @@ export default function SettingsScreen() {
         }
 
         await loadZones();
-        Alert.alert("Succès", "Données importées avec succès !");
+        Alert.alert(t("settings.import_success_title"), t("settings.import_success"));
       } catch (e) {
-        Alert.alert("Erreur", "Import échoué: " + (e as Error).message);
+        Alert.alert(t("settings.error"), t("settings.import_error") + " " + (e as Error).message);
       }
       setImporting(false);
     };
 
     Alert.alert(
-      "Importer",
-      `Importer ${data.zones.length} zone${data.zones.length !== 1 ? "s" : ""} et ${data.items.length} objet${data.items.length !== 1 ? "s" : ""} ?\n\nLes données actuelles seront remplacées.`,
+      t("settings.import_confirm_title"),
+      t("settings.import_confirm_text", {
+        zonesCount: data.zones.length,
+        itemsCount: data.items.length,
+      }),
       [
-        { text: "Annuler", style: "cancel" },
-        { text: "Importer", style: "destructive", onPress: doImport },
+        { text: t("map.cancel"), style: "cancel" },
+        { text: t("settings.import_confirm_title"), style: "destructive", onPress: doImport },
       ]
     );
   };
@@ -160,7 +165,7 @@ export default function SettingsScreen() {
         await importData(content);
       }
     } catch (e) {
-      Alert.alert("Erreur", "Import échoué: " + (e as Error).message);
+      Alert.alert(t("settings.error"), t("settings.import_error") + " " + (e as Error).message);
     }
   };
 
@@ -168,11 +173,10 @@ export default function SettingsScreen() {
     <ScrollView style={styles.container}>
       <View style={styles.section}>
         <Text variant="titleMedium" style={styles.sectionTitle}>
-          Sauvegarde des données
+          {t("settings.title_data")}
         </Text>
         <Text variant="bodySmall" style={styles.description}>
-          Exportez vos données en JSON pour les sauvegarder ou les transférer
-          vers un autre appareil.
+          {t("settings.desc_data")}
         </Text>
         <Button
           mode="contained"
@@ -181,7 +185,7 @@ export default function SettingsScreen() {
           loading={exporting}
           style={styles.button}
         >
-          Exporter les données
+          {t("settings.btn_export")}
         </Button>
         <Button
           mode="outlined"
@@ -190,17 +194,16 @@ export default function SettingsScreen() {
           loading={importing}
           style={styles.button}
         >
-          Importer des données
+          {t("settings.btn_import")}
         </Button>
       </View>
       <Divider />
       <View style={styles.section}>
         <Text variant="titleMedium" style={styles.sectionTitle}>
-          À propos
+          {t("settings.title_about")}
         </Text>
         <Text variant="bodySmall" style={styles.description}>
-          Van Storage v1.0.0 by Perhan{"\n"}
-          Application d'inventaire pour Citroën Jumpy (T&T Vans Aventourer)
+          {t("settings.desc_about")}
         </Text>
       </View>
     </ScrollView>

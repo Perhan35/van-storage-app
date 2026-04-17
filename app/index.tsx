@@ -13,6 +13,7 @@ import {
 import { VanLayoutSVG } from "../src/components/VanLayoutSVG";
 import { ZoomableContainer } from "../src/components/ZoomableContainer";
 import { useAppStore } from "../src/store/useAppStore";
+import { useTranslation } from "react-i18next";
 
 const PRESET_COLORS = [
   "#78909C",
@@ -29,6 +30,7 @@ const PRESET_COLORS = [
 
 export default function VanMapScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const initialized = useAppStore((s) => s.initialized);
   const zones = useAppStore((s) => s.zones);
   const addZone = useAppStore((s) => s.addZone);
@@ -83,12 +85,12 @@ export default function VanMapScreen() {
         actions={[
           {
             icon: "package-variant-plus",
-            label: "Ajouter un objet",
+            label: t("map.add_item"),
             onPress: () => setZonePicker(true),
           },
           {
             icon: "shape-plus",
-            label: "Ajouter une zone",
+            label: t("map.add_zone"),
             onPress: () => setAddZoneVisible(true),
           },
         ]}
@@ -102,17 +104,17 @@ export default function VanMapScreen() {
           visible={addZoneVisible}
           onDismiss={() => setAddZoneVisible(false)}
         >
-          <Dialog.Title>Nouvelle zone</Dialog.Title>
+          <Dialog.Title>{t("map.new_zone")}</Dialog.Title>
           <Dialog.Content>
             <TextInput
               mode="outlined"
-              label="Nom de la zone"
+              label={t("map.zone_name")}
               value={newZoneName}
               onChangeText={setNewZoneName}
               style={styles.dialogInput}
             />
             <Text variant="bodySmall" style={styles.colorLabel}>
-              Couleur
+              {t("map.color")}
             </Text>
             <View style={styles.colorRow}>
               {PRESET_COLORS.map((color) => (
@@ -132,21 +134,26 @@ export default function VanMapScreen() {
             </View>
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => setAddZoneVisible(false)}>Annuler</Button>
-            <Button onPress={handleCreateZone}>Créer</Button>
+            <Button onPress={() => setAddZoneVisible(false)}>{t("map.cancel")}</Button>
+            <Button onPress={handleCreateZone}>{t("map.create")}</Button>
           </Dialog.Actions>
         </Dialog>
 
         {/* Zone picker for adding object */}
         <Dialog visible={zonePicker} onDismiss={() => setZonePicker(false)}>
-          <Dialog.Title>Dans quelle zone ?</Dialog.Title>
+          <Dialog.Title>{t("map.which_zone")}</Dialog.Title>
           <Dialog.ScrollArea style={styles.scrollArea}>
             <ScrollView>
               {zones.map((zone) => (
                 <List.Item
                   key={zone.id}
                   title={zone.name}
-                  description={`${zone.item_count} objet${zone.item_count !== 1 ? "s" : ""}`}
+                  description={t(
+                    zone.item_count === 1
+                      ? "map.objects_count_one"
+                      : "map.objects_count_other",
+                    { count: zone.item_count }
+                  )}
                   left={() => (
                     <View
                       style={[

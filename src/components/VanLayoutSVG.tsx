@@ -6,6 +6,7 @@ import { ZoneOverlay } from "./ZoneOverlay";
 import { ZoneEditOverlay } from "./ZoneEditOverlay";
 import { useAppStore } from "../store/useAppStore";
 import { Zone } from "../db/database";
+import { useTranslation } from "react-i18next";
 
 const SVG_W = 300;
 const SVG_H = 600;
@@ -15,6 +16,7 @@ type Props = {
 };
 
 export function VanLayoutSVG({ onZonePress }: Props) {
+  const { t } = useTranslation();
   const zones = useAppStore((s) => s.zones);
   const highlightedZoneId = useAppStore((s) => s.highlightedZoneId);
   const editMode = useAppStore((s) => s.editMode);
@@ -59,7 +61,7 @@ export function VanLayoutSVG({ onZonePress }: Props) {
           fontSize={13}
           fontWeight="bold"
         >
-          AVANT
+          {t("map.front")}
         </SvgText>
         <SvgText
           x={150}
@@ -69,7 +71,7 @@ export function VanLayoutSVG({ onZonePress }: Props) {
           fontSize={13}
           fontWeight="bold"
         >
-          ARRIÈRE
+          {t("map.rear")}
         </SvgText>
         {zones.map((zone) => (
           <ZoneOverlay

@@ -4,11 +4,13 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { Divider, IconButton, List, Text } from "react-native-paper";
 import { useAppStore } from "../src/store/useAppStore";
 import { Item } from "../src/db/database";
+import { useTranslation } from "react-i18next";
 
 type OutItem = Item & { zone_name: string };
 
 export default function OutOfVanScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const getOutOfVanItems = useAppStore((s) => s.getOutOfVanItems);
   const setItemOutOfVan = useAppStore((s) => s.setItemOutOfVan);
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
@@ -44,8 +46,12 @@ export default function OutOfVanScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text variant="bodyMedium" style={styles.headerText}>
-          {items.length} objet{items.length !== 1 ? "s" : ""} actuellement sorti
-          {items.length !== 1 ? "s" : ""} du van
+          {t(
+            items.length === 1
+              ? "out.currently_out_one"
+              : "out.currently_out_other",
+            { count: items.length }
+          )}
         </Text>
       </View>
       <FlatList
@@ -72,7 +78,7 @@ export default function OutOfVanScreen() {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text variant="bodyMedium" style={styles.emptyText}>
-              Aucun objet n'est actuellement sorti du van
+              {t("out.empty")}
             </Text>
           </View>
         }

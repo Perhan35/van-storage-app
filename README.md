@@ -13,7 +13,7 @@ The app was built specifically for a **Citroën Jumpy / T&T Vans Aventourer** co
 - **Search** — full-text search across item names and notes
 - **Local-first storage** — everything lives in a local SQLite database on the device, no account, no cloud, no network required
 - **Backup / restore** — export and import the full inventory as JSON, for transferring between devices or keeping snapshots
-- **French UI** — the in-app strings are currently in French
+- **English UI** — the UI is by default in English, available in French according to the phone's settings
 
 ## Tech stack
 

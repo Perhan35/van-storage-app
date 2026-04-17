@@ -14,11 +14,13 @@ import {
 } from "react-native-paper";
 import { useAppStore } from "../../src/store/useAppStore";
 import { Item } from "../../src/db/database";
+import { useTranslation } from "react-i18next";
 
 export default function ZoneDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const navigation = useNavigation();
+  const { t } = useTranslation();
   const zones = useAppStore((s) => s.zones);
   const getItemsForZone = useAppStore((s) => s.getItemsForZone);
   const addItem = useAppStore((s) => s.addItem);
@@ -72,10 +74,10 @@ export default function ZoneDetailScreen() {
 
   const handleDeleteItem = (item: Item) => {
     setMenuVisible(null);
-    Alert.alert("Supprimer", `Supprimer "${item.name}" ?`, [
-      { text: "Annuler", style: "cancel" },
+    Alert.alert(t("zone.delete"), t("zone.delete_alert", { name: item.name }), [
+      { text: t("map.cancel"), style: "cancel" },
       {
-        text: "Supprimer",
+        text: t("zone.delete"),
         style: "destructive",
         onPress: async () => {
           await deleteItem(item.id);
@@ -112,12 +114,12 @@ export default function ZoneDetailScreen() {
 
   const handleDeleteZone = () => {
     Alert.alert(
-      "Supprimer la zone",
-      "Tous les objets de cette zone seront supprimés. Continuer ?",
+      t("zone.delete_zone_alert_title"),
+      t("zone.delete_zone_alert_text"),
       [
-        { text: "Annuler", style: "cancel" },
+        { text: t("map.cancel"), style: "cancel" },
         {
-          text: "Supprimer",
+          text: t("zone.delete"),
           style: "destructive",
           onPress: async () => {
             if (id) {
@@ -133,14 +135,14 @@ export default function ZoneDetailScreen() {
   const handleSplitZone = () => {
     if (!zone) return;
     const { w, h } = zone.geometry;
-    const direction = w >= h ? "gauche / droite" : "haut / bas";
+    const direction = w >= h ? t("zone.split_left_right") : t("zone.split_top_bottom");
     Alert.alert(
-      "Splitter la zone",
-      `Diviser "${zone.name}" en deux (${direction}) ?\n\nLes objets existants seront déplacés dans la première zone.`,
+      t("zone.split_zone_alert_title"),
+      t("zone.split_zone_alert_text", { name: zone.name, direction }),
       [
-        { text: "Annuler", style: "cancel" },
+        { text: t("map.cancel"), style: "cancel" },
         {
-          text: "Splitter",
+          text: "Split",
           onPress: async () => {
             if (id) {
               const newZoneId = await splitZone(id);
@@ -157,7 +159,7 @@ export default function ZoneDetailScreen() {
   if (!zone) {
     return (
       <View style={styles.center}>
-        <Text>Zone introuvable</Text>
+        <Text>{t("zone.not_found")}</Text>
       </View>
     );
   }
@@ -185,7 +187,12 @@ export default function ZoneDetailScreen() {
           />
         </View>
         <Text variant="bodySmall" style={styles.itemCount}>
-          {items.length} objet{items.length !== 1 ? "s" : ""}
+          {t(
+            items.length === 1
+              ? "map.objects_count_one"
+              : "map.objects_count_other",
+            { count: items.length }
+          )}
         </Text>
       </View>
 
@@ -193,7 +200,7 @@ export default function ZoneDetailScreen() {
       <View style={styles.addRow}>
         <TextInput
           mode="outlined"
-          placeholder="Ajouter un objet..."
+          placeholder={t("zone.add_item")}
           value={newItemName}
           onChangeText={setNewItemName}
           onSubmitEditing={handleAddItem}
@@ -240,7 +247,7 @@ export default function ZoneDetailScreen() {
               >
                 <Menu.Item
                   leadingIcon="pencil-outline"
-                  title="Modifier"
+                  title={t("zone.edit")}
                   onPress={() => {
                     setMenuVisible(null);
                     setEditingItem(item);
@@ -251,7 +258,7 @@ export default function ZoneDetailScreen() {
                 {otherZones.length > 0 && (
                   <Menu.Item
                     leadingIcon="arrow-right-bold"
-                    title="Déplacer"
+                    title={t("zone.move")}
                     onPress={() => {
                       setMenuVisible(null);
                       setMovingItem(item);
@@ -264,15 +271,15 @@ export default function ZoneDetailScreen() {
                   }
                   title={
                     item.out_of_van
-                      ? "Remettre dans le van"
-                      : "Sortir du van"
+                      ? t("zone.put_back")
+                      : t("zone.take_out")
                   }
                   onPress={() => handleToggleOutOfVan(item)}
                 />
                 <Divider />
                 <Menu.Item
                   leadingIcon="delete-outline"
-                  title="Supprimer"
+                  title={t("zone.delete")}
                   titleStyle={styles.deleteText}
                   onPress={() => handleDeleteItem(item)}
                 />
@@ -284,7 +291,7 @@ export default function ZoneDetailScreen() {
         ListEmptyComponent={
           <View style={styles.center}>
             <Text variant="bodyMedium" style={styles.emptyText}>
-              Aucun objet dans cette zone
+              {t("zone.empty")}
             </Text>
           </View>
         }
@@ -296,18 +303,18 @@ export default function ZoneDetailScreen() {
           visible={!!editingItem}
           onDismiss={() => setEditingItem(null)}
         >
-          <Dialog.Title>Modifier l'objet</Dialog.Title>
+          <Dialog.Title>{t("zone.edit_item")}</Dialog.Title>
           <Dialog.Content>
             <TextInput
               mode="outlined"
-              label="Nom"
+              label={t("zone.name")}
               value={editName}
               onChangeText={setEditName}
               style={styles.dialogInput}
             />
             <TextInput
               mode="outlined"
-              label="Notes (optionnel)"
+              label={t("zone.notes")}
               value={editNotes}
               onChangeText={setEditNotes}
               multiline
@@ -315,8 +322,8 @@ export default function ZoneDetailScreen() {
             />
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => setEditingItem(null)}>Annuler</Button>
-            <Button onPress={handleSaveEdit}>Enregistrer</Button>
+            <Button onPress={() => setEditingItem(null)}>{t("map.cancel")}</Button>
+            <Button onPress={handleSaveEdit}>{t("zone.save")}</Button>
           </Dialog.Actions>
         </Dialog>
 
@@ -325,7 +332,7 @@ export default function ZoneDetailScreen() {
           visible={!!movingItem}
           onDismiss={() => setMovingItem(null)}
         >
-          <Dialog.Title>Déplacer vers...</Dialog.Title>
+          <Dialog.Title>{t("zone.move_to")}</Dialog.Title>
           <Dialog.ScrollArea style={styles.scrollArea}>
             <ScrollView>
               {otherZones.map((z) => (
@@ -354,18 +361,18 @@ export default function ZoneDetailScreen() {
           visible={zoneEditVisible}
           onDismiss={() => setZoneEditVisible(false)}
         >
-          <Dialog.Title>Modifier la zone</Dialog.Title>
+          <Dialog.Title>{t("zone.edit_zone")}</Dialog.Title>
           <Dialog.Content>
             <TextInput
               mode="outlined"
-              label="Nom de la zone"
+              label={t("zone.name")}
               value={zoneName}
               onChangeText={setZoneName}
               style={styles.dialogInput}
             />
             <TextInput
               mode="outlined"
-              label="Couleur (hex)"
+              label={t("zone.color_hex")}
               value={zoneColor}
               onChangeText={setZoneColor}
               style={styles.dialogInput}
@@ -373,10 +380,10 @@ export default function ZoneDetailScreen() {
           </Dialog.Content>
           <Dialog.Actions>
             <Button textColor="#D32F2F" onPress={handleDeleteZone}>
-              Supprimer
+              {t("zone.delete")}
             </Button>
-            <Button onPress={() => setZoneEditVisible(false)}>Annuler</Button>
-            <Button onPress={handleSaveZone}>Enregistrer</Button>
+            <Button onPress={() => setZoneEditVisible(false)}>{t("map.cancel")}</Button>
+            <Button onPress={handleSaveZone}>{t("zone.save")}</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
