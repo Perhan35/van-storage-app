@@ -9,16 +9,18 @@ type Props = {
 
 export function ItemCountBadge({ cx, cy, count }: Props) {
   if (count === 0) return null;
-  const radius = count >= 100 ? 18 : count >= 10 ? 15 : 12;
+  const radius = count >= 100 ? 11 : count >= 10 ? 9 : 7.5;
+  const fontSize = count >= 100 ? 9 : count >= 10 ? 10 : 10;
   return (
     <G>
+      <Circle cx={cx} cy={cy} r={radius + 1} fill="#FFFFFF" opacity={0.9} />
       <Circle cx={cx} cy={cy} r={radius} fill="#D32F2F" />
       <SvgText
         x={cx}
-        y={cy + 5}
+        y={cy + fontSize / 3}
         textAnchor="middle"
         fill="white"
-        fontSize={radius > 12 ? 12 : 11}
+        fontSize={fontSize}
         fontWeight="bold"
       >
         {count}
