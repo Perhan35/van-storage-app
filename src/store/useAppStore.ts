@@ -18,7 +18,7 @@ type AppState = {
   setItemOutOfVan: (itemId: string, outOfVan: boolean) => Promise<void>;
   getOutOfVanItems: () => Promise<(Item & { zone_name: string })[]>;
   setHighlightedZoneId: (zoneId: string | null) => void;
-  updateZone: (zoneId: string, name: string, color: string) => Promise<void>;
+  updateZone: (zoneId: string, name: string, color: string, fillOpacity: number) => Promise<void>;
   deleteZone: (zoneId: string) => Promise<void>;
   addZone: (name: string, color: string, geometry: Zone["geometry"]) => Promise<void>;
   splitZone: (zoneId: string) => Promise<string | undefined>;
@@ -133,11 +133,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setHighlightedZoneId: (zoneId) => set({ highlightedZoneId: zoneId }),
 
-  updateZone: async (zoneId, name, color) => {
+  updateZone: async (zoneId, name, color, fillOpacity) => {
     const db = await getDb();
     await db.runAsync(
-      "UPDATE zones SET name = ?, color = ?, updated_at = datetime('now') WHERE id = ?",
-      [name, color, zoneId]
+      "UPDATE zones SET name = ?, color = ?, fill_opacity = ?, updated_at = datetime('now') WHERE id = ?",
+      [name, color, fillOpacity, zoneId]
     );
     await get().loadZones();
   },

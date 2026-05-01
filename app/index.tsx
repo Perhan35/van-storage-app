@@ -1,12 +1,10 @@
 import React, { useState } from "react";
-import { View, StyleSheet, ScrollView, Pressable } from "react-native";
+import { View, StyleSheet, ScrollView } from "react-native";
 import { useRouter } from "expo-router";
 import {
   FAB,
   Portal,
   Dialog,
-  TextInput,
-  Button,
   Text,
   List,
 } from "react-native-paper";
@@ -14,19 +12,7 @@ import { VanLayoutSVG } from "../src/components/VanLayoutSVG";
 import { ZoomableContainer } from "../src/components/ZoomableContainer";
 import { useAppStore } from "../src/store/useAppStore";
 import { useTranslation } from "react-i18next";
-
-const PRESET_COLORS = [
-  "#78909C",
-  "#FF8A65",
-  "#4DB6AC",
-  "#7986CB",
-  "#AED581",
-  "#FFD54F",
-  "#F48FB1",
-  "#4A90D9",
-  "#E57373",
-  "#BA68C8",
-];
+import { CreateZoneDialog } from "../src/components/dialogs/CreateZoneDialog";
 
 export default function VanMapScreen() {
   const router = useRouter();
@@ -39,17 +25,12 @@ export default function VanMapScreen() {
   const [fabOpen, setFabOpen] = useState(false);
   const [addZoneVisible, setAddZoneVisible] = useState(false);
   const [zonePicker, setZonePicker] = useState(false);
-  const [newZoneName, setNewZoneName] = useState("");
-  const [newZoneColor, setNewZoneColor] = useState("#4A90D9");
 
   if (!initialized) {
     return <View style={styles.container} />;
   }
 
-  const handleCreateZone = async () => {
-    if (!newZoneName.trim()) return;
-
-    // Place new zone below existing ones, or at a default spot
+  const handleCreateZone = async (name: string, color: string) => {
     let maxBottom = 70;
     for (const z of zones) {
       const bottom = z.geometry.y + z.geometry.h;
@@ -64,10 +45,8 @@ export default function VanMapScreen() {
       h: 60,
     };
 
-    await addZone(newZoneName.trim(), newZoneColor, geometry);
+    await addZone(name, color, geometry);
     setAddZoneVisible(false);
-    setNewZoneName("");
-    setNewZoneColor("#4A90D9");
   };
 
   return (
@@ -98,47 +77,13 @@ export default function VanMapScreen() {
         fabStyle={styles.fab}
       />
 
-      <Portal>
-        {/* Create zone dialog */}
-        <Dialog
-          visible={addZoneVisible}
-          onDismiss={() => setAddZoneVisible(false)}
-        >
-          <Dialog.Title>{t("map.new_zone")}</Dialog.Title>
-          <Dialog.Content>
-            <TextInput
-              mode="outlined"
-              label={t("map.zone_name")}
-              value={newZoneName}
-              onChangeText={setNewZoneName}
-              style={styles.dialogInput}
-            />
-            <Text variant="bodySmall" style={styles.colorLabel}>
-              {t("map.color")}
-            </Text>
-            <View style={styles.colorRow}>
-              {PRESET_COLORS.map((color) => (
-                <Pressable
-                  key={color}
-                  onPress={() => setNewZoneColor(color)}
-                  style={[
-                    styles.colorDot,
-                    {
-                      backgroundColor: color,
-                      borderWidth: newZoneColor === color ? 3 : 0,
-                      borderColor: "#333",
-                    },
-                  ]}
-                />
-              ))}
-            </View>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setAddZoneVisible(false)}>{t("map.cancel")}</Button>
-            <Button onPress={handleCreateZone}>{t("map.create")}</Button>
-          </Dialog.Actions>
-        </Dialog>
+      <CreateZoneDialog
+        visible={addZoneVisible}
+        onCancel={() => setAddZoneVisible(false)}
+        onCreate={handleCreateZone}
+      />
 
+      <Portal>
         {/* Zone picker for adding object */}
         <Dialog visible={zonePicker} onDismiss={() => setZonePicker(false)}>
           <Dialog.Title>{t("map.which_zone")}</Dialog.Title>
@@ -181,10 +126,6 @@ const styles = StyleSheet.create({
   fab: {
     backgroundColor: "#4A90D9",
   },
-  dialogInput: { marginBottom: 12 },
-  colorLabel: { marginBottom: 8, color: "#757575" },
-  colorRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  colorDot: { width: 36, height: 36, borderRadius: 18 },
   scrollArea: { maxHeight: 400 },
   zoneColorDot: {
     width: 24,

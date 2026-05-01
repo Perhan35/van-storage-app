@@ -1,0 +1,88 @@
+import React, { useEffect, useState } from "react";
+import { StyleSheet, View } from "react-native";
+import { Dialog, Portal, TextInput, Button, Text } from "react-native-paper";
+import Slider from "@react-native-community/slider";
+import { useTranslation } from "react-i18next";
+import { Zone } from "../../db/database";
+import { ColorPickerField } from "../ColorPickerField";
+
+type Props = {
+  zone: Zone | null;
+  visible: boolean;
+  onCancel: () => void;
+  onSave: (name: string, color: string, fillOpacity: number) => void;
+  onDelete: () => void;
+};
+
+export function EditZoneDialog({
+  zone,
+  visible,
+  onCancel,
+  onSave,
+  onDelete,
+}: Props) {
+  const { t } = useTranslation();
+  const [name, setName] = useState("");
+  const [color, setColor] = useState("#4A90D9");
+  const [fillOpacity, setFillOpacity] = useState(0.4);
+
+  useEffect(() => {
+    if (zone && visible) {
+      setName(zone.name);
+      setColor(zone.color);
+      setFillOpacity(zone.fill_opacity ?? 0.4);
+    }
+  }, [zone, visible]);
+
+  const handleSave = () => {
+    onSave(name.trim(), color, fillOpacity);
+  };
+
+  return (
+    <Portal>
+      <Dialog visible={visible} onDismiss={onCancel}>
+        <Dialog.Title>{t("zone.edit_zone")}</Dialog.Title>
+        <Dialog.Content>
+          <TextInput
+            mode="outlined"
+            label={t("zone.name")}
+            value={name}
+            onChangeText={setName}
+            style={styles.input}
+          />
+          <ColorPickerField
+            value={color}
+            onChange={setColor}
+            label={t("zone.color_hex")}
+          />
+          <View style={styles.opacityRow}>
+            <Text variant="bodySmall" style={styles.opacityLabel}>
+              {t("zone.opacity")} : {Math.round(fillOpacity * 100)}%
+            </Text>
+            <Slider
+              minimumValue={0.1}
+              maximumValue={1}
+              step={0.05}
+              value={fillOpacity}
+              onValueChange={setFillOpacity}
+              minimumTrackTintColor={color}
+            />
+          </View>
+        </Dialog.Content>
+        <Dialog.Actions>
+          <Button textColor="#D32F2F" onPress={onDelete}>
+            {t("zone.delete")}
+          </Button>
+          <Button onPress={onCancel}>{t("map.cancel")}</Button>
+          <Button onPress={handleSave}>{t("zone.save")}</Button>
+        </Dialog.Actions>
+      </Dialog>
+    </Portal>
+  );
+}
+
+const styles = StyleSheet.create({
+  input: { marginBottom: 12 },
+  opacityRow: { marginTop: 16 },
+  opacityLabel: { color: "#666", marginBottom: 6 },
+});

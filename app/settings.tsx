@@ -48,7 +48,7 @@ export default function SettingsScreen() {
       if (Platform.OS === "web") {
         downloadJsonWeb(data, "van-storage-backup.json");
       } else {
-        const { File, Paths } = await import("expo-file-system/next");
+        const { File, Paths } = await import("expo-file-system");
         const Sharing = await import("expo-sharing");
         const file = new File(Paths.cache, "van-storage-backup.json");
         file.write(data);
@@ -89,42 +89,63 @@ export default function SettingsScreen() {
       return;
     }
 
+    const rawZones = data.zones as Record<string, unknown>[];
+    const rawItems = data.items as Record<string, unknown>[];
+
+    const isValidZone = (z: Record<string, unknown>) =>
+      typeof z.id === "string" &&
+      typeof z.name === "string" &&
+      typeof z.color === "string" &&
+      typeof z.geometry === "string";
+
+    const isValidItem = (i: Record<string, unknown>) =>
+      typeof i.id === "string" &&
+      typeof i.name === "string" &&
+      typeof i.zone_id === "string";
+
+    if (!rawZones.every(isValidZone) || !rawItems.every(isValidItem)) {
+      Alert.alert(t("settings.error"), t("settings.import_invalid_format"));
+      return;
+    }
+
     const doImport = async () => {
       setImporting(true);
       try {
         const db = await getDb();
-        await db.runAsync("DELETE FROM items");
-        await db.runAsync("DELETE FROM zones");
+        await db.withTransactionAsync(async () => {
+          await db.runAsync("DELETE FROM items");
+          await db.runAsync("DELETE FROM zones");
 
-        for (const zone of data.zones as Record<string, unknown>[]) {
-          await db.runAsync(
-            "INSERT INTO zones (id, name, color, geometry, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [
-              zone.id as string,
-              zone.name as string,
-              zone.color as string,
-              zone.geometry as string,
-              zone.sort_order as number,
-              zone.created_at as string,
-              zone.updated_at as string,
-            ]
-          );
-        }
+          for (const zone of rawZones) {
+            await db.runAsync(
+              "INSERT INTO zones (id, name, color, geometry, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              [
+                zone.id as string,
+                zone.name as string,
+                zone.color as string,
+                zone.geometry as string,
+                (zone.sort_order as number) ?? 0,
+                (zone.created_at as string) ?? new Date().toISOString(),
+                (zone.updated_at as string) ?? new Date().toISOString(),
+              ]
+            );
+          }
 
-        for (const item of data.items as Record<string, unknown>[]) {
-          await db.runAsync(
-            "INSERT INTO items (id, name, zone_id, notes, out_of_van, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [
-              item.id as string,
-              item.name as string,
-              item.zone_id as string,
-              (item.notes as string) ?? "",
-              (item.out_of_van as number) ?? 0,
-              item.created_at as string,
-              item.updated_at as string,
-            ]
-          );
-        }
+          for (const item of rawItems) {
+            await db.runAsync(
+              "INSERT INTO items (id, name, zone_id, notes, out_of_van, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              [
+                item.id as string,
+                item.name as string,
+                item.zone_id as string,
+                (item.notes as string) ?? "",
+                (item.out_of_van as number) ?? 0,
+                (item.created_at as string) ?? new Date().toISOString(),
+                (item.updated_at as string) ?? new Date().toISOString(),
+              ]
+            );
+          }
+        });
 
         await loadZones();
         Alert.alert(t("settings.import_success_title"), t("settings.import_success"));
@@ -137,8 +158,8 @@ export default function SettingsScreen() {
     Alert.alert(
       t("settings.import_confirm_title"),
       t("settings.import_confirm_text", {
-        zonesCount: data.zones.length,
-        itemsCount: data.items.length,
+        zonesCount: rawZones.length,
+        itemsCount: rawItems.length,
       }),
       [
         { text: t("map.cancel"), style: "cancel" },
@@ -154,13 +175,15 @@ export default function SettingsScreen() {
         if (content) await importData(content);
       } else {
         const DocumentPicker = await import("expo-document-picker");
-        const { File } = await import("expo-file-system/next");
+        const { File } = await import("expo-file-system");
         const result = await DocumentPicker.getDocumentAsync({
           type: "application/json",
           copyToCacheDirectory: true,
         });
         if (result.canceled) return;
-        const file = new File(result.assets[0].uri);
+        const asset = result.assets?.[0];
+        if (!asset?.uri) return;
+        const file = new File(asset.uri);
         const content = await file.text();
         await importData(content);
       }

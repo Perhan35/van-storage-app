@@ -15,6 +15,8 @@ import {
 import { useAppStore } from "../../src/store/useAppStore";
 import { Item } from "../../src/db/database";
 import { useTranslation } from "react-i18next";
+import { EditItemDialog } from "../../src/components/dialogs/EditItemDialog";
+import { EditZoneDialog } from "../../src/components/dialogs/EditZoneDialog";
 
 export default function ZoneDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -35,13 +37,9 @@ export default function ZoneDetailScreen() {
   const [items, setItems] = useState<Item[]>([]);
   const [newItemName, setNewItemName] = useState("");
   const [editingItem, setEditingItem] = useState<Item | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editNotes, setEditNotes] = useState("");
   const [menuVisible, setMenuVisible] = useState<string | null>(null);
   const [movingItem, setMovingItem] = useState<Item | null>(null);
   const [zoneEditVisible, setZoneEditVisible] = useState(false);
-  const [zoneName, setZoneName] = useState("");
-  const [zoneColor, setZoneColor] = useState("");
 
   const zone = zones.find((z) => z.id === id);
 
@@ -59,8 +57,6 @@ export default function ZoneDetailScreen() {
   useEffect(() => {
     if (zone) {
       navigation.setOptions({ title: zone.name });
-      setZoneName(zone.name);
-      setZoneColor(zone.color);
     }
   }, [zone, navigation]);
 
@@ -87,9 +83,9 @@ export default function ZoneDetailScreen() {
     ]);
   };
 
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = async (name: string, notes: string) => {
     if (!editingItem) return;
-    await updateItem(editingItem.id, editName.trim(), editNotes.trim());
+    await updateItem(editingItem.id, name, notes);
     setEditingItem(null);
     await loadItems();
   };
@@ -106,9 +102,9 @@ export default function ZoneDetailScreen() {
     await loadItems();
   };
 
-  const handleSaveZone = async () => {
+  const handleSaveZone = async (name: string, color: string, fillOpacity: number) => {
     if (!id) return;
-    await updateZone(id, zoneName.trim(), zoneColor.trim());
+    await updateZone(id, name, color, fillOpacity);
     setZoneEditVisible(false);
   };
 
@@ -123,6 +119,7 @@ export default function ZoneDetailScreen() {
           style: "destructive",
           onPress: async () => {
             if (id) {
+              setZoneEditVisible(false);
               await deleteZone(id);
               router.back();
             }
@@ -164,7 +161,9 @@ export default function ZoneDetailScreen() {
     );
   }
 
-  const otherZones = zones.filter((z) => z.id !== id);
+  const otherZones = zones
+    .filter((z) => z.id !== id)
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
   return (
     <View style={styles.container}>
@@ -219,15 +218,12 @@ export default function ZoneDetailScreen() {
       <FlatList
         data={items}
         keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContent}
         renderItem={({ item }) => (
           <List.Item
             title={item.name}
             description={item.notes || undefined}
-            onPress={() => {
-              setEditingItem(item);
-              setEditName(item.name);
-              setEditNotes(item.notes);
-            }}
+            onPress={() => setEditingItem(item)}
             left={(props) =>
               item.out_of_van ? (
                 <List.Icon {...props} icon="exit-to-app" color="#E57373" />
@@ -251,8 +247,6 @@ export default function ZoneDetailScreen() {
                   onPress={() => {
                     setMenuVisible(null);
                     setEditingItem(item);
-                    setEditName(item.name);
-                    setEditNotes(item.notes);
                   }}
                 />
                 {otherZones.length > 0 && (
@@ -297,36 +291,21 @@ export default function ZoneDetailScreen() {
         }
       />
 
-      <Portal>
-        {/* Edit item dialog */}
-        <Dialog
-          visible={!!editingItem}
-          onDismiss={() => setEditingItem(null)}
-        >
-          <Dialog.Title>{t("zone.edit_item")}</Dialog.Title>
-          <Dialog.Content>
-            <TextInput
-              mode="outlined"
-              label={t("zone.name")}
-              value={editName}
-              onChangeText={setEditName}
-              style={styles.dialogInput}
-            />
-            <TextInput
-              mode="outlined"
-              label={t("zone.notes")}
-              value={editNotes}
-              onChangeText={setEditNotes}
-              multiline
-              style={styles.dialogInput}
-            />
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setEditingItem(null)}>{t("map.cancel")}</Button>
-            <Button onPress={handleSaveEdit}>{t("zone.save")}</Button>
-          </Dialog.Actions>
-        </Dialog>
+      <EditItemDialog
+        item={editingItem}
+        onCancel={() => setEditingItem(null)}
+        onSave={handleSaveEdit}
+      />
 
+      <EditZoneDialog
+        zone={zone}
+        visible={zoneEditVisible}
+        onCancel={() => setZoneEditVisible(false)}
+        onSave={handleSaveZone}
+        onDelete={handleDeleteZone}
+      />
+
+      <Portal>
         {/* Move item dialog */}
         <Dialog
           visible={!!movingItem}
@@ -355,37 +334,6 @@ export default function ZoneDetailScreen() {
             </ScrollView>
           </Dialog.ScrollArea>
         </Dialog>
-
-        {/* Edit zone dialog */}
-        <Dialog
-          visible={zoneEditVisible}
-          onDismiss={() => setZoneEditVisible(false)}
-        >
-          <Dialog.Title>{t("zone.edit_zone")}</Dialog.Title>
-          <Dialog.Content>
-            <TextInput
-              mode="outlined"
-              label={t("zone.name")}
-              value={zoneName}
-              onChangeText={setZoneName}
-              style={styles.dialogInput}
-            />
-            <TextInput
-              mode="outlined"
-              label={t("zone.color_hex")}
-              value={zoneColor}
-              onChangeText={setZoneColor}
-              style={styles.dialogInput}
-            />
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button textColor="#D32F2F" onPress={handleDeleteZone}>
-              {t("zone.delete")}
-            </Button>
-            <Button onPress={() => setZoneEditVisible(false)}>{t("map.cancel")}</Button>
-            <Button onPress={handleSaveZone}>{t("zone.save")}</Button>
-          </Dialog.Actions>
-        </Dialog>
       </Portal>
     </View>
   );
@@ -413,7 +361,7 @@ const styles = StyleSheet.create({
   addInput: { flex: 1 },
   deleteText: { color: "#D32F2F" },
   emptyText: { color: "#9E9E9E" },
-  dialogInput: { marginBottom: 12 },
+  listContent: { paddingBottom: 120 },
   scrollArea: { maxHeight: 400 },
   zoneColorDot: {
     width: 24,

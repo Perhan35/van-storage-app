@@ -1,5 +1,5 @@
 import * as SQLite from "expo-sqlite";
-import { ITEM_COLUMNS_TO_ADD, MIGRATIONS } from "./schema";
+import { ITEM_COLUMNS_TO_ADD, MIGRATIONS, ZONE_COLUMNS_TO_ADD } from "./schema";
 import { SEED_ZONES } from "./seed";
 
 let db: SQLite.SQLiteDatabase | null = null;
@@ -20,6 +20,15 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
   const existing = new Set(itemColumns.map((c) => c.name));
   for (const col of ITEM_COLUMNS_TO_ADD) {
     if (!existing.has(col.name)) {
+      await db.execAsync(col.ddl);
+    }
+  }
+  const zoneColumns = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(zones)"
+  );
+  const existingZoneCols = new Set(zoneColumns.map((c) => c.name));
+  for (const col of ZONE_COLUMNS_TO_ADD) {
+    if (!existingZoneCols.has(col.name)) {
       await db.execAsync(col.ddl);
     }
   }
@@ -44,6 +53,7 @@ export type Zone = {
   color: string;
   geometry: { type: "rect"; x: number; y: number; w: number; h: number };
   sort_order: number;
+  fill_opacity: number;
 };
 
 export type Item = {
