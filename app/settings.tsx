@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { View, StyleSheet, Alert, ScrollView, Platform } from "react-native";
 import { Text, Button, Divider } from "react-native-paper";
+import Constants from "expo-constants";
 import { getDb } from "../src/db/database";
 import { useAppStore } from "../src/store/useAppStore";
 import { useTranslation } from "react-i18next";
@@ -226,7 +227,7 @@ export default function SettingsScreen() {
           {t("settings.title_about")}
         </Text>
         <Text variant="bodySmall" style={styles.description}>
-          {t("settings.desc_about")}
+          {t("settings.desc_about", { version: Constants.expoConfig?.version ?? "" })}
         </Text>
       </View>
     </ScrollView>
