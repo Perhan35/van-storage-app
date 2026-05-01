@@ -5,12 +5,14 @@ import { Divider, IconButton, List, Text } from "react-native-paper";
 import { useAppStore } from "../src/store/useAppStore";
 import { Item } from "../src/db/database";
 import { useTranslation } from "react-i18next";
+import { useAppTheme } from "../src/theme/useAppTheme";
 
 type OutItem = Item & { zone_name: string };
 
 export default function OutOfVanScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { palette } = useAppTheme();
   const getOutOfVanItems = useAppStore((s) => s.getOutOfVanItems);
   const setItemOutOfVan = useAppStore((s) => s.setItemOutOfVan);
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
@@ -43,9 +45,9 @@ export default function OutOfVanScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text variant="bodyMedium" style={styles.headerText}>
+    <View style={[styles.container, { backgroundColor: palette.surface }]}>
+      <View style={[styles.header, { backgroundColor: palette.warningSurface }]}>
+        <Text variant="bodyMedium" style={{ color: palette.warningOn }}>
           {t(
             items.length === 1
               ? "out.currently_out_one"
@@ -63,7 +65,7 @@ export default function OutOfVanScreen() {
             description={`📍 ${item.zone_name}${item.notes ? ` • ${item.notes}` : ""}`}
             onPress={() => handleLocate(item)}
             left={(props) => (
-              <List.Icon {...props} icon="exit-to-app" color="#E57373" />
+              <List.Icon {...props} icon="exit-to-app" color={palette.danger} />
             )}
             right={() => (
               <IconButton
@@ -77,7 +79,7 @@ export default function OutOfVanScreen() {
         ItemSeparatorComponent={Divider}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text variant="bodyMedium" style={styles.emptyText}>
+            <Text variant="bodyMedium" style={{ color: palette.onSurfaceVariant, textAlign: "center" }}>
               {t("out.empty")}
             </Text>
           </View>
@@ -88,9 +90,7 @@ export default function OutOfVanScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  header: { padding: 16, backgroundColor: "#FFF3E0" },
-  headerText: { color: "#E65100" },
+  container: { flex: 1 },
+  header: { padding: 16 },
   emptyContainer: { padding: 32, alignItems: "center" },
-  emptyText: { color: "#9E9E9E", textAlign: "center" },
 });

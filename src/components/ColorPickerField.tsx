@@ -14,6 +14,7 @@ import ColorPicker, {
 import { useTranslation } from "react-i18next";
 import { PRESET_COLORS } from "../utils/colors";
 import { sanitizeHex } from "../utils/color";
+import { useAppTheme } from "../theme/useAppTheme";
 
 type Props = {
   value: string;
@@ -23,6 +24,7 @@ type Props = {
 
 export function ColorPickerField({ value, onChange, label }: Props) {
   const { t } = useTranslation();
+  const { palette } = useAppTheme();
   const safeValue = sanitizeHex(value);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(safeValue);
@@ -48,13 +50,23 @@ export function ColorPickerField({ value, onChange, label }: Props) {
 
   return (
     <View>
-      <Text variant="bodySmall" style={styles.label}>
+      <Text variant="bodySmall" style={[styles.label, { color: palette.onSurfaceVariant }]}>
         {label ?? t("map.color")}
       </Text>
-      <Pressable onPress={() => setOpen(true)} style={styles.field}>
-        <View style={[styles.fieldDot, { backgroundColor: safeValue }]} />
-        <Text style={styles.fieldHex}>{safeValue.toUpperCase()}</Text>
-        <Text style={styles.fieldChevron}>▾</Text>
+      <Pressable
+        onPress={() => setOpen(true)}
+        style={[styles.field, { borderColor: palette.outline }]}
+      >
+        <View
+          style={[
+            styles.fieldDot,
+            { backgroundColor: safeValue, borderColor: palette.divider },
+          ]}
+        />
+        <Text style={[styles.fieldHex, { color: palette.onSurface }]}>
+          {safeValue.toUpperCase()}
+        </Text>
+        <Text style={{ color: palette.onSurfaceVariant }}>▾</Text>
       </Pressable>
 
       <Portal>
@@ -73,6 +85,7 @@ export function ColorPickerField({ value, onChange, label }: Props) {
                       {
                         backgroundColor: c,
                         borderWidth: selected ? 3 : 0,
+                        borderColor: palette.outline,
                       },
                     ]}
                   />
@@ -93,8 +106,15 @@ export function ColorPickerField({ value, onChange, label }: Props) {
             </ColorPicker>
 
             <View style={styles.preview}>
-              <View style={[styles.previewDot, { backgroundColor: sanitizeHex(draft) }]} />
-              <Text style={styles.previewHex}>{sanitizeHex(draft).toUpperCase()}</Text>
+              <View
+                style={[
+                  styles.previewDot,
+                  { backgroundColor: sanitizeHex(draft), borderColor: palette.divider },
+                ]}
+              />
+              <Text style={[styles.previewHex, { color: palette.onSurface }]}>
+                {sanitizeHex(draft).toUpperCase()}
+              </Text>
             </View>
           </Dialog.Content>
           <Dialog.Actions>
@@ -108,12 +128,11 @@ export function ColorPickerField({ value, onChange, label }: Props) {
 }
 
 const styles = StyleSheet.create({
-  label: { color: "#666", marginBottom: 6 },
+  label: { marginBottom: 6 },
   field: {
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#999",
     borderRadius: 4,
     padding: 12,
   },
@@ -123,10 +142,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginRight: 12,
     borderWidth: 1,
-    borderColor: "#ccc",
   },
   fieldHex: { flex: 1, fontFamily: "monospace" },
-  fieldChevron: { color: "#666" },
   swatches: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -137,7 +154,6 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    borderColor: "#333",
   },
   picker: { marginBottom: 12 },
   panel: { borderRadius: 8, marginBottom: 12 },
@@ -154,7 +170,6 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#ccc",
   },
   previewHex: { fontFamily: "monospace", fontSize: 16 },
 });

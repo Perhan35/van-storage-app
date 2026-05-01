@@ -15,6 +15,7 @@ import {
 import { useAppStore } from "../../src/store/useAppStore";
 import { Item } from "../../src/db/database";
 import { useTranslation } from "react-i18next";
+import { useAppTheme } from "../../src/theme/useAppTheme";
 import { EditItemDialog } from "../../src/components/dialogs/EditItemDialog";
 import { EditZoneDialog } from "../../src/components/dialogs/EditZoneDialog";
 
@@ -23,6 +24,7 @@ export default function ZoneDetailScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const { t } = useTranslation();
+  const { palette } = useAppTheme();
   const zones = useAppStore((s) => s.zones);
   const getItemsForZone = useAppStore((s) => s.getItemsForZone);
   const addItem = useAppStore((s) => s.addItem);
@@ -155,7 +157,7 @@ export default function ZoneDetailScreen() {
 
   if (!zone) {
     return (
-      <View style={styles.center}>
+      <View style={[styles.center, { backgroundColor: palette.surface }]}>
         <Text>{t("zone.not_found")}</Text>
       </View>
     );
@@ -166,12 +168,12 @@ export default function ZoneDetailScreen() {
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: palette.surface }]}>
       {/* Zone header */}
       <View style={[styles.header, { backgroundColor: zone.color + "33" }]}>
         <View style={styles.headerRow}>
           <View style={[styles.colorDot, { backgroundColor: zone.color }]} />
-          <Text variant="titleMedium" style={styles.headerTitle}>
+          <Text variant="titleMedium" style={[styles.headerTitle, { color: palette.onSurface }]}>
             {zone.name}
           </Text>
           <IconButton
@@ -185,7 +187,7 @@ export default function ZoneDetailScreen() {
             onPress={() => setZoneEditVisible(true)}
           />
         </View>
-        <Text variant="bodySmall" style={styles.itemCount}>
+        <Text variant="bodySmall" style={[styles.itemCount, { color: palette.onSurfaceVariant }]}>
           {t(
             items.length === 1
               ? "map.objects_count_one"
@@ -209,7 +211,7 @@ export default function ZoneDetailScreen() {
         <IconButton
           icon="plus-circle"
           size={32}
-          iconColor="#4A90D9"
+          iconColor={palette.primary}
           onPress={handleAddItem}
         />
       </View>
@@ -226,7 +228,7 @@ export default function ZoneDetailScreen() {
             onPress={() => setEditingItem(item)}
             left={(props) =>
               item.out_of_van ? (
-                <List.Icon {...props} icon="exit-to-app" color="#E57373" />
+                <List.Icon {...props} icon="exit-to-app" color={palette.danger} />
               ) : null
             }
             right={() => (
@@ -274,7 +276,7 @@ export default function ZoneDetailScreen() {
                 <Menu.Item
                   leadingIcon="delete-outline"
                   title={t("zone.delete")}
-                  titleStyle={styles.deleteText}
+                  titleStyle={{ color: palette.danger }}
                   onPress={() => handleDeleteItem(item)}
                 />
               </Menu>
@@ -284,7 +286,7 @@ export default function ZoneDetailScreen() {
         ItemSeparatorComponent={Divider}
         ListEmptyComponent={
           <View style={styles.center}>
-            <Text variant="bodyMedium" style={styles.emptyText}>
+            <Text variant="bodyMedium" style={{ color: palette.onSurfaceVariant }}>
               {t("zone.empty")}
             </Text>
           </View>
@@ -340,7 +342,7 @@ export default function ZoneDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
+  container: { flex: 1 },
   center: {
     flex: 1,
     justifyContent: "center",
@@ -351,7 +353,7 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: "row", alignItems: "center" },
   colorDot: { width: 16, height: 16, borderRadius: 8, marginRight: 8 },
   headerTitle: { flex: 1 },
-  itemCount: { color: "#757575", marginTop: 4 },
+  itemCount: { marginTop: 4 },
   addRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -359,8 +361,6 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   addInput: { flex: 1 },
-  deleteText: { color: "#D32F2F" },
-  emptyText: { color: "#9E9E9E" },
   listContent: { paddingBottom: 120 },
   scrollArea: { maxHeight: 400 },
   zoneColorDot: {

@@ -19,6 +19,10 @@ export const MIGRATIONS = [
   );`,
   `CREATE INDEX IF NOT EXISTS idx_items_name ON items(name COLLATE NOCASE);`,
   `CREATE INDEX IF NOT EXISTS idx_items_zone ON items(zone_id);`,
+  `CREATE TABLE IF NOT EXISTS preferences (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );`,
 ];
 
 // Column additions handled separately via PRAGMA table_info checks, since

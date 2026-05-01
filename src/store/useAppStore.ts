@@ -1,13 +1,18 @@
 import { create } from "zustand";
 import { getDb, Zone, Item, ZoneWithCount } from "../db/database";
+import { getPreference, setPreference } from "../db/preferences";
+
+export type ThemeMode = "auto" | "light" | "dark";
 
 type AppState = {
   zones: ZoneWithCount[];
   highlightedZoneId: string | null;
   initialized: boolean;
   editMode: boolean;
+  themeMode: ThemeMode;
 
   init: () => Promise<void>;
+  setThemeMode: (mode: ThemeMode) => Promise<void>;
   loadZones: () => Promise<void>;
   getItemsForZone: (zoneId: string) => Promise<Item[]>;
   addItem: (name: string, zoneId: string, notes?: string) => Promise<void>;
@@ -35,12 +40,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   highlightedZoneId: null,
   initialized: false,
   editMode: false,
+  themeMode: "auto",
 
   init: async () => {
     if (get().initialized) return;
     await getDb();
+    const storedMode = await getPreference("themeMode");
+    if (storedMode === "auto" || storedMode === "light" || storedMode === "dark") {
+      set({ themeMode: storedMode });
+    }
     await get().loadZones();
     set({ initialized: true });
+  },
+
+  setThemeMode: async (mode) => {
+    set({ themeMode: mode });
+    await setPreference("themeMode", mode);
   },
 
   loadZones: async () => {

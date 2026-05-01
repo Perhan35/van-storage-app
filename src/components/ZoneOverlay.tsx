@@ -10,6 +10,8 @@ import Animated, {
 import { ItemCountBadge } from "./ItemCountBadge";
 import { ZoneWithCount } from "../db/database";
 import { getReadableTextColor } from "../utils/color";
+import { useAppTheme } from "../theme/useAppTheme";
+import { lightPalette } from "../theme/palette";
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
@@ -121,6 +123,7 @@ type Props = {
 };
 
 export function ZoneOverlay({ zone, highlighted }: Props) {
+  const { isDark } = useAppTheme();
   const { x, y, w, h } = zone.geometry;
   const cx = x + w / 2;
   const cy = y + h / 2;
@@ -226,7 +229,7 @@ export function ZoneOverlay({ zone, highlighted }: Props) {
         x={textCx}
         y={firstBaselineY}
         textAnchor="middle"
-        fill={getReadableTextColor(zone.color)}
+        fill={isDark ? "#FFFFFF" : getReadableTextColor(zone.color, zone.fill_opacity ?? 0.4, lightPalette.background)}
         fontSize={fontSize}
         fontWeight="600"
         transform={

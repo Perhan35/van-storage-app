@@ -21,13 +21,27 @@ export function sanitizeHex(input: string | undefined | null, fallback = "#4A90D
   return /^#[0-9A-Fa-f]{3,8}$/.test(trimmed) ? trimmed : fallback;
 }
 
-export function getReadableTextColor(hex: string): "#000000" | "#FFFFFF" {
-  const rgb = parseHex(hex);
-  if (!rgb) return "#FFFFFF";
-  const alpha = 0.65;
-  const r = rgb.r * alpha + 255 * (1 - alpha);
-  const g = rgb.g * alpha + 255 * (1 - alpha);
-  const b = rgb.b * alpha + 255 * (1 - alpha);
-  const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-  return luminance >= 150 ? "#000000" : "#FFFFFF";
+function relativeLuminance(r: number, g: number, b: number): number {
+  const toLinear = (c: number) => {
+    const s = c / 255;
+    return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+export function getReadableTextColor(
+  hex: string,
+  fillOpacity = 1,
+  bgHex = "#FFFFFF"
+): "#000000" | "#FFFFFF" {
+  const fg = parseHex(hex);
+  const bg = parseHex(bgHex) ?? { r: 255, g: 255, b: 255 };
+  if (!fg) return "#000000";
+  const r = Math.round(fg.r * fillOpacity + bg.r * (1 - fillOpacity));
+  const g = Math.round(fg.g * fillOpacity + bg.g * (1 - fillOpacity));
+  const b = Math.round(fg.b * fillOpacity + bg.b * (1 - fillOpacity));
+  const L = relativeLuminance(r, g, b);
+  const contrastBlack = (L + 0.05) / 0.05;
+  const contrastWhite = 1.05 / (L + 0.05);
+  return contrastWhite > contrastBlack ? "#FFFFFF" : "#000000";
 }

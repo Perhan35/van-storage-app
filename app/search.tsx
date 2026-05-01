@@ -5,12 +5,14 @@ import { Searchbar, List, Divider, Text } from "react-native-paper";
 import { useAppStore } from "../src/store/useAppStore";
 import { Item } from "../src/db/database";
 import { useTranslation } from "react-i18next";
+import { useAppTheme } from "../src/theme/useAppTheme";
 
 type SearchResult = Item & { zone_name: string };
 
 export default function SearchScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { palette } = useAppTheme();
   const searchItems = useAppStore((s) => s.searchItems);
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
   const [query, setQuery] = useState("");
@@ -39,8 +41,10 @@ export default function SearchScreen() {
     setTimeout(() => setHighlightedZoneId(null), 4000);
   };
 
+  const emptyTextStyle = { color: palette.onSurfaceVariant, textAlign: "center" as const };
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: palette.surface }]}>
       <Searchbar
         placeholder={t("search.placeholder")}
         value={query}
@@ -64,7 +68,7 @@ export default function SearchScreen() {
               <List.Icon
                 {...props}
                 icon={item.out_of_van ? "exit-to-app" : "package-variant"}
-                color={item.out_of_van ? "#E57373" : undefined}
+                color={item.out_of_van ? palette.danger : undefined}
               />
             )}
           />
@@ -73,13 +77,13 @@ export default function SearchScreen() {
         ListEmptyComponent={
           searched ? (
             <View style={styles.emptyContainer}>
-              <Text variant="bodyMedium" style={styles.emptyText}>
+              <Text variant="bodyMedium" style={emptyTextStyle}>
                 {t("search.no_results", { query })}
               </Text>
             </View>
           ) : (
             <View style={styles.emptyContainer}>
-              <Text variant="bodyMedium" style={styles.emptyText}>
+              <Text variant="bodyMedium" style={emptyTextStyle}>
                 {t("search.empty")}
               </Text>
             </View>
@@ -91,8 +95,7 @@ export default function SearchScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
+  container: { flex: 1 },
   searchbar: { margin: 12 },
   emptyContainer: { padding: 32, alignItems: "center" },
-  emptyText: { color: "#9E9E9E", textAlign: "center" },
 });

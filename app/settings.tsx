@@ -1,10 +1,11 @@
 import React, { useState } from "react";
 import { View, StyleSheet, Alert, ScrollView, Platform } from "react-native";
-import { Text, Button, Divider } from "react-native-paper";
+import { Text, Button, Divider, SegmentedButtons } from "react-native-paper";
 import Constants from "expo-constants";
 import { getDb } from "../src/db/database";
-import { useAppStore } from "../src/store/useAppStore";
+import { useAppStore, ThemeMode } from "../src/store/useAppStore";
 import { useTranslation } from "react-i18next";
+import { useAppTheme } from "../src/theme/useAppTheme";
 
 function downloadJsonWeb(data: string, filename: string) {
   const blob = new Blob([data], { type: "application/json" });
@@ -32,7 +33,10 @@ function pickFileWeb(): Promise<string | null> {
 
 export default function SettingsScreen() {
   const { t } = useTranslation();
+  const { palette } = useAppTheme();
   const loadZones = useAppStore((s) => s.loadZones);
+  const themeMode = useAppStore((s) => s.themeMode);
+  const setThemeMode = useAppStore((s) => s.setThemeMode);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
 
@@ -194,12 +198,12 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={[styles.container, { backgroundColor: palette.surface }]}>
       <View style={styles.section}>
         <Text variant="titleMedium" style={styles.sectionTitle}>
           {t("settings.title_data")}
         </Text>
-        <Text variant="bodySmall" style={styles.description}>
+        <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
           {t("settings.desc_data")}
         </Text>
         <Button
@@ -224,9 +228,27 @@ export default function SettingsScreen() {
       <Divider />
       <View style={styles.section}>
         <Text variant="titleMedium" style={styles.sectionTitle}>
+          {t("settings.title_appearance")}
+        </Text>
+        <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
+          {t("settings.desc_appearance")}
+        </Text>
+        <SegmentedButtons
+          value={themeMode}
+          onValueChange={(v) => setThemeMode(v as ThemeMode)}
+          buttons={[
+            { value: "auto", label: t("settings.theme_auto"), icon: "theme-light-dark" },
+            { value: "light", label: t("settings.theme_light"), icon: "weather-sunny" },
+            { value: "dark", label: t("settings.theme_dark"), icon: "weather-night" },
+          ]}
+        />
+      </View>
+      <Divider />
+      <View style={styles.section}>
+        <Text variant="titleMedium" style={styles.sectionTitle}>
           {t("settings.title_about")}
         </Text>
-        <Text variant="bodySmall" style={styles.description}>
+        <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
           {t("settings.desc_about", { version: Constants.expoConfig?.version ?? "" })}
         </Text>
       </View>
@@ -235,9 +257,9 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
+  container: { flex: 1 },
   section: { padding: 20 },
   sectionTitle: { marginBottom: 8 },
-  description: { color: "#757575", marginBottom: 16 },
+  description: { marginBottom: 16 },
   button: { marginBottom: 12 },
 });

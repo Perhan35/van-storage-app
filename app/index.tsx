@@ -12,11 +12,13 @@ import { VanLayoutSVG } from "../src/components/VanLayoutSVG";
 import { ZoomableContainer } from "../src/components/ZoomableContainer";
 import { useAppStore } from "../src/store/useAppStore";
 import { useTranslation } from "react-i18next";
+import { useAppTheme } from "../src/theme/useAppTheme";
 import { CreateZoneDialog } from "../src/components/dialogs/CreateZoneDialog";
 
 export default function VanMapScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { palette } = useAppTheme();
   const initialized = useAppStore((s) => s.initialized);
   const zones = useAppStore((s) => s.zones);
   const addZone = useAppStore((s) => s.addZone);
@@ -27,7 +29,7 @@ export default function VanMapScreen() {
   const [zonePicker, setZonePicker] = useState(false);
 
   if (!initialized) {
-    return <View style={styles.container} />;
+    return <View style={[styles.container, { backgroundColor: palette.background }]} />;
   }
 
   const handleCreateZone = async (name: string, color: string) => {
@@ -50,7 +52,7 @@ export default function VanMapScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: palette.background }]}>
       <ZoomableContainer enabled={!editMode}>
         <VanLayoutSVG
           onZonePress={(zoneId) => router.push(`/zone/${zoneId}`)}
@@ -74,7 +76,7 @@ export default function VanMapScreen() {
           },
         ]}
         onStateChange={({ open }) => setFabOpen(open)}
-        fabStyle={styles.fab}
+        fabStyle={{ backgroundColor: palette.primary }}
       />
 
       <CreateZoneDialog
@@ -122,10 +124,7 @@ export default function VanMapScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F5F5F5" },
-  fab: {
-    backgroundColor: "#4A90D9",
-  },
+  container: { flex: 1 },
   scrollArea: { maxHeight: 400 },
   zoneColorDot: {
     width: 24,
