@@ -2,11 +2,20 @@ import * as SQLite from "expo-sqlite";
 import { ITEM_COLUMNS_TO_ADD, MIGRATIONS, ZONE_COLUMNS_TO_ADD } from "./schema";
 import { SEED_ZONES } from "./seed";
 
-let db: SQLite.SQLiteDatabase | null = null;
+let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 export async function getDb(): Promise<SQLite.SQLiteDatabase> {
-  if (db) return db;
-  db = await SQLite.openDatabaseAsync("van-storage.db");
+  if (!dbPromise) {
+    dbPromise = openAndMigrate().catch((err) => {
+      dbPromise = null;
+      throw err;
+    });
+  }
+  return dbPromise;
+}
+
+async function openAndMigrate(): Promise<SQLite.SQLiteDatabase> {
+  const db = await SQLite.openDatabaseAsync("van-storage.db");
   await db.execAsync("PRAGMA journal_mode = WAL;");
   await db.execAsync("PRAGMA foreign_keys = ON;");
   for (const migration of MIGRATIONS) {
