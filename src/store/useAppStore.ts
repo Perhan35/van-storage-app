@@ -35,6 +35,22 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+function isValidGeometry(g: unknown): g is Zone["geometry"] {
+  if (typeof g !== "object" || g === null) return false;
+  const { type, x, y, w, h } = g as Record<string, unknown>;
+  return (
+    type === "rect" &&
+    typeof x === "number" &&
+    Number.isFinite(x) &&
+    typeof y === "number" &&
+    Number.isFinite(y) &&
+    typeof w === "number" &&
+    Number.isFinite(w) &&
+    typeof h === "number" &&
+    Number.isFinite(h)
+  );
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   zones: [],
   highlightedZoneId: null,
@@ -67,10 +83,20 @@ export const useAppStore = create<AppState>((set, get) => ({
        ON z.id = c.zone_id
        ORDER BY z.sort_order`
     );
-    const zones = rows.map((r) => ({
-      ...r,
-      geometry: JSON.parse(r.geometry as string),
-    }));
+    const zones = rows.flatMap((r) => {
+      let geometry: unknown;
+      try {
+        geometry = JSON.parse(r.geometry as string);
+      } catch {
+        console.warn(`Skipping zone ${r.id}: invalid geometry JSON`);
+        return [];
+      }
+      if (!isValidGeometry(geometry)) {
+        console.warn(`Skipping zone ${r.id}: invalid geometry shape`);
+        return [];
+      }
+      return [{ ...r, geometry }];
+    });
     set({ zones });
   },
 

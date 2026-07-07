@@ -97,11 +97,37 @@ export default function SettingsScreen() {
     const rawZones = data.zones as Record<string, unknown>[];
     const rawItems = data.items as Record<string, unknown>[];
 
-    const isValidZone = (z: Record<string, unknown>) =>
-      typeof z.id === "string" &&
-      typeof z.name === "string" &&
-      typeof z.color === "string" &&
-      typeof z.geometry === "string";
+    const isValidGeometry = (g: unknown): boolean => {
+      if (typeof g !== "object" || g === null) return false;
+      const { type, x, y, w, h } = g as Record<string, unknown>;
+      return (
+        type === "rect" &&
+        typeof x === "number" &&
+        Number.isFinite(x) &&
+        typeof y === "number" &&
+        Number.isFinite(y) &&
+        typeof w === "number" &&
+        Number.isFinite(w) &&
+        typeof h === "number" &&
+        Number.isFinite(h)
+      );
+    };
+
+    const isValidZone = (z: Record<string, unknown>) => {
+      if (
+        typeof z.id !== "string" ||
+        typeof z.name !== "string" ||
+        typeof z.color !== "string" ||
+        typeof z.geometry !== "string"
+      ) {
+        return false;
+      }
+      try {
+        return isValidGeometry(JSON.parse(z.geometry));
+      } catch {
+        return false;
+      }
+    };
 
     const isValidItem = (i: Record<string, unknown>) =>
       typeof i.id === "string" &&
