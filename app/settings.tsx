@@ -65,7 +65,7 @@ export default function SettingsScreen() {
             UTI: "public.json",
           });
         } else {
-          Alert.alert(t("settings.import_confirm_title"), t("settings.export_success"));
+          Alert.alert(t("settings.export_success_title"), t("settings.export_success"));
         }
       }
     } catch (e) {
