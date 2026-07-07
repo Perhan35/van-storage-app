@@ -157,6 +157,12 @@ export default function SettingsScreen() {
       return;
     }
 
+    const zoneIds = new Set(rawZones.map((z) => z.id as string));
+    if (rawItems.some((i) => !zoneIds.has(i.zone_id as string))) {
+      Alert.alert(t("settings.error"), t("settings.import_orphan_items"));
+      return;
+    }
+
     const doImport = async () => {
       setImporting(true);
       try {
