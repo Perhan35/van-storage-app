@@ -8,6 +8,7 @@ type AppState = {
   zones: ZoneWithCount[];
   highlightedZoneId: string | null;
   initialized: boolean;
+  initError: string | null;
   editMode: boolean;
   themeMode: ThemeMode;
 
@@ -55,18 +56,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   zones: [],
   highlightedZoneId: null,
   initialized: false,
+  initError: null,
   editMode: false,
   themeMode: "auto",
 
   init: async () => {
     if (get().initialized) return;
-    await getDb();
-    const storedMode = await getPreference("themeMode");
-    if (storedMode === "auto" || storedMode === "light" || storedMode === "dark") {
-      set({ themeMode: storedMode });
+    set({ initError: null });
+    try {
+      await getDb();
+      const storedMode = await getPreference("themeMode");
+      if (storedMode === "auto" || storedMode === "light" || storedMode === "dark") {
+        set({ themeMode: storedMode });
+      }
+      await get().loadZones();
+      set({ initialized: true });
+    } catch (err) {
+      set({ initError: err instanceof Error ? err.message : String(err) });
     }
-    await get().loadZones();
-    set({ initialized: true });
   },
 
   setThemeMode: async (mode) => {

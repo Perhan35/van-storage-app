@@ -1,13 +1,30 @@
 import React, { useEffect } from "react";
-import { View } from "react-native";
+import { View, StyleSheet } from "react-native";
 import { Stack, useRouter } from "expo-router";
-import { PaperProvider, IconButton, Text } from "react-native-paper";
+import { PaperProvider, IconButton, Text, Button } from "react-native-paper";
 import { StatusBar } from "expo-status-bar";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../src/store/useAppStore";
 import { useAppTheme } from "../src/theme/useAppTheme";
-import { paperDarkTheme, paperLightTheme } from "../src/theme/palette";
+import { paperDarkTheme, paperLightTheme, lightPalette } from "../src/theme/palette";
 import "../src/i18n";
+
+export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
+  return (
+    <View style={[styles.errorContainer, { backgroundColor: lightPalette.background }]}>
+      <Text style={{ color: lightPalette.onSurface, textAlign: "center", marginBottom: 16 }}>
+        {error.message}
+      </Text>
+      <Button mode="contained" onPress={retry}>
+        Retry
+      </Button>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  errorContainer: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24 },
+});
 
 function HeaderRight() {
   const router = useRouter();

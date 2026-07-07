@@ -7,6 +7,7 @@ import {
   Dialog,
   Text,
   List,
+  Button,
 } from "react-native-paper";
 import { VanLayoutSVG } from "../src/components/VanLayoutSVG";
 import { ZoomableContainer } from "../src/components/ZoomableContainer";
@@ -20,6 +21,8 @@ export default function VanMapScreen() {
   const { t } = useTranslation();
   const { palette } = useAppTheme();
   const initialized = useAppStore((s) => s.initialized);
+  const initError = useAppStore((s) => s.initError);
+  const init = useAppStore((s) => s.init);
   const zones = useAppStore((s) => s.zones);
   const addZone = useAppStore((s) => s.addZone);
   const editMode = useAppStore((s) => s.editMode);
@@ -27,6 +30,19 @@ export default function VanMapScreen() {
   const [fabOpen, setFabOpen] = useState(false);
   const [addZoneVisible, setAddZoneVisible] = useState(false);
   const [zonePicker, setZonePicker] = useState(false);
+
+  if (initError) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: palette.background }]}>
+        <Text style={{ color: palette.onSurface, textAlign: "center", marginBottom: 16 }}>
+          {t("startup.error")}
+        </Text>
+        <Button mode="contained" onPress={() => init()}>
+          {t("startup.retry")}
+        </Button>
+      </View>
+    );
+  }
 
   if (!initialized) {
     return <View style={[styles.container, { backgroundColor: palette.background }]} />;
@@ -125,6 +141,7 @@ export default function VanMapScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  centered: { justifyContent: "center", alignItems: "center", padding: 24 },
   scrollArea: { maxHeight: 400 },
   zoneColorDot: {
     width: 24,
