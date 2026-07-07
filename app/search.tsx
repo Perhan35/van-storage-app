@@ -36,7 +36,7 @@ export default function SearchScreen() {
 
   const handleItemPress = (item: SearchResult) => {
     setHighlightedZoneId(item.zone_id);
-    router.back();
+    router.dismissTo("/");
   };
 
   const emptyTextStyle = { color: palette.onSurfaceVariant, textAlign: "center" as const };
