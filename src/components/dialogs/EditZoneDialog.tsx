@@ -35,7 +35,9 @@ export function EditZoneDialog({
   }, [zone, visible]);
 
   const handleSave = () => {
-    onSave(name.trim(), color, fillOpacity);
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    onSave(trimmed, color, fillOpacity);
   };
 
   return (
@@ -74,7 +76,9 @@ export function EditZoneDialog({
             {t("zone.delete")}
           </Button>
           <Button onPress={onCancel}>{t("map.cancel")}</Button>
-          <Button onPress={handleSave}>{t("zone.save")}</Button>
+          <Button onPress={handleSave} disabled={!name.trim()}>
+            {t("zone.save")}
+          </Button>
         </Dialog.Actions>
       </Dialog>
     </Portal>

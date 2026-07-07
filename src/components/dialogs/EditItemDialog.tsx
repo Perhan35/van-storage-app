@@ -23,7 +23,9 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
   }, [item]);
 
   const handleSave = () => {
-    onSave(name.trim(), notes.trim());
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    onSave(trimmed, notes.trim());
   };
 
   return (
@@ -49,7 +51,9 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
         </Dialog.Content>
         <Dialog.Actions>
           <Button onPress={onCancel}>{t("map.cancel")}</Button>
-          <Button onPress={handleSave}>{t("zone.save")}</Button>
+          <Button onPress={handleSave} disabled={!name.trim()}>
+            {t("zone.save")}
+          </Button>
         </Dialog.Actions>
       </Dialog>
     </Portal>
