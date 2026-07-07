@@ -8,8 +8,8 @@ import { useAppStore } from "../store/useAppStore";
 import { Zone } from "../db/database";
 import { useTranslation } from "react-i18next";
 
-const SVG_W = 300;
-const SVG_H = 600;
+export const SVG_W = 300;
+export const SVG_H = 600;
 
 type Props = {
   onZonePress: (zoneId: string) => void;

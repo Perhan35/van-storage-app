@@ -7,6 +7,7 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 import { ZoneWithCount, Zone } from "../db/database";
+import { SVG_W, SVG_H } from "./VanLayoutSVG";
 
 const HANDLE_SIZE = 24;
 const MIN_ZONE_SIZE_SVG = 30;
@@ -49,12 +50,16 @@ export function ZoneEditOverlay({
   }, [zone.geometry.x, zone.geometry.y, zone.geometry.w, zone.geometry.h]);
 
   const commitGeometry = (nx: number, ny: number, nw: number, nh: number) => {
+    const w = Math.min(Math.max(MIN_ZONE_SIZE_SVG, nw), SVG_W);
+    const h = Math.min(Math.max(MIN_ZONE_SIZE_SVG, nh), SVG_H);
+    const x = Math.min(Math.max(0, nx), SVG_W - w);
+    const y = Math.min(Math.max(0, ny), SVG_H - h);
     onGeometryChange(zone.id, {
       type: "rect",
-      x: Math.round(nx),
-      y: Math.round(ny),
-      w: Math.round(nw),
-      h: Math.round(nh),
+      x: Math.round(x),
+      y: Math.round(y),
+      w: Math.round(w),
+      h: Math.round(h),
     });
   };
 
@@ -68,8 +73,14 @@ export function ZoneEditOverlay({
     .onUpdate((e) => {
       const dx = e.translationX / scale;
       const dy = e.translationY / scale;
-      svgX.value = startX.value + dx;
-      svgY.value = startY.value + dy;
+      svgX.value = Math.min(
+        Math.max(0, startX.value + dx),
+        SVG_W - svgW.value
+      );
+      svgY.value = Math.min(
+        Math.max(0, startY.value + dy),
+        SVG_H - svgH.value
+      );
     })
     .onEnd(() => {
       runOnJS(commitGeometry)(
@@ -90,8 +101,16 @@ export function ZoneEditOverlay({
     .onUpdate((e) => {
       const dw = e.translationX / scale;
       const dh = e.translationY / scale;
-      svgW.value = Math.max(MIN_ZONE_SIZE_SVG, startW.value + dw);
-      svgH.value = Math.max(MIN_ZONE_SIZE_SVG, startH.value + dh);
+      const maxW = SVG_W - svgX.value;
+      const maxH = SVG_H - svgY.value;
+      svgW.value = Math.min(
+        Math.max(MIN_ZONE_SIZE_SVG, startW.value + dw),
+        maxW
+      );
+      svgH.value = Math.min(
+        Math.max(MIN_ZONE_SIZE_SVG, startH.value + dh),
+        maxH
+      );
     })
     .onEnd(() => {
       runOnJS(commitGeometry)(
@@ -114,10 +133,18 @@ export function ZoneEditOverlay({
     .onUpdate((e) => {
       const dx = e.translationX / scale;
       const dy = e.translationY / scale;
-      const newW = Math.max(MIN_ZONE_SIZE_SVG, startW.value - dx);
-      const newH = Math.max(MIN_ZONE_SIZE_SVG, startH.value - dy);
-      svgX.value = startX.value + (startW.value - newW);
-      svgY.value = startY.value + (startH.value - newH);
+      const anchorX = startX.value + startW.value;
+      const anchorY = startY.value + startH.value;
+      const newW = Math.min(
+        Math.max(MIN_ZONE_SIZE_SVG, startW.value - dx),
+        anchorX
+      );
+      const newH = Math.min(
+        Math.max(MIN_ZONE_SIZE_SVG, startH.value - dy),
+        anchorY
+      );
+      svgX.value = anchorX - newW;
+      svgY.value = anchorY - newH;
       svgW.value = newW;
       svgH.value = newH;
     })
