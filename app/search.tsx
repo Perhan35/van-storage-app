@@ -37,8 +37,6 @@ export default function SearchScreen() {
   const handleItemPress = (item: SearchResult) => {
     setHighlightedZoneId(item.zone_id);
     router.back();
-    // The highlight will auto-clear after a few seconds via the map screen
-    setTimeout(() => setHighlightedZoneId(null), 4000);
   };
 
   const emptyTextStyle = { color: palette.onSurfaceVariant, textAlign: "center" as const };

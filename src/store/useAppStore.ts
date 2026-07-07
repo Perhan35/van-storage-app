@@ -4,6 +4,8 @@ import { getPreference, setPreference } from "../db/preferences";
 
 export type ThemeMode = "auto" | "light" | "dark";
 
+let highlightTimer: ReturnType<typeof setTimeout> | null = null;
+
 type AppState = {
   zones: ZoneWithCount[];
   highlightedZoneId: string | null;
@@ -151,12 +153,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   searchItems: async (query) => {
     const db = await getDb();
+    const escapedQuery = query.replace(/[\\%_]/g, "\\$&");
     return db.getAllAsync<Item & { zone_name: string }>(
       `SELECT i.*, z.name as zone_name
        FROM items i JOIN zones z ON i.zone_id = z.id
-       WHERE i.name LIKE ?1 COLLATE NOCASE OR i.notes LIKE ?1 COLLATE NOCASE
+       WHERE i.name LIKE ?1 ESCAPE '\' COLLATE NOCASE OR i.notes LIKE ?1 ESCAPE '\' COLLATE NOCASE
        ORDER BY i.name COLLATE NOCASE`,
-      [`%${query}%`]
+      [`%${escapedQuery}%`]
     );
   },
 
@@ -179,7 +182,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     );
   },
 
-  setHighlightedZoneId: (zoneId) => set({ highlightedZoneId: zoneId }),
+  setHighlightedZoneId: (zoneId) => {
+    if (highlightTimer) {
+      clearTimeout(highlightTimer);
+      highlightTimer = null;
+    }
+    set({ highlightedZoneId: zoneId });
+    if (zoneId !== null) {
+      highlightTimer = setTimeout(() => {
+        highlightTimer = null;
+        set({ highlightedZoneId: null });
+      }, 4000);
+    }
+  },
 
   updateZone: async (zoneId, name, color, fillOpacity) => {
     const db = await getDb();

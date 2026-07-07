@@ -41,7 +41,6 @@ export default function OutOfVanScreen() {
   const handleLocate = (item: OutItem) => {
     setHighlightedZoneId(item.zone_id);
     router.replace("/");
-    setTimeout(() => setHighlightedZoneId(null), 4000);
   };
 
   return (
