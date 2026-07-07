@@ -1,37 +1,78 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { View, FlatList, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { Searchbar, List, Divider, Text } from "react-native-paper";
 import { useAppStore } from "../src/store/useAppStore";
+import { searchItems } from "../src/db/repository";
 import { Item } from "../src/db/database";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
 
 type SearchResult = Item & { zone_name: string };
 
+const SEARCH_DEBOUNCE_MS = 250;
+
 export default function SearchScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const { palette } = useAppTheme();
-  const searchItems = useAppStore((s) => s.searchItems);
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searched, setSearched] = useState(false);
 
+  // Debouncing collapses fast typing into one query instead of one per
+  // keystroke (fewer overlapping in-flight calls), and the sequence guard
+  // drops any response that's no longer the latest as the user keeps typing.
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchSeq = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    };
+  }, []);
+
+  const runSearch = useCallback(async (text: string) => {
+    const seq = ++searchSeq.current;
+    let r: SearchResult[];
+    try {
+      r = await searchItems(text);
+    } catch {
+      // expo-sqlite's web driver can occasionally fail a read with
+      // "Error finalizing statement" (an upstream worker issue, not
+      // something callers can prevent). One retry usually recovers it;
+      // if it doesn't, fail quietly to an empty result rather than
+      // leaving the screen stuck or throwing an unhandled rejection.
+      try {
+        r = await searchItems(text);
+      } catch (err) {
+        console.warn("Search query failed:", err);
+        r = [];
+      }
+    }
+    if (seq !== searchSeq.current) return;
+    setResults(r);
+    setSearched(true);
+  }, []);
+
   const handleSearch = useCallback(
-    async (text: string) => {
+    (text: string) => {
       setQuery(text);
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+
       if (text.trim().length === 0) {
+        searchSeq.current++;
         setResults([]);
         setSearched(false);
         return;
       }
-      const r = await searchItems(text.trim());
-      setResults(r);
-      setSearched(true);
+
+      debounceTimer.current = setTimeout(() => {
+        runSearch(text.trim());
+      }, SEARCH_DEBOUNCE_MS);
     },
-    [searchItems]
+    [runSearch]
   );
 
   const handleItemPress = (item: SearchResult) => {

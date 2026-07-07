@@ -3,6 +3,7 @@ import { View, FlatList, StyleSheet } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Divider, IconButton, List, Text } from "react-native-paper";
 import { useAppStore } from "../src/store/useAppStore";
+import { getOutOfVanItems } from "../src/db/repository";
 import { Item } from "../src/db/database";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
@@ -13,7 +14,6 @@ export default function OutOfVanScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const { palette } = useAppTheme();
-  const getOutOfVanItems = useAppStore((s) => s.getOutOfVanItems);
   const setItemOutOfVan = useAppStore((s) => s.setItemOutOfVan);
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
   const [items, setItems] = useState<OutItem[]>([]);

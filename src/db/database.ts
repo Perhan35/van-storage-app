@@ -14,6 +14,19 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
   return dbPromise;
 }
 
+// Serializes every query onto a single queue so calls from different
+// screens never overlap on the one shared connection/worker.
+let dbQueue: Promise<unknown> = Promise.resolve();
+
+export function withDb<T>(fn: (db: SQLite.SQLiteDatabase) => Promise<T>): Promise<T> {
+  const run = dbQueue.then(() => getDb().then(fn));
+  dbQueue = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
 async function openAndMigrate(): Promise<SQLite.SQLiteDatabase> {
   const db = await SQLite.openDatabaseAsync("van-storage.db");
   await db.execAsync("PRAGMA journal_mode = WAL;");

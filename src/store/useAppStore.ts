@@ -1,6 +1,7 @@
 import { create } from "zustand";
-import { getDb, Zone, Item, ZoneWithCount } from "../db/database";
+import { getDb, Zone, ZoneWithCount } from "../db/database";
 import { getPreference, setPreference } from "../db/preferences";
+import * as repo from "../db/repository";
 
 export type ThemeMode = "auto" | "light" | "dark";
 
@@ -17,14 +18,11 @@ type AppState = {
   init: () => Promise<void>;
   setThemeMode: (mode: ThemeMode) => Promise<void>;
   loadZones: () => Promise<void>;
-  getItemsForZone: (zoneId: string) => Promise<Item[]>;
   addItem: (name: string, zoneId: string, notes?: string) => Promise<void>;
   deleteItem: (itemId: string) => Promise<void>;
   updateItem: (itemId: string, name: string, notes: string) => Promise<void>;
   moveItem: (itemId: string, newZoneId: string) => Promise<void>;
-  searchItems: (query: string) => Promise<(Item & { zone_name: string })[]>;
   setItemOutOfVan: (itemId: string, outOfVan: boolean) => Promise<void>;
-  getOutOfVanItems: () => Promise<(Item & { zone_name: string })[]>;
   setHighlightedZoneId: (zoneId: string | null) => void;
   updateZone: (zoneId: string, name: string, color: string, fillOpacity: number) => Promise<void>;
   deleteZone: (zoneId: string) => Promise<void>;
@@ -36,22 +34,6 @@ type AppState = {
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-}
-
-function isValidGeometry(g: unknown): g is Zone["geometry"] {
-  if (typeof g !== "object" || g === null) return false;
-  const { type, x, y, w, h } = g as Record<string, unknown>;
-  return (
-    type === "rect" &&
-    typeof x === "number" &&
-    Number.isFinite(x) &&
-    typeof y === "number" &&
-    Number.isFinite(y) &&
-    typeof w === "number" &&
-    Number.isFinite(w) &&
-    typeof h === "number" &&
-    Number.isFinite(h)
-  );
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -84,102 +66,34 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   loadZones: async () => {
-    const db = await getDb();
-    const rows = await db.getAllAsync<ZoneWithCount & { geometry: string }>(
-      `SELECT z.*, COALESCE(c.cnt, 0) as item_count
-       FROM zones z
-       LEFT JOIN (SELECT zone_id, COUNT(*) as cnt FROM items GROUP BY zone_id) c
-       ON z.id = c.zone_id
-       ORDER BY z.sort_order`
-    );
-    const zones = rows.flatMap((r) => {
-      let geometry: unknown;
-      try {
-        geometry = JSON.parse(r.geometry as string);
-      } catch {
-        console.warn(`Skipping zone ${r.id}: invalid geometry JSON`);
-        return [];
-      }
-      if (!isValidGeometry(geometry)) {
-        console.warn(`Skipping zone ${r.id}: invalid geometry shape`);
-        return [];
-      }
-      return [{ ...r, geometry }];
-    });
+    const zones = await repo.listZonesWithCounts();
     set({ zones });
   },
 
-  getItemsForZone: async (zoneId) => {
-    const db = await getDb();
-    return db.getAllAsync<Item>(
-      "SELECT * FROM items WHERE zone_id = ? ORDER BY name COLLATE NOCASE",
-      [zoneId]
-    );
-  },
-
   addItem: async (name, zoneId, notes = "") => {
-    const db = await getDb();
     const id = generateId();
-    await db.runAsync(
-      "INSERT INTO items (id, name, zone_id, notes) VALUES (?, ?, ?, ?)",
-      [id, name, zoneId, notes]
-    );
+    await repo.insertItem(id, name, zoneId, notes);
     await get().loadZones();
   },
 
   deleteItem: async (itemId) => {
-    const db = await getDb();
-    await db.runAsync("DELETE FROM items WHERE id = ?", [itemId]);
+    await repo.deleteItem(itemId);
     await get().loadZones();
   },
 
   updateItem: async (itemId, name, notes) => {
-    const db = await getDb();
-    await db.runAsync(
-      "UPDATE items SET name = ?, notes = ?, updated_at = datetime('now') WHERE id = ?",
-      [name, notes, itemId]
-    );
+    await repo.updateItem(itemId, name, notes);
     await get().loadZones();
   },
 
   moveItem: async (itemId, newZoneId) => {
-    const db = await getDb();
-    await db.runAsync(
-      "UPDATE items SET zone_id = ?, updated_at = datetime('now') WHERE id = ?",
-      [newZoneId, itemId]
-    );
+    await repo.moveItem(itemId, newZoneId);
     await get().loadZones();
-  },
-
-  searchItems: async (query) => {
-    const db = await getDb();
-    const escapedQuery = query.replace(/[\\%_]/g, "\\$&");
-    return db.getAllAsync<Item & { zone_name: string }>(
-      `SELECT i.*, z.name as zone_name
-       FROM items i JOIN zones z ON i.zone_id = z.id
-       WHERE i.name LIKE ?1 ESCAPE '\' COLLATE NOCASE OR i.notes LIKE ?1 ESCAPE '\' COLLATE NOCASE
-       ORDER BY i.name COLLATE NOCASE`,
-      [`%${escapedQuery}%`]
-    );
   },
 
   setItemOutOfVan: async (itemId, outOfVan) => {
-    const db = await getDb();
-    await db.runAsync(
-      "UPDATE items SET out_of_van = ?, updated_at = datetime('now') WHERE id = ?",
-      [outOfVan ? 1 : 0, itemId]
-    );
+    await repo.setItemOutOfVan(itemId, outOfVan);
     await get().loadZones();
-  },
-
-  getOutOfVanItems: async () => {
-    const db = await getDb();
-    return db.getAllAsync<Item & { zone_name: string }>(
-      `SELECT i.*, z.name as zone_name
-       FROM items i JOIN zones z ON i.zone_id = z.id
-       WHERE i.out_of_van = 1
-       ORDER BY i.name COLLATE NOCASE`
-    );
   },
 
   setHighlightedZoneId: (zoneId) => {
@@ -197,35 +111,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   updateZone: async (zoneId, name, color, fillOpacity) => {
-    const db = await getDb();
-    await db.runAsync(
-      "UPDATE zones SET name = ?, color = ?, fill_opacity = ?, updated_at = datetime('now') WHERE id = ?",
-      [name, color, fillOpacity, zoneId]
-    );
+    await repo.updateZone(zoneId, name, color, fillOpacity);
     await get().loadZones();
   },
 
   deleteZone: async (zoneId) => {
-    const db = await getDb();
-    await db.runAsync("DELETE FROM zones WHERE id = ?", [zoneId]);
+    await repo.deleteZone(zoneId);
     await get().loadZones();
   },
 
   addZone: async (name, color, geometry) => {
-    const db = await getDb();
     const id = generateId();
-    const maxOrder = await db.getFirstAsync<{ m: number }>(
-      "SELECT COALESCE(MAX(sort_order), 0) as m FROM zones"
-    );
-    await db.runAsync(
-      "INSERT INTO zones (id, name, color, geometry, sort_order) VALUES (?, ?, ?, ?, ?)",
-      [id, name, color, JSON.stringify(geometry), (maxOrder?.m ?? 0) + 1]
-    );
+    await repo.insertZone(id, name, color, geometry);
     await get().loadZones();
   },
 
   splitZone: async (zoneId) => {
-    const db = await getDb();
     const zone = get().zones.find((z) => z.id === zoneId);
     if (!zone) return undefined;
 
@@ -250,28 +151,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const id1 = generateId();
     const id2 = generateId();
-    const maxOrder = await db.getFirstAsync<{ m: number }>(
-      "SELECT COALESCE(MAX(sort_order), 0) as m FROM zones"
-    );
-    const order = (maxOrder?.m ?? 0) + 1;
 
-    await db.runAsync(
-      "INSERT INTO zones (id, name, color, geometry, sort_order) VALUES (?, ?, ?, ?, ?)",
-      [id1, zone.name + suffix1, zone.color, JSON.stringify(geom1), order]
-    );
-    await db.runAsync(
-      "INSERT INTO zones (id, name, color, geometry, sort_order) VALUES (?, ?, ?, ?, ?)",
-      [id2, zone.name + suffix2, zone.color, JSON.stringify(geom2), order + 1]
-    );
-
-    // Move all items to the first new zone
-    await db.runAsync("UPDATE items SET zone_id = ? WHERE zone_id = ?", [
-      id1,
-      zoneId,
-    ]);
-
-    // Delete original zone
-    await db.runAsync("DELETE FROM zones WHERE id = ?", [zoneId]);
+    await repo.splitZoneInDb(zone, id1, id2, geom1, geom2, suffix1, suffix2);
 
     await get().loadZones();
     return id1;
@@ -280,11 +161,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleEditMode: () => set((s) => ({ editMode: !s.editMode })),
 
   updateZoneGeometry: async (zoneId, geometry) => {
-    const db = await getDb();
-    await db.runAsync(
-      "UPDATE zones SET geometry = ?, updated_at = datetime('now') WHERE id = ?",
-      [JSON.stringify(geometry), zoneId]
-    );
+    await repo.updateZoneGeometry(zoneId, geometry);
     await get().loadZones();
   },
 }));

@@ -13,6 +13,7 @@ import {
   Menu,
 } from "react-native-paper";
 import { useAppStore } from "../../src/store/useAppStore";
+import { listItemsForZone } from "../../src/db/repository";
 import { Item } from "../../src/db/database";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../../src/theme/useAppTheme";
@@ -26,7 +27,6 @@ export default function ZoneDetailScreen() {
   const { t } = useTranslation();
   const { palette } = useAppTheme();
   const zones = useAppStore((s) => s.zones);
-  const getItemsForZone = useAppStore((s) => s.getItemsForZone);
   const addItem = useAppStore((s) => s.addItem);
   const deleteItem = useAppStore((s) => s.deleteItem);
   const updateItem = useAppStore((s) => s.updateItem);
@@ -48,10 +48,10 @@ export default function ZoneDetailScreen() {
 
   const loadItems = useCallback(async () => {
     if (id) {
-      const data = await getItemsForZone(id);
+      const data = await listItemsForZone(id);
       setItems(data);
     }
-  }, [id, getItemsForZone]);
+  }, [id]);
 
   useEffect(() => {
     loadItems();

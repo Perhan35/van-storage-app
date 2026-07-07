@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { View, StyleSheet, Alert, ScrollView, Platform } from "react-native";
 import { Text, Button, Divider, SegmentedButtons } from "react-native-paper";
 import Constants from "expo-constants";
-import { getDb } from "../src/db/database";
+import { exportAllData, importAllData } from "../src/db/repository";
 import { getPreference } from "../src/db/preferences";
 import { useAppStore, ThemeMode } from "../src/store/useAppStore";
 import { useTranslation } from "react-i18next";
@@ -44,13 +44,7 @@ export default function SettingsScreen() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const db = await getDb();
-      const zones = await db.getAllAsync(
-        "SELECT * FROM zones ORDER BY sort_order"
-      );
-      const items = await db.getAllAsync("SELECT * FROM items ORDER BY name");
-      const preferences = await db.getAllAsync("SELECT * FROM preferences");
-      const data = JSON.stringify({ zones, items, preferences }, null, 2);
+      const data = JSON.stringify(await exportAllData(), null, 2);
 
       if (Platform.OS === "web") {
         downloadJsonWeb(data, "van-storage-backup.json");
@@ -166,49 +160,7 @@ export default function SettingsScreen() {
     const doImport = async () => {
       setImporting(true);
       try {
-        const db = await getDb();
-        await db.withTransactionAsync(async () => {
-          await db.runAsync("DELETE FROM items");
-          await db.runAsync("DELETE FROM zones");
-
-          for (const zone of rawZones) {
-            await db.runAsync(
-              "INSERT INTO zones (id, name, color, geometry, fill_opacity, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-              [
-                zone.id as string,
-                zone.name as string,
-                zone.color as string,
-                zone.geometry as string,
-                sanitizeFillOpacity(zone.fill_opacity),
-                (zone.sort_order as number) ?? 0,
-                (zone.created_at as string) ?? new Date().toISOString(),
-                (zone.updated_at as string) ?? new Date().toISOString(),
-              ]
-            );
-          }
-
-          for (const item of rawItems) {
-            await db.runAsync(
-              "INSERT INTO items (id, name, zone_id, notes, out_of_van, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-              [
-                item.id as string,
-                item.name as string,
-                item.zone_id as string,
-                (item.notes as string) ?? "",
-                (item.out_of_van as number) ?? 0,
-                (item.created_at as string) ?? new Date().toISOString(),
-                (item.updated_at as string) ?? new Date().toISOString(),
-              ]
-            );
-          }
-
-          for (const pref of rawPreferences) {
-            await db.runAsync(
-              "INSERT OR REPLACE INTO preferences (key, value) VALUES (?, ?)",
-              [pref.key as string, pref.value as string]
-            );
-          }
-        });
+        await importAllData(rawZones, rawItems, rawPreferences, sanitizeFillOpacity);
 
         await loadZones();
         const restoredThemeMode = await getPreference("themeMode");
