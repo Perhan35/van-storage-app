@@ -42,6 +42,7 @@ export default function ZoneDetailScreen() {
   const [menuVisible, setMenuVisible] = useState<string | null>(null);
   const [movingItem, setMovingItem] = useState<Item | null>(null);
   const [zoneEditVisible, setZoneEditVisible] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   const zone = zones.find((z) => z.id === id);
 
@@ -64,10 +65,15 @@ export default function ZoneDetailScreen() {
 
   const handleAddItem = async () => {
     const trimmed = newItemName.trim();
-    if (!trimmed || !id) return;
-    await addItem(trimmed, id);
-    setNewItemName("");
-    await loadItems();
+    if (!trimmed || !id || adding) return;
+    setAdding(true);
+    try {
+      await addItem(trimmed, id);
+      setNewItemName("");
+      await loadItems();
+    } finally {
+      setAdding(false);
+    }
   };
 
   const handleDeleteItem = (item: Item) => {
@@ -213,6 +219,7 @@ export default function ZoneDetailScreen() {
           size={32}
           iconColor={palette.primary}
           onPress={handleAddItem}
+          disabled={adding}
         />
       </View>
 
