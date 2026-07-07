@@ -3,6 +3,7 @@ import { View, StyleSheet, Alert, ScrollView, Platform } from "react-native";
 import { Text, Button, Divider, SegmentedButtons } from "react-native-paper";
 import Constants from "expo-constants";
 import { getDb } from "../src/db/database";
+import { getPreference } from "../src/db/preferences";
 import { useAppStore, ThemeMode } from "../src/store/useAppStore";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
@@ -48,7 +49,8 @@ export default function SettingsScreen() {
         "SELECT * FROM zones ORDER BY sort_order"
       );
       const items = await db.getAllAsync("SELECT * FROM items ORDER BY name");
-      const data = JSON.stringify({ zones, items }, null, 2);
+      const preferences = await db.getAllAsync("SELECT * FROM preferences");
+      const data = JSON.stringify({ zones, items, preferences }, null, 2);
 
       if (Platform.OS === "web") {
         downloadJsonWeb(data, "van-storage-backup.json");
@@ -73,7 +75,7 @@ export default function SettingsScreen() {
   };
 
   const importData = async (content: string) => {
-    let data: { zones?: unknown[]; items?: unknown[] };
+    let data: { zones?: unknown[]; items?: unknown[]; preferences?: unknown[] };
     try {
       data = JSON.parse(content);
     } catch {
@@ -134,7 +136,23 @@ export default function SettingsScreen() {
       typeof i.name === "string" &&
       typeof i.zone_id === "string";
 
-    if (!rawZones.every(isValidZone) || !rawItems.every(isValidItem)) {
+    const DEFAULT_FILL_OPACITY = 0.4;
+    const sanitizeFillOpacity = (v: unknown): number =>
+      typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1
+        ? v
+        : DEFAULT_FILL_OPACITY;
+
+    const rawPreferences = Array.isArray(data.preferences)
+      ? (data.preferences as Record<string, unknown>[])
+      : [];
+    const isValidPreference = (p: Record<string, unknown>) =>
+      typeof p.key === "string" && typeof p.value === "string";
+
+    if (
+      !rawZones.every(isValidZone) ||
+      !rawItems.every(isValidItem) ||
+      !rawPreferences.every(isValidPreference)
+    ) {
       Alert.alert(t("settings.error"), t("settings.import_invalid_format"));
       return;
     }
@@ -149,12 +167,13 @@ export default function SettingsScreen() {
 
           for (const zone of rawZones) {
             await db.runAsync(
-              "INSERT INTO zones (id, name, color, geometry, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+              "INSERT INTO zones (id, name, color, geometry, fill_opacity, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
               [
                 zone.id as string,
                 zone.name as string,
                 zone.color as string,
                 zone.geometry as string,
+                sanitizeFillOpacity(zone.fill_opacity),
                 (zone.sort_order as number) ?? 0,
                 (zone.created_at as string) ?? new Date().toISOString(),
                 (zone.updated_at as string) ?? new Date().toISOString(),
@@ -176,9 +195,20 @@ export default function SettingsScreen() {
               ]
             );
           }
+
+          for (const pref of rawPreferences) {
+            await db.runAsync(
+              "INSERT OR REPLACE INTO preferences (key, value) VALUES (?, ?)",
+              [pref.key as string, pref.value as string]
+            );
+          }
         });
 
         await loadZones();
+        const restoredThemeMode = await getPreference("themeMode");
+        if (restoredThemeMode === "auto" || restoredThemeMode === "light" || restoredThemeMode === "dark") {
+          await setThemeMode(restoredThemeMode);
+        }
         Alert.alert(t("settings.import_success_title"), t("settings.import_success"));
       } catch (e) {
         Alert.alert(t("settings.error"), t("settings.import_error") + " " + (e as Error).message);
