@@ -1,10 +1,6 @@
 import React, { useEffect } from "react";
-import { StyleSheet } from "react-native";
-import {
-  GestureDetector,
-  Gesture,
-  GestureHandlerRootView,
-} from "react-native-gesture-handler";
+import { View, StyleSheet } from "react-native";
+import { GestureDetector, Gesture } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -76,13 +72,13 @@ export function ZoomableContainer({ children, enabled = true }: Props) {
   }));
 
   return (
-    <GestureHandlerRootView style={styles.container}>
+    <View style={styles.container}>
       <GestureDetector gesture={composed}>
         <Animated.View style={[styles.inner, animatedStyle]}>
           {children}
         </Animated.View>
       </GestureDetector>
-    </GestureHandlerRootView>
+    </View>
   );
 }
 

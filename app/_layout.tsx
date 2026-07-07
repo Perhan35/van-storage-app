@@ -3,6 +3,7 @@ import { View, StyleSheet } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { PaperProvider, IconButton, Text, Button } from "react-native-paper";
 import { StatusBar } from "expo-status-bar";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../src/store/useAppStore";
 import { useAppTheme } from "../src/theme/useAppTheme";
@@ -82,41 +83,43 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <PaperProvider theme={isDark ? paperDarkTheme : paperLightTheme}>
-      <StatusBar style="light" />
-      <Stack
-        screenOptions={{
-          headerStyle: { backgroundColor: palette.headerBackground },
-          headerTintColor: palette.headerTint,
-          headerTitleStyle: { fontWeight: "bold" },
-          headerBackButtonDisplayMode: "minimal",
-          contentStyle: { backgroundColor: palette.background },
-        }}
-      >
-        <Stack.Screen
-          name="index"
-          options={{
-            title: t("nav.my_van"),
-            headerRight: () => <HeaderRight />,
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <PaperProvider theme={isDark ? paperDarkTheme : paperLightTheme}>
+        <StatusBar style="light" />
+        <Stack
+          screenOptions={{
+            headerStyle: { backgroundColor: palette.headerBackground },
+            headerTintColor: palette.headerTint,
+            headerTitleStyle: { fontWeight: "bold" },
+            headerBackButtonDisplayMode: "minimal",
+            contentStyle: { backgroundColor: palette.background },
           }}
-        />
-        <Stack.Screen
-          name="zone/[id]"
-          options={{ title: t("nav.zone") }}
-        />
-        <Stack.Screen
-          name="search"
-          options={{ title: t("nav.search") }}
-        />
-        <Stack.Screen
-          name="out-of-van"
-          options={{ title: t("nav.out_of_van") }}
-        />
-        <Stack.Screen
-          name="settings"
-          options={{ title: t("nav.settings") }}
-        />
-      </Stack>
-    </PaperProvider>
+        >
+          <Stack.Screen
+            name="index"
+            options={{
+              title: t("nav.my_van"),
+              headerRight: () => <HeaderRight />,
+            }}
+          />
+          <Stack.Screen
+            name="zone/[id]"
+            options={{ title: t("nav.zone") }}
+          />
+          <Stack.Screen
+            name="search"
+            options={{ title: t("nav.search") }}
+          />
+          <Stack.Screen
+            name="out-of-van"
+            options={{ title: t("nav.out_of_van") }}
+          />
+          <Stack.Screen
+            name="settings"
+            options={{ title: t("nav.settings") }}
+          />
+        </Stack>
+      </PaperProvider>
+    </GestureHandlerRootView>
   );
 }
