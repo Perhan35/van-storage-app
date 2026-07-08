@@ -5,13 +5,33 @@ import { VanOutline } from "./VanOutline";
 import { ZoneOverlay } from "./ZoneOverlay";
 import { ZoneEditOverlay } from "./ZoneEditOverlay";
 import { useAppStore } from "../store/useAppStore";
-import { Zone } from "../db/database";
+import { Zone, ZoneWithCount } from "../db/database";
 import { useTranslation } from "react-i18next";
-import { SVG_W, SVG_H } from "./vanLayoutConstants";
+import { SVG_W, SVG_H, ZONE_OVERFLOW_MARGIN } from "./vanLayoutConstants";
+
+// Padding (in SVG units) kept around the zones' bounding box when fitting
+// the default (non-edit) view to them.
+const ZONES_FIT_PADDING = 24;
 
 type Props = {
   onZonePress: (zoneId: string) => void;
 };
+
+function getZonesBoundingBox(zones: ZoneWithCount[]) {
+  if (zones.length === 0) return null;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const zone of zones) {
+    const { x, y, w, h } = zone.geometry;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x + w);
+    maxY = Math.max(maxY, y + h);
+  }
+  return { minX, minY, maxX, maxY };
+}
 
 export function VanLayoutSVG({ onZonePress }: Props) {
   const { t } = useTranslation();
@@ -30,14 +50,42 @@ export function VanLayoutSVG({ onZonePress }: Props) {
     setLayout({ width, height });
   }, []);
 
+  // Total canvas size includes the overflow margin around the van outline,
+  // so zones can be dragged/resized past the van's edges without being clipped.
+  const canvasW = SVG_W + ZONE_OVERFLOW_MARGIN * 2;
+  const canvasH = SVG_H + ZONE_OVERFLOW_MARGIN * 2;
+
+  // In edit mode, fit the whole canvas (van + overflow margin) so the user
+  // can see and reach every spot a zone could be dragged to. Otherwise, fit
+  // tightly to the zones themselves so the default view isn't mostly empty
+  // margin.
+  const zonesBBox = getZonesBoundingBox(zones);
+  let viewBoxMinX: number;
+  let viewBoxMinY: number;
+  let viewBoxW: number;
+  let viewBoxH: number;
+  if (editMode || !zonesBBox) {
+    viewBoxMinX = -ZONE_OVERFLOW_MARGIN;
+    viewBoxMinY = -ZONE_OVERFLOW_MARGIN;
+    viewBoxW = canvasW;
+    viewBoxH = canvasH;
+  } else {
+    viewBoxMinX = zonesBBox.minX - ZONES_FIT_PADDING;
+    viewBoxMinY = zonesBBox.minY - ZONES_FIT_PADDING;
+    viewBoxW = zonesBBox.maxX - zonesBBox.minX + ZONES_FIT_PADDING * 2;
+    viewBoxH = zonesBBox.maxY - zonesBBox.minY + ZONES_FIT_PADDING * 2;
+  }
+
   // Compute SVG -> screen mapping
   let svgScale = 1;
   let svgOffsetX = 0;
   let svgOffsetY = 0;
   if (layout) {
-    svgScale = Math.min(layout.width / SVG_W, layout.height / SVG_H);
-    svgOffsetX = (layout.width - SVG_W * svgScale) / 2;
-    svgOffsetY = (layout.height - SVG_H * svgScale) / 2;
+    svgScale = Math.min(layout.width / viewBoxW, layout.height / viewBoxH);
+    svgOffsetX =
+      (layout.width - viewBoxW * svgScale) / 2 - viewBoxMinX * svgScale;
+    svgOffsetY =
+      (layout.height - viewBoxH * svgScale) / 2 - viewBoxMinY * svgScale;
   }
 
   const handleGeometryChange = useCallback(
@@ -49,7 +97,10 @@ export function VanLayoutSVG({ onZonePress }: Props) {
 
   return (
     <View style={styles.container} onLayout={onLayout}>
-      <Svg viewBox={`0 0 ${SVG_W} ${SVG_H}`} style={{ flex: 1 }}>
+      <Svg
+        viewBox={`${viewBoxMinX} ${viewBoxMinY} ${viewBoxW} ${viewBoxH}`}
+        style={{ flex: 1 }}
+      >
         <VanOutline />
         <SvgText
           x={150}

@@ -7,7 +7,12 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 import { ZoneWithCount, Zone } from "../db/database";
-import { SVG_W, SVG_H } from "./vanLayoutConstants";
+import {
+  ZONE_MIN_X,
+  ZONE_MAX_X,
+  ZONE_MIN_Y,
+  ZONE_MAX_Y,
+} from "./vanLayoutConstants";
 
 const HANDLE_SIZE = 24;
 const MIN_ZONE_SIZE_SVG = 30;
@@ -50,10 +55,10 @@ export function ZoneEditOverlay({
   }, [zone.geometry.x, zone.geometry.y, zone.geometry.w, zone.geometry.h]);
 
   const commitGeometry = (nx: number, ny: number, nw: number, nh: number) => {
-    const w = Math.min(Math.max(MIN_ZONE_SIZE_SVG, nw), SVG_W);
-    const h = Math.min(Math.max(MIN_ZONE_SIZE_SVG, nh), SVG_H);
-    const x = Math.min(Math.max(0, nx), SVG_W - w);
-    const y = Math.min(Math.max(0, ny), SVG_H - h);
+    const w = Math.min(Math.max(MIN_ZONE_SIZE_SVG, nw), ZONE_MAX_X - ZONE_MIN_X);
+    const h = Math.min(Math.max(MIN_ZONE_SIZE_SVG, nh), ZONE_MAX_Y - ZONE_MIN_Y);
+    const x = Math.min(Math.max(ZONE_MIN_X, nx), ZONE_MAX_X - w);
+    const y = Math.min(Math.max(ZONE_MIN_Y, ny), ZONE_MAX_Y - h);
     onGeometryChange(zone.id, {
       type: "rect",
       x: Math.round(x),
@@ -74,12 +79,12 @@ export function ZoneEditOverlay({
       const dx = e.translationX / scale;
       const dy = e.translationY / scale;
       svgX.value = Math.min(
-        Math.max(0, startX.value + dx),
-        SVG_W - svgW.value
+        Math.max(ZONE_MIN_X, startX.value + dx),
+        ZONE_MAX_X - svgW.value
       );
       svgY.value = Math.min(
-        Math.max(0, startY.value + dy),
-        SVG_H - svgH.value
+        Math.max(ZONE_MIN_Y, startY.value + dy),
+        ZONE_MAX_Y - svgH.value
       );
     })
     .onEnd(() => {
@@ -101,8 +106,8 @@ export function ZoneEditOverlay({
     .onUpdate((e) => {
       const dw = e.translationX / scale;
       const dh = e.translationY / scale;
-      const maxW = SVG_W - svgX.value;
-      const maxH = SVG_H - svgY.value;
+      const maxW = ZONE_MAX_X - svgX.value;
+      const maxH = ZONE_MAX_Y - svgY.value;
       svgW.value = Math.min(
         Math.max(MIN_ZONE_SIZE_SVG, startW.value + dw),
         maxW
@@ -137,11 +142,11 @@ export function ZoneEditOverlay({
       const anchorY = startY.value + startH.value;
       const newW = Math.min(
         Math.max(MIN_ZONE_SIZE_SVG, startW.value - dx),
-        anchorX
+        anchorX - ZONE_MIN_X
       );
       const newH = Math.min(
         Math.max(MIN_ZONE_SIZE_SVG, startH.value - dy),
-        anchorY
+        anchorY - ZONE_MIN_Y
       );
       svgX.value = anchorX - newW;
       svgY.value = anchorY - newH;
