@@ -3,6 +3,7 @@ import { StyleSheet } from "react-native";
 import { Dialog, Portal, TextInput, Button } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 import { Item } from "../../db/database";
+import { useTextSelectionFix } from "../../hooks/useTextSelectionFix";
 
 type Props = {
   item: Item | null;
@@ -14,11 +15,15 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
   const { t } = useTranslation();
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
+  const nameSelection = useTextSelectionFix();
+  const notesSelection = useTextSelectionFix();
 
   useEffect(() => {
     if (item) {
       setName(item.name);
       setNotes(item.notes);
+      nameSelection.resetSelection();
+      notesSelection.resetSelection();
     }
   }, [item]);
 
@@ -38,6 +43,8 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
             label={t("zone.name")}
             value={name}
             onChangeText={setName}
+            selection={nameSelection.selection}
+            onSelectionChange={nameSelection.onSelectionChange}
             style={styles.input}
           />
           <TextInput
@@ -45,6 +52,8 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
             label={t("zone.notes")}
             value={notes}
             onChangeText={setNotes}
+            selection={notesSelection.selection}
+            onSelectionChange={notesSelection.onSelectionChange}
             multiline
             style={styles.input}
           />

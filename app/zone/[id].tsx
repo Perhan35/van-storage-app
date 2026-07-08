@@ -19,6 +19,7 @@ import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../../src/theme/useAppTheme";
 import { EditItemDialog } from "../../src/components/dialogs/EditItemDialog";
 import { EditZoneDialog } from "../../src/components/dialogs/EditZoneDialog";
+import { useTextSelectionFix } from "../../src/hooks/useTextSelectionFix";
 
 export default function ZoneDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -43,6 +44,7 @@ export default function ZoneDetailScreen() {
   const [movingItem, setMovingItem] = useState<Item | null>(null);
   const [zoneEditVisible, setZoneEditVisible] = useState(false);
   const [adding, setAdding] = useState(false);
+  const newItemNameSelection = useTextSelectionFix();
 
   const zone = zones.find((z) => z.id === id);
 
@@ -70,6 +72,7 @@ export default function ZoneDetailScreen() {
     try {
       await addItem(trimmed, id);
       setNewItemName("");
+      newItemNameSelection.resetSelection();
       await loadItems();
     } finally {
       setAdding(false);
@@ -210,6 +213,8 @@ export default function ZoneDetailScreen() {
           placeholder={t("zone.add_item")}
           value={newItemName}
           onChangeText={setNewItemName}
+          selection={newItemNameSelection.selection}
+          onSelectionChange={newItemNameSelection.onSelectionChange}
           onSubmitEditing={handleAddItem}
           style={styles.addInput}
           dense

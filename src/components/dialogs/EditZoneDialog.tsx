@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { Zone } from "../../db/database";
 import { DEFAULT_FILL_OPACITY } from "../../db/repository";
 import { ColorPickerField } from "../ColorPickerField";
+import { useTextSelectionFix } from "../../hooks/useTextSelectionFix";
 
 type Props = {
   zone: Zone | null;
@@ -26,12 +27,14 @@ export function EditZoneDialog({
   const [name, setName] = useState("");
   const [color, setColor] = useState("#4A90D9");
   const [fillOpacity, setFillOpacity] = useState(DEFAULT_FILL_OPACITY);
+  const nameSelection = useTextSelectionFix();
 
   useEffect(() => {
     if (zone && visible) {
       setName(zone.name);
       setColor(zone.color);
       setFillOpacity(zone.fill_opacity ?? DEFAULT_FILL_OPACITY);
+      nameSelection.resetSelection();
     }
   }, [zone, visible]);
 
@@ -51,6 +54,8 @@ export function EditZoneDialog({
             label={t("zone.name")}
             value={name}
             onChangeText={setName}
+            selection={nameSelection.selection}
+            onSelectionChange={nameSelection.onSelectionChange}
             style={styles.input}
           />
           <ColorPickerField

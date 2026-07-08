@@ -3,6 +3,7 @@ import { StyleSheet } from "react-native";
 import { Dialog, Portal, TextInput, Button } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 import { ColorPickerField } from "../ColorPickerField";
+import { useTextSelectionFix } from "../../hooks/useTextSelectionFix";
 
 const DEFAULT_COLOR = "#4A90D9";
 
@@ -16,11 +17,13 @@ export function CreateZoneDialog({ visible, onCancel, onCreate }: Props) {
   const { t } = useTranslation();
   const [name, setName] = useState("");
   const [color, setColor] = useState(DEFAULT_COLOR);
+  const nameSelection = useTextSelectionFix();
 
   useEffect(() => {
     if (visible) {
       setName("");
       setColor(DEFAULT_COLOR);
+      nameSelection.resetSelection();
     }
   }, [visible]);
 
@@ -40,6 +43,8 @@ export function CreateZoneDialog({ visible, onCancel, onCreate }: Props) {
             label={t("map.zone_name")}
             value={name}
             onChangeText={setName}
+            selection={nameSelection.selection}
+            onSelectionChange={nameSelection.onSelectionChange}
             style={styles.input}
           />
           <ColorPickerField
