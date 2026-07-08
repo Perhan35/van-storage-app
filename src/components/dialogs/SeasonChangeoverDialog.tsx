@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, StyleSheet, ScrollView } from "react-native";
+import { View, StyleSheet, ScrollView, useWindowDimensions } from "react-native";
 import { Dialog, Portal, Text, List, Button, IconButton, Divider } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 import { listSeasonalItems } from "../../db/repository";
@@ -19,6 +19,7 @@ type Props = {
 export function SeasonChangeoverDialog({ visible, season, onDismiss }: Props) {
   const { t } = useTranslation();
   const { palette } = useAppTheme();
+  const { height: windowHeight } = useWindowDimensions();
   const setItemOutOfVan = useAppStore((s) => s.setItemOutOfVan);
   const [items, setItems] = useState<SeasonalItem[]>([]);
 
@@ -77,8 +78,8 @@ export function SeasonChangeoverDialog({ visible, season, onDismiss }: Props) {
     <Portal>
       <Dialog visible={visible} onDismiss={onDismiss}>
         <Dialog.Title>{t("changeover.title", { season: t(`season.${season}`) })}</Dialog.Title>
-        <Dialog.ScrollArea style={styles.scrollArea}>
-          <ScrollView>
+        <Dialog.ScrollArea style={{ maxHeight: Math.min(420, windowHeight * 0.6) }}>
+          <ScrollView style={styles.scrollView}>
             {toRemove.length === 0 && toAdd.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <Text variant="bodyMedium" style={{ color: palette.onSurfaceVariant }}>
@@ -117,7 +118,7 @@ export function SeasonChangeoverDialog({ visible, season, onDismiss }: Props) {
 }
 
 const styles = StyleSheet.create({
-  scrollArea: { maxHeight: 420 },
+  scrollView: { flexGrow: 0 },
   sectionTitle: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 },
   emptyContainer: { padding: 32, alignItems: "center" },
 });
