@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, FlatList, StyleSheet } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
-import { Divider, IconButton, List, Text } from "react-native-paper";
+import { Button, Divider, IconButton, List, Menu, Text } from "react-native-paper";
 import { useAppStore } from "../src/store/useAppStore";
 import { getOutOfVanItems } from "../src/db/repository";
 import { Item } from "../src/db/database";
@@ -14,9 +14,12 @@ export default function OutOfVanScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const { palette } = useAppTheme();
+  const zones = useAppStore((s) => s.zones);
   const setItemOutOfVan = useAppStore((s) => s.setItemOutOfVan);
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
   const [items, setItems] = useState<OutItem[]>([]);
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [menuVisible, setMenuVisible] = useState(false);
 
   const load = useCallback(async () => {
     const data = await getOutOfVanItems();
@@ -32,6 +35,43 @@ export default function OutOfVanScreen() {
       load();
     }, [load])
   );
+
+  const zoneColorById = useMemo(() => {
+    const map = new Map<string, string>();
+    zones.forEach((z) => map.set(z.id, z.color));
+    return map;
+  }, [zones]);
+
+  const availableZones = useMemo(() => {
+    const seen = new Map<string, { id: string; name: string; color: string }>();
+    items.forEach((item) => {
+      if (!seen.has(item.zone_id)) {
+        seen.set(item.zone_id, {
+          id: item.zone_id,
+          name: item.zone_name,
+          color: zoneColorById.get(item.zone_id) ?? palette.primary,
+        });
+      }
+    });
+    return Array.from(seen.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+    );
+  }, [items, zoneColorById, palette.primary]);
+
+  useEffect(() => {
+    if (
+      selectedZoneId !== null &&
+      !availableZones.some((z) => z.id === selectedZoneId)
+    ) {
+      setSelectedZoneId(null);
+    }
+  }, [availableZones, selectedZoneId]);
+
+  const visibleItems = selectedZoneId
+    ? items.filter((item) => item.zone_id === selectedZoneId)
+    : items;
+
+  const selectedZone = availableZones.find((z) => z.id === selectedZoneId);
 
   const handlePutBack = async (item: OutItem) => {
     await setItemOutOfVan(item.id, false);
@@ -55,8 +95,56 @@ export default function OutOfVanScreen() {
           )}
         </Text>
       </View>
+      {availableZones.length > 0 && (
+        <View style={styles.filterRow}>
+          <Menu
+            visible={menuVisible}
+            onDismiss={() => setMenuVisible(false)}
+            anchor={
+              <Button
+                mode="outlined"
+                icon="chevron-down"
+                contentStyle={styles.filterButtonContent}
+                style={[
+                  styles.filterButton,
+                  {
+                    backgroundColor: selectedZone
+                      ? selectedZone.color + "33"
+                      : palette.surfaceVariant,
+                  },
+                ]}
+                onPress={() => setMenuVisible(true)}
+              >
+                {selectedZone ? selectedZone.name : t("out.all_zones")}
+              </Button>
+            }
+          >
+            <Menu.Item
+              title={t("out.all_zones")}
+              trailingIcon={selectedZoneId === null ? "check" : undefined}
+              onPress={() => {
+                setSelectedZoneId(null);
+                setMenuVisible(false);
+              }}
+            />
+            <Divider />
+            {availableZones.map((zone) => (
+              <Menu.Item
+                key={zone.id}
+                title={zone.name}
+                style={{ backgroundColor: zone.color + "33" }}
+                trailingIcon={selectedZoneId === zone.id ? "check" : undefined}
+                onPress={() => {
+                  setSelectedZoneId(zone.id);
+                  setMenuVisible(false);
+                }}
+              />
+            ))}
+          </Menu>
+        </View>
+      )}
       <FlatList
-        data={items}
+        data={visibleItems}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <List.Item
@@ -92,4 +180,7 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   header: { padding: 16 },
   emptyContainer: { padding: 32, alignItems: "center" },
+  filterRow: { paddingHorizontal: 16, paddingTop: 12, alignItems: "flex-start" },
+  filterButton: { borderRadius: 8 },
+  filterButtonContent: { flexDirection: "row-reverse" },
 });

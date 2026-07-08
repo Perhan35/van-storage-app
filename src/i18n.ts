@@ -56,6 +56,7 @@ const resources = {
       "out.currently_out_one": "{{count}} item currently out of the van",
       "out.currently_out_other": "{{count}} items currently out of the van",
       "out.empty": "No item is currently out of the van",
+      "out.all_zones": "All zones",
 
       "search.placeholder": "Search an item...",
       "search.out_of_van": "Out of van",
@@ -143,6 +144,7 @@ const resources = {
       "out.currently_out_one": "{{count}} objet actuellement sorti du van",
       "out.currently_out_other": "{{count}} objets actuellement sortis du van",
       "out.empty": "Aucun objet n'est actuellement sorti du van",
+      "out.all_zones": "Toutes les zones",
 
       "search.placeholder": "Chercher un objet...",
       "search.out_of_van": "Sorti du van",
