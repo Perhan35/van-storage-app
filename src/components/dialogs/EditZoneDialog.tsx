@@ -70,6 +70,14 @@ export function EditZoneDialog({
               onValueChange={setFillOpacity}
               minimumTrackTintColor={color}
             />
+            <View style={styles.opacityHintRow}>
+              <Text variant="labelSmall" style={styles.opacityHint}>
+                {t("zone.opacity_hint_light")}
+              </Text>
+              <Text variant="labelSmall" style={styles.opacityHint}>
+                {t("zone.opacity_hint_solid")}
+              </Text>
+            </View>
           </View>
         </Dialog.Content>
         <Dialog.Actions>
@@ -90,4 +98,10 @@ const styles = StyleSheet.create({
   input: { marginBottom: 12 },
   opacityRow: { marginTop: 16 },
   opacityLabel: { color: "#666", marginBottom: 6 },
+  opacityHintRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: -4,
+  },
+  opacityHint: { color: "#999" },
 });
