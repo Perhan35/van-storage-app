@@ -17,8 +17,8 @@ The app was built specifically for a **Citroën Jumpy / T&T Vans Aventourer** co
 
 ## Tech stack
 
-- [Expo](https://expo.dev/) SDK 54 (React Native 0.81, React 19, New Architecture enabled)
-- [Expo Router](https://docs.expo.dev/router/introduction/) v6 — file-based routing under [app/](app/)
+- [Expo](https://expo.dev/) SDK 57 (React Native 0.86, React 19, New Architecture enabled)
+- [Expo Router](https://docs.expo.dev/router/introduction/) v57 — file-based routing under [app/](app/)
 - [expo-sqlite](https://docs.expo.dev/versions/latest/sdk/sqlite/) — local database
 - [React Native Paper](https://callstack.github.io/react-native-paper/) — Material 3 UI components
 - [react-native-svg](https://github.com/software-mansion/react-native-svg) — van layout rendering

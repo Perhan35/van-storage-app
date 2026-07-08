@@ -17,7 +17,7 @@ This document lists every command you need to install, run, test and deploy **My
 
 Required for every workflow:
 
-- **Node.js** ≥ 20 (LTS recommended) — `node --version`
+- **Node.js** ≥ 20.19.4 (or ≥ 22.13 / ≥ 24.3) — required by React Native 0.86; `node --version`
 - **npm** ≥ 10 — `npm --version` (or `pnpm` / `yarn`, but the lockfile is `package-lock.json`)
 - **Git** — `git --version`
 
