@@ -1,30 +1,47 @@
 import React, { useEffect } from "react";
-import { View, StyleSheet } from "react-native";
+import { View, StyleSheet, Text, Pressable, useColorScheme } from "react-native";
 import { Stack, useRouter } from "expo-router";
-import { PaperProvider, IconButton, Text, Button } from "react-native-paper";
+import { PaperProvider, IconButton } from "react-native-paper";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../src/store/useAppStore";
 import { useAppTheme } from "../src/theme/useAppTheme";
-import { paperDarkTheme, paperLightTheme, lightPalette } from "../src/theme/palette";
-import "../src/i18n";
+import { paperDarkTheme, paperLightTheme, darkPalette, lightPalette } from "../src/theme/palette";
+import i18n from "../src/i18n";
 
+// Rendered *instead of* RootLayout when a render error escapes, so it must not
+// depend on PaperProvider or the store — use plain RN components, the default
+// i18n instance (initializes on import), and the OS color scheme directly.
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
+  const scheme = useColorScheme();
+  const palette = scheme === "dark" ? darkPalette : lightPalette;
   return (
-    <View style={[styles.errorContainer, { backgroundColor: lightPalette.background }]}>
-      <Text style={{ color: lightPalette.onSurface, textAlign: "center", marginBottom: 16 }}>
+    <View style={[styles.errorContainer, { backgroundColor: palette.background }]}>
+      <Text style={[styles.errorMessage, { color: palette.onSurface }]}>
+        {i18n.t("startup.error")}
+      </Text>
+      <Text style={[styles.errorDetail, { color: palette.onSurfaceVariant }]}>
         {error.message}
       </Text>
-      <Button mode="contained" onPress={retry}>
-        Retry
-      </Button>
+      <Pressable
+        onPress={retry}
+        style={[styles.retryButton, { backgroundColor: palette.primary }]}
+      >
+        <Text style={[styles.retryLabel, { color: palette.headerTint }]}>
+          {i18n.t("startup.retry")}
+        </Text>
+      </Pressable>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   errorContainer: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24 },
+  errorMessage: { textAlign: "center", fontSize: 16, fontWeight: "600", marginBottom: 8 },
+  errorDetail: { textAlign: "center", fontSize: 13, marginBottom: 20 },
+  retryButton: { paddingHorizontal: 24, paddingVertical: 12, borderRadius: 8 },
+  retryLabel: { fontSize: 15, fontWeight: "600" },
 });
 
 function HeaderRight() {

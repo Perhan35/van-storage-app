@@ -1,6 +1,14 @@
 import { withDb, Zone, Item, ZoneWithCount } from "./database";
 
-function isValidGeometry(g: unknown): g is Zone["geometry"] {
+export const DEFAULT_FILL_OPACITY = 0.4;
+
+export function sanitizeFillOpacity(v: unknown): number {
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1
+    ? v
+    : DEFAULT_FILL_OPACITY;
+}
+
+export function isValidGeometry(g: unknown): g is Zone["geometry"] {
   if (typeof g !== "object" || g === null) return false;
   const { type, x, y, w, h } = g as Record<string, unknown>;
   return (
@@ -101,7 +109,7 @@ export function searchItems(
     return db.getAllAsync<Item & { zone_name: string }>(
       `SELECT i.*, z.name as zone_name
        FROM items i JOIN zones z ON i.zone_id = z.id
-       WHERE i.name LIKE ?1 ESCAPE '\' COLLATE NOCASE OR i.notes LIKE ?1 ESCAPE '\' COLLATE NOCASE
+       WHERE i.name LIKE ?1 ESCAPE '\\' COLLATE NOCASE OR i.notes LIKE ?1 ESCAPE '\\' COLLATE NOCASE
        ORDER BY i.name COLLATE NOCASE`,
       [`%${escapedQuery}%`]
     );
@@ -155,14 +163,16 @@ export function insertZone(
   geometry: Zone["geometry"]
 ): Promise<void> {
   return withDb(async (db) => {
-    const maxOrder = await db.getFirstAsync<{ m: number }>(
-      "SELECT COALESCE(MAX(sort_order), 0) as m FROM zones"
-    );
-    const order = (maxOrder?.m ?? 0) + 1;
-    await db.runAsync(
-      "INSERT INTO zones (id, name, color, geometry, sort_order) VALUES (?, ?, ?, ?, ?)",
-      [id, name, color, JSON.stringify(geometry), order]
-    );
+    await db.withTransactionAsync(async () => {
+      const maxOrder = await db.getFirstAsync<{ m: number }>(
+        "SELECT COALESCE(MAX(sort_order), 0) as m FROM zones"
+      );
+      const order = (maxOrder?.m ?? 0) + 1;
+      await db.runAsync(
+        "INSERT INTO zones (id, name, color, geometry, sort_order) VALUES (?, ?, ?, ?, ?)",
+        [id, name, color, JSON.stringify(geometry), order]
+      );
+    });
   });
 }
 
@@ -176,28 +186,30 @@ export function splitZoneInDb(
   suffix2: string
 ): Promise<void> {
   return withDb(async (db) => {
-    const maxOrder = await db.getFirstAsync<{ m: number }>(
-      "SELECT COALESCE(MAX(sort_order), 0) as m FROM zones"
-    );
-    const order = (maxOrder?.m ?? 0) + 1;
+    await db.withTransactionAsync(async () => {
+      const maxOrder = await db.getFirstAsync<{ m: number }>(
+        "SELECT COALESCE(MAX(sort_order), 0) as m FROM zones"
+      );
+      const order = (maxOrder?.m ?? 0) + 1;
 
-    await db.runAsync(
-      "INSERT INTO zones (id, name, color, geometry, sort_order) VALUES (?, ?, ?, ?, ?)",
-      [id1, zone.name + suffix1, zone.color, JSON.stringify(geom1), order]
-    );
-    await db.runAsync(
-      "INSERT INTO zones (id, name, color, geometry, sort_order) VALUES (?, ?, ?, ?, ?)",
-      [id2, zone.name + suffix2, zone.color, JSON.stringify(geom2), order + 1]
-    );
+      await db.runAsync(
+        "INSERT INTO zones (id, name, color, geometry, sort_order) VALUES (?, ?, ?, ?, ?)",
+        [id1, zone.name + suffix1, zone.color, JSON.stringify(geom1), order]
+      );
+      await db.runAsync(
+        "INSERT INTO zones (id, name, color, geometry, sort_order) VALUES (?, ?, ?, ?, ?)",
+        [id2, zone.name + suffix2, zone.color, JSON.stringify(geom2), order + 1]
+      );
 
-    // Move all items to the first new zone
-    await db.runAsync("UPDATE items SET zone_id = ? WHERE zone_id = ?", [
-      id1,
-      zone.id,
-    ]);
+      // Move all items to the first new zone
+      await db.runAsync("UPDATE items SET zone_id = ? WHERE zone_id = ?", [
+        id1,
+        zone.id,
+      ]);
 
-    // Delete original zone
-    await db.runAsync("DELETE FROM zones WHERE id = ?", [zone.id]);
+      // Delete original zone
+      await db.runAsync("DELETE FROM zones WHERE id = ?", [zone.id]);
+    });
   });
 }
 
@@ -231,8 +243,7 @@ export function exportAllData(): Promise<ExportedData> {
 export function importAllData(
   rawZones: Record<string, unknown>[],
   rawItems: Record<string, unknown>[],
-  rawPreferences: Record<string, unknown>[],
-  sanitizeFillOpacity: (v: unknown) => number
+  rawPreferences: Record<string, unknown>[]
 ): Promise<void> {
   return withDb(async (db) => {
     await db.withTransactionAsync(async () => {

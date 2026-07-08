@@ -20,6 +20,7 @@ export default function SearchScreen() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searched, setSearched] = useState(false);
+  const [searchError, setSearchError] = useState(false);
 
   // Debouncing collapses fast typing into one query instead of one per
   // keystroke (fewer overlapping in-flight calls), and the sequence guard
@@ -38,22 +39,18 @@ export default function SearchScreen() {
     let r: SearchResult[];
     try {
       r = await searchItems(text);
-    } catch {
-      // expo-sqlite's web driver can occasionally fail a read with
-      // "Error finalizing statement" (an upstream worker issue, not
-      // something callers can prevent). One retry usually recovers it;
-      // if it doesn't, fail quietly to an empty result rather than
-      // leaving the screen stuck or throwing an unhandled rejection.
-      try {
-        r = await searchItems(text);
-      } catch (err) {
-        console.warn("Search query failed:", err);
-        r = [];
-      }
+    } catch (err) {
+      if (seq !== searchSeq.current) return;
+      console.warn("Search query failed:", err);
+      setResults([]);
+      setSearched(false);
+      setSearchError(true);
+      return;
     }
     if (seq !== searchSeq.current) return;
     setResults(r);
     setSearched(true);
+    setSearchError(false);
   }, []);
 
   const handleSearch = useCallback(
@@ -65,6 +62,7 @@ export default function SearchScreen() {
         searchSeq.current++;
         setResults([]);
         setSearched(false);
+        setSearchError(false);
         return;
       }
 
@@ -114,7 +112,13 @@ export default function SearchScreen() {
         )}
         ItemSeparatorComponent={Divider}
         ListEmptyComponent={
-          searched ? (
+          searchError ? (
+            <View style={styles.emptyContainer}>
+              <Text variant="bodyMedium" style={[emptyTextStyle, { color: palette.danger }]}>
+                {t("search.error")}
+              </Text>
+            </View>
+          ) : searched ? (
             <View style={styles.emptyContainer}>
               <Text variant="bodyMedium" style={emptyTextStyle}>
                 {t("search.no_results", { query })}

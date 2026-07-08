@@ -30,17 +30,21 @@ function clampTranslate(
 export function ZoomableContainer({ children, enabled = true }: Props) {
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
-  const translateX = useSharedValue(0);
-  const translateY = useSharedValue(0);
-  const savedTranslateX = useSharedValue(0);
-  const savedTranslateY = useSharedValue(0);
   const gesturesEnabled = useSharedValue(enabled);
   const containerWidth = useSharedValue(1);
   const containerHeight = useSharedValue(1);
 
-  // Anchor point (relative to container center) that the pinch should keep fixed on screen.
-  const focalX = useSharedValue(0);
-  const focalY = useSharedValue(0);
+  // Committed translation. Each gesture contributes its own *delta* on top of
+  // this base and folds that delta back into the base when it ends, so pinch
+  // and pan never write the same shared value and can run simultaneously
+  // without fighting over it.
+  const baseTranslateX = useSharedValue(0);
+  const baseTranslateY = useSharedValue(0);
+  const panX = useSharedValue(0);
+  const panY = useSharedValue(0);
+  const pinchX = useSharedValue(0);
+  const pinchY = useSharedValue(0);
+
   // The content-space point (pre-scale) under the focal anchor at pinch start.
   const focalContentX = useSharedValue(0);
   const focalContentY = useSharedValue(0);
@@ -58,10 +62,16 @@ export function ZoomableContainer({ children, enabled = true }: Props) {
     .onStart((e) => {
       if (!gesturesEnabled.value) return;
       savedScale.value = scale.value;
-      focalX.value = e.focalX - containerWidth.value / 2;
-      focalY.value = e.focalY - containerHeight.value / 2;
-      focalContentX.value = (focalX.value - translateX.value) / scale.value;
-      focalContentY.value = (focalY.value - translateY.value) / scale.value;
+      // Focal anchor relative to the container center at pinch start, and the
+      // content point currently under it (accounting for any in-flight pan).
+      const fx = e.focalX - containerWidth.value / 2;
+      const fy = e.focalY - containerHeight.value / 2;
+      const tx = baseTranslateX.value + panX.value;
+      const ty = baseTranslateY.value + panY.value;
+      focalContentX.value = (fx - tx) / scale.value;
+      focalContentY.value = (fy - ty) / scale.value;
+      pinchX.value = 0;
+      pinchY.value = 0;
     })
     .onUpdate((e) => {
       if (!gesturesEnabled.value) return;
@@ -70,16 +80,27 @@ export function ZoomableContainer({ children, enabled = true }: Props) {
         MAX_SCALE
       );
       scale.value = next;
-      translateX.value = clampTranslate(
-        focalX.value - focalContentX.value * next,
+      // Keep the focal content point pinned under the live centroid. Subtract
+      // pan's contribution so the two gestures don't double-count centroid
+      // movement (pan already tracks it via e.translation).
+      const fx = e.focalX - containerWidth.value / 2;
+      const fy = e.focalY - containerHeight.value / 2;
+      pinchX.value = fx - focalContentX.value * next - baseTranslateX.value - panX.value;
+      pinchY.value = fy - focalContentY.value * next - baseTranslateY.value - panY.value;
+    })
+    .onEnd(() => {
+      baseTranslateX.value = clampTranslate(
+        baseTranslateX.value + pinchX.value,
         containerWidth.value,
-        next
+        scale.value
       );
-      translateY.value = clampTranslate(
-        focalY.value - focalContentY.value * next,
+      baseTranslateY.value = clampTranslate(
+        baseTranslateY.value + pinchY.value,
         containerHeight.value,
-        next
+        scale.value
       );
+      pinchX.value = 0;
+      pinchY.value = 0;
     });
 
   const pan = Gesture.Pan()
@@ -87,21 +108,27 @@ export function ZoomableContainer({ children, enabled = true }: Props) {
     .minDistance(10)
     .onStart(() => {
       if (!gesturesEnabled.value) return;
-      savedTranslateX.value = translateX.value;
-      savedTranslateY.value = translateY.value;
+      panX.value = 0;
+      panY.value = 0;
     })
     .onUpdate((e) => {
       if (!gesturesEnabled.value) return;
-      translateX.value = clampTranslate(
-        savedTranslateX.value + e.translationX,
+      panX.value = e.translationX;
+      panY.value = e.translationY;
+    })
+    .onEnd(() => {
+      baseTranslateX.value = clampTranslate(
+        baseTranslateX.value + panX.value,
         containerWidth.value,
         scale.value
       );
-      translateY.value = clampTranslate(
-        savedTranslateY.value + e.translationY,
+      baseTranslateY.value = clampTranslate(
+        baseTranslateY.value + panY.value,
         containerHeight.value,
         scale.value
       );
+      panX.value = 0;
+      panY.value = 0;
     });
 
   const doubleTap = Gesture.Tap()
@@ -109,19 +136,35 @@ export function ZoomableContainer({ children, enabled = true }: Props) {
     .onEnd(() => {
       if (!gesturesEnabled.value) return;
       scale.value = 1;
-      translateX.value = 0;
-      translateY.value = 0;
+      baseTranslateX.value = 0;
+      baseTranslateY.value = 0;
+      panX.value = 0;
+      panY.value = 0;
+      pinchX.value = 0;
+      pinchY.value = 0;
     });
 
   const composed = Gesture.Simultaneous(pinch, pan, doubleTap);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { scale: scale.value },
-    ],
-  }));
+  const animatedStyle = useAnimatedStyle(() => {
+    const tx = clampTranslate(
+      baseTranslateX.value + panX.value + pinchX.value,
+      containerWidth.value,
+      scale.value
+    );
+    const ty = clampTranslate(
+      baseTranslateY.value + panY.value + pinchY.value,
+      containerHeight.value,
+      scale.value
+    );
+    return {
+      transform: [
+        { translateX: tx },
+        { translateY: ty },
+        { scale: scale.value },
+      ],
+    };
+  });
 
   return (
     <View style={styles.container} onLayout={onLayout}>

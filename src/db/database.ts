@@ -16,6 +16,14 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
 
 // Serializes every query onto a single queue so calls from different
 // screens never overlap on the one shared connection/worker.
+//
+// INVARIANT: a `withDb` callback must NEVER call `withDb` again (directly or
+// through a repository/preferences helper that wraps `withDb`). The inner call
+// would enqueue behind the outer one, which cannot resolve until the inner one
+// does — a permanent deadlock. Keep every repository function single-level:
+// perform its own reads/writes on the `db` it is handed, and never invoke
+// another `withDb`-wrapped function from inside. Use `db.withTransactionAsync`
+// for atomicity within a single callback.
 let dbQueue: Promise<unknown> = Promise.resolve();
 
 export function withDb<T>(fn: (db: SQLite.SQLiteDatabase) => Promise<T>): Promise<T> {

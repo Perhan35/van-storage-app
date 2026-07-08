@@ -9,6 +9,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { ItemCountBadge } from "./ItemCountBadge";
 import { ZoneWithCount } from "../db/database";
+import { DEFAULT_FILL_OPACITY } from "../db/repository";
 import { getReadableTextColor } from "../utils/color";
 import { useAppTheme } from "../theme/useAppTheme";
 import { lightPalette } from "../theme/palette";
@@ -128,7 +129,7 @@ export function ZoneOverlay({ zone, highlighted }: Props) {
   const cx = x + w / 2;
   const cy = y + h / 2;
 
-  const restOpacity = zone.fill_opacity ?? 0.4;
+  const restOpacity = zone.fill_opacity ?? DEFAULT_FILL_OPACITY;
   const opacity = useSharedValue(restOpacity);
 
   useEffect(() => {
@@ -229,7 +230,7 @@ export function ZoneOverlay({ zone, highlighted }: Props) {
         x={textCx}
         y={firstBaselineY}
         textAnchor="middle"
-        fill={isDark ? "#FFFFFF" : getReadableTextColor(zone.color, zone.fill_opacity ?? 0.4, lightPalette.background)}
+        fill={isDark ? "#FFFFFF" : getReadableTextColor(zone.color, zone.fill_opacity ?? DEFAULT_FILL_OPACITY, lightPalette.background)}
         fontSize={fontSize}
         fontWeight="600"
         transform={

@@ -13,33 +13,33 @@ _Re-review: 2026-07-08 — commits `3a35e00..9ad6a88` plus working tree. Fix sta
 | [C1](#c1-malformed-backup-import-can-permanently-brick-the-app) | 🔴 Critical | Malformed backup import can permanently brick the app | ✅ Fixed (`548fe10`) |
 | [C2](#c2-userinterfacestyle-light-silently-disables-auto-dark-mode) | 🔴 Critical | `userInterfaceStyle: "light"` silently disables auto dark mode | ✅ Fixed (`86c1fd4`) |
 | [H1](#h1-init-failure-leaves-a-permanent-blank-screen-no-error-boundary) | 🟠 High | `init()` failure leaves a permanent blank screen; no error boundary | ✅ Fixed (`7f141dc`) — see [N5](#n5-errorboundary-ignores-theme-and-language-and-renders-paper-components-without-a-provider) |
-| [H2](#h2-splitzone-is-not-transactional) | 🟠 High | `splitZone` is not transactional | ❌ **Not fixed** — see [N2](#n2-splitzoneindb-is-still-not-transactional-h2-not-actually-fixed) |
+| [H2](#h2-splitzone-is-not-transactional) | 🟠 High | `splitZone` is not transactional | ✅ Fixed via [N2](#n2-splitzoneindb-is-still-not-transactional-h2-not-actually-fixed) — now wrapped in `withTransactionAsync` |
 | [H3](#h3-import-drops-fill_opacity-preferences-not-included-in-backup) | 🟠 High | Import drops `fill_opacity`; preferences not included in backup | ✅ Fixed (`361cbfc`) |
 | [H4](#h4-getdb-race-can-run-migrations-twice) | 🟠 High | `getDb()` race can run migrations twice | ✅ Fixed (`786db7b`) |
 | [M1](#m1-zones-can-be-dragged-off-canvas-and-become-unrecoverable) | 🟡 Medium | Zones can be dragged off-canvas and become unrecoverable | ✅ Fixed (`ba27412`) |
 | [M2](#m2-empty-names-can-be-saved-for-items-and-zones) | 🟡 Medium | Empty names can be saved for items and zones | ✅ Fixed (`cf10ad4`) |
 | [M3](#m3-stale-highlight-timer-clears-a-newer-highlight) | 🟡 Medium | Stale highlight timer clears a newer highlight | ✅ Fixed (`ba297bb`) |
-| [M4](#m4-sql-like-wildcards-not-escaped-in-search) | 🟡 Medium | SQL LIKE wildcards not escaped in search | ⚠️ **Regressed** — the fix broke search entirely, see [N1](#n1-search-is-completely-broken-escape-clause-collapses-to-an-empty-string) |
+| [M4](#m4-sql-like-wildcards-not-escaped-in-search) | 🟡 Medium | SQL LIKE wildcards not escaped in search | ✅ Fixed via [N1](#n1-search-is-completely-broken-escape-clause-collapses-to-an-empty-string) — ESCAPE clause corrected, search works again |
 | [M5](#m5-gesturehandlerrootview-not-at-the-app-root) | 🟡 Medium | `GestureHandlerRootView` not at the app root | ✅ Fixed (`f46cb0a`) |
 | [M6](#m6-routerback-after-search-breaks-under-deep-linking) | 🟡 Medium | `router.back()` after search breaks under deep linking | ✅ Fixed (`ad66059`) — `dismissTo` verified: falls back to push when the target isn't in the stack |
 | [L1](#l1-export-success-alert-uses-the-import-title) | 🟢 Low | Export-success alert uses the "Import" title | ✅ Fixed (`e82ba68`) |
 | [L2](#l2-double-tap-on-add-item-inserts-duplicates) | 🟢 Low | Double-tap on "add item" inserts duplicates | ✅ Fixed (`390dc2a`) |
 | [L3](#l3-import-shows-raw-sqlite-error-when-an-items-zone-is-missing) | 🟢 Low | Import shows raw SQLite error when an item's zone is missing | ✅ Fixed (`136805b`) |
-| [L4](#l4-zoom-doesnt-pinch-around-the-focal-point-pan-has-no-bounds) | 🟢 Low | Zoom doesn't pinch around the focal point; pan has no bounds | ⚠️ Partially fixed (`9ad6a88`) — focal zoom + bounds added, but pinch now fights pan, see [N4](#n4-pinch-and-pan-gestures-fight-over-translation-during-two-finger-gestures) |
+| [L4](#l4-zoom-doesnt-pinch-around-the-focal-point-pan-has-no-bounds) | 🟢 Low | Zoom doesn't pinch around the focal point; pan has no bounds | ✅ Fixed via [N4](#n4-pinch-and-pan-gestures-fight-over-translation-during-two-finger-gestures) — pinch/pan conflict resolved (device check pending) |
 | [L5](#l5-zustand-store-doubles-as-a-data-access-layer) | 🟢 Low | Zustand store doubles as a data-access layer | ✅ Fixed (uncommitted `src/db/repository.ts` refactor) |
 
 ## Summary — new findings (2026-07-08 re-review)
 
-| ID | Priority | Finding | Area |
-|----|----------|---------|------|
-| [N1](#n1-search-is-completely-broken-escape-clause-collapses-to-an-empty-string) | 🔴 Critical | Search is completely broken: ESCAPE clause collapses to an empty string | Search / Regression |
-| [N2](#n2-splitzoneindb-is-still-not-transactional-h2-not-actually-fixed) | 🟠 High | `splitZoneInDb` is still not transactional (H2 not actually fixed) | Data integrity |
-| [N3](#n3-search-retry-and-swallow-masks-deterministic-failures-as-no-results) | 🟠 High | Search retry-and-swallow masks deterministic failures as "no results" | Error handling |
-| [N4](#n4-pinch-and-pan-gestures-fight-over-translation-during-two-finger-gestures) | 🟡 Medium | Pinch and pan gestures fight over translation during two-finger gestures | UX / Gestures |
-| [N5](#n5-errorboundary-ignores-theme-and-language-and-renders-paper-components-without-a-provider) | 🟡 Medium | ErrorBoundary ignores theme and language, and renders Paper components without a provider | Startup / UX |
-| [N6](#n6-isvalidgeometry-is-duplicated-verbatim-in-settingstsx-and-repositoryts) | 🟢 Low | `isValidGeometry` is duplicated verbatim in settings.tsx and repository.ts | Reuse |
-| [N7](#n7-fill-opacity-sanitization-lives-in-the-ui-layer-and-is-passed-as-a-callback) | 🟢 Low | Fill-opacity sanitization lives in the UI layer and is passed as a callback | Architecture |
-| [N8](#n8-withdb-globally-serializes-all-db-access-and-is-a-nested-call-deadlock-footgun) | 🟢 Low | `withDb` globally serializes all DB access and is a nested-call deadlock footgun | Concurrency / Design |
+| ID | Priority | Finding | Area | Status |
+|----|----------|---------|------|--------|
+| [N1](#n1-search-is-completely-broken-escape-clause-collapses-to-an-empty-string) | 🔴 Critical | Search is completely broken: ESCAPE clause collapses to an empty string | Search / Regression | ✅ Fixed |
+| [N2](#n2-splitzoneindb-is-still-not-transactional-h2-not-actually-fixed) | 🟠 High | `splitZoneInDb` is still not transactional (H2 not actually fixed) | Data integrity | ✅ Fixed |
+| [N3](#n3-search-retry-and-swallow-masks-deterministic-failures-as-no-results) | 🟠 High | Search retry-and-swallow masks deterministic failures as "no results" | Error handling | ✅ Fixed |
+| [N4](#n4-pinch-and-pan-gestures-fight-over-translation-during-two-finger-gestures) | 🟡 Medium | Pinch and pan gestures fight over translation during two-finger gestures | UX / Gestures | ✅ Fixed (device check pending) |
+| [N5](#n5-errorboundary-ignores-theme-and-language-and-renders-paper-components-without-a-provider) | 🟡 Medium | ErrorBoundary ignores theme and language, and renders Paper components without a provider | Startup / UX | ✅ Fixed |
+| [N6](#n6-isvalidgeometry-is-duplicated-verbatim-in-settingstsx-and-repositoryts) | 🟢 Low | `isValidGeometry` is duplicated verbatim in settings.tsx and repository.ts | Reuse | ✅ Fixed |
+| [N7](#n7-fill-opacity-sanitization-lives-in-the-ui-layer-and-is-passed-as-a-callback) | 🟢 Low | Fill-opacity sanitization lives in the UI layer and is passed as a callback | Architecture | ✅ Fixed |
+| [N8](#n8-withdb-globally-serializes-all-db-access-and-is-a-nested-call-deadlock-footgun) | 🟢 Low | `withDb` globally serializes all DB access and is a nested-call deadlock footgun | Concurrency / Design | ⚠️ Made safe (queue kept) |
 
 ## Compatibility & release notes (v1.2.0 → next)
 
@@ -48,7 +48,7 @@ _Re-review: 2026-07-08 — commits `3a35e00..9ad6a88` plus working tree. Fix sta
 - **Import validation is stricter (intentional).** Backup files with malformed zone geometry or items referencing missing zones are now rejected with a clear message instead of importing corrupt data (or failing with a raw SQLite error). Tell users: a backup that "worked" before but was actually corrupt will now be refused.
 - **Visible behavior change:** with `userInterfaceStyle: "automatic"`, users whose device is in dark mode will see the app switch to the dark theme after updating (theme setting defaults to "Auto"). They can force Light in Settings → Appearance.
 - **A new native build is required** (EAS/dev build): `app.json` `userInterfaceStyle` and the `expo-sqlite` patch bump (55.0.15 → 55.0.17) are native-level changes; an OTA/JS-only update is not sufficient.
-- **Do not ship the current working tree:** search is fully broken ([N1](#n1-search-is-completely-broken-escape-clause-collapses-to-an-empty-string)) — fix before release.
+- **Search regression is fixed:** the broken `ESCAPE` clause ([N1](#n1-search-is-completely-broken-escape-clause-collapses-to-an-empty-string)) that made every search return "No item found" has been corrected. Confirm search on a device before release; the N4 gesture rework also still wants an on-device pinch/pan check.
 
 ---
 
@@ -57,6 +57,8 @@ _Re-review: 2026-07-08 — commits `3a35e00..9ad6a88` plus working tree. Fix sta
 ## 🔴 Critical
 
 ### N1. Search is completely broken: ESCAPE clause collapses to an empty string
+
+**Status: ✅ Fixed** — the template literal now writes `ESCAPE '\\'`, so the SQL text is literally `ESCAPE '\'`. Verified empirically: the string contains a single backslash and `SELECT 'a%b' LIKE '%\%%' ESCAPE '\'` executes in sqlite3. The retry/swallow that masked it was removed (see N3).
 
 **File:** [src/db/repository.ts](../src/db/repository.ts#L104) (`searchItems`); masked by [app/search.tsx](../app/search.tsx#L41)
 
@@ -74,6 +76,8 @@ The M4 fix added `ESCAPE '\'` to the LIKE clauses — but inside a JavaScript **
 
 ### N2. `splitZoneInDb` is still not transactional (H2 not actually fixed)
 
+**Status: ✅ Fixed** — `splitZoneInDb`'s five statements now run inside a single `db.withTransactionAsync`. `insertZone`'s MAX+INSERT pair was wrapped too. Typecheck passes.
+
 **File:** [src/db/repository.ts](../src/db/repository.ts#L169)
 
 Original finding H2 asked for the split-zone sequence to run inside `db.withTransactionAsync`. The refactor moved the five statements from the store into `repository.splitZoneInDb`, but they still execute as bare sequential `runAsync` calls — only `importAllData` (line 238) got a transaction. The `withDb` queue serializes calls from *other* screens but provides **no atomicity**: a crash or error midway still leaves duplicated zones, unmoved items, or a half-deleted original zone. H2's failure scenario is unchanged.
@@ -83,6 +87,8 @@ Original finding H2 asked for the split-zone sequence to run inside `db.withTran
 > In `src/db/repository.ts`, wrap the body of `splitZoneInDb` (the `SELECT MAX(sort_order)` read, the two zone INSERTs, the items UPDATE, and the original-zone DELETE) in a single `db.withTransactionAsync(async () => { ... })` block, exactly like `importAllData` in the same file. Keep the function signature and the `withDb` wrapper unchanged; let errors propagate. While there, do the same for `insertZone` (its MAX+INSERT pair is currently two separate statements). Verify with `npx tsc --noEmit` and a manual smoke test: split a zone with items and confirm two new zones appear, items land in the first, and the original is gone.
 
 ### N3. Search retry-and-swallow masks deterministic failures as "no results"
+
+**Status: ✅ Fixed** — the retry and the misleading web-driver comment are gone. `runSearch` now has a single try/catch that, on error, warns, clears results, and sets a new `searchError` state; the screen renders a distinct `search.error` message (added in `en`/`fr`) instead of the no-results text. The debounce and `searchSeq` stale-guard are unchanged.
 
 **File:** [app/search.tsx](../app/search.tsx#L41-L52) (`runSearch`)
 
@@ -98,6 +104,8 @@ Original finding H2 asked for the split-zone sequence to run inside `db.withTran
 
 ### N4. Pinch and pan gestures fight over translation during two-finger gestures
 
+**Status: ✅ Fixed (needs on-device confirmation)** — reworked to a base + per-gesture-delta model: `baseTranslateX/Y` hold the committed translation; pan writes `panX/Y`, pinch writes `pinchX/Y` (focal correction, subtracting pan's contribution so centroid movement isn't double-counted). `useAnimatedStyle` composes `base + panDelta + pinchDelta` and each gesture folds its delta into the base (clamped) in `onEnd`. All math stays in worklets. Typecheck passes; the pinch-around-corner / pinch-while-dragging feel should still be confirmed on a device/simulator.
+
 **File:** [src/components/ZoomableContainer.tsx](../src/components/ZoomableContainer.tsx#L73)
 
 The L4 fix made `pinch.onUpdate` write `translateX/translateY` (focal-point math). But the composed gesture is `Gesture.Simultaneous(pinch, pan, doubleTap)`, and Pan tracks the centroid of all touches with `minPointers(1)` as a floor — so during a two-finger pinch whose centroid drifts more than 10px, **both** handlers write the same shared values each frame with different formulas (pan: `savedTranslate + e.translation`; pinch: focal-preserving value). The last writer per frame wins, the formulas don't converge, and the content jitters and loses the focal anchor. Before the change, pinch wrote only `scale`, so there was no conflict.
@@ -107,6 +115,8 @@ The L4 fix made `pinch.onUpdate` write `translateX/translateY` (focal-point math
 > In `src/components/ZoomableContainer.tsx` (react-native-gesture-handler v2 + Reanimated v4, worklets), the pinch and pan gestures — composed with `Gesture.Simultaneous` — both write `translateX/translateY` during a two-finger pinch, fighting each frame. Fix by giving each gesture its own contribution instead of both owning the total: keep base shared values (`baseTranslateX/Y`, `baseScale`) plus per-gesture deltas — pinch computes scale and its focal-correction translate delta relative to *its own* start; pan computes its translation delta relative to *its* start; `useAnimatedStyle` composes `base + panDelta + pinchDelta` (and each gesture folds its delta into the base in `onEnd`, resetting the delta to zero). Apply the existing `clampTranslate` to the composed total inside the animated style or in each `onUpdate` using the composed value. Alternative acceptable approach: keep single ownership by making pan the only translate writer and having pinch expose its focal correction as a separate pair of shared values composed in the style. Keep MIN/MAX scale clamps, the `enabled` gating, and the double-tap reset. All math stays in worklets — no `runOnJS` in `onUpdate`. Verify with `npx tsc --noEmit` and on a device/simulator: pinch around a corner (content under fingers stays put, no jitter), pinch while dragging both fingers (smooth follow), one-finger pan still works, double-tap resets.
 
 ### N5. ErrorBoundary ignores theme and language, and renders Paper components without a provider
+
+**Status: ✅ Fixed** — the `ErrorBoundary` now uses plain RN `View`/`Text`/`Pressable` (no Paper, so no provider dependency), picks `darkPalette`/`lightPalette` via `useColorScheme()`, and pulls strings from the default `i18n` instance (`startup.error` + `startup.retry`). Typecheck passes.
 
 **File:** [app/_layout.tsx](../app/_layout.tsx#L15-L27)
 
@@ -122,6 +132,8 @@ The new root `ErrorBoundary` hardcodes `lightPalette` (white screen for dark-mod
 
 ### N6. `isValidGeometry` is duplicated verbatim in settings.tsx and repository.ts
 
+**Status: ✅ Fixed** — `isValidGeometry` is now exported from `repository.ts` (keeping its type-guard signature) and imported by `settings.tsx`; the duplicate is deleted. Typecheck passes.
+
 **Files:** [app/settings.tsx](../app/settings.tsx#L96), [src/db/repository.ts](../src/db/repository.ts#L3)
 
 The same rect-geometry validator was pasted byte-for-byte into both files by the C1 fix. When the geometry shape evolves, the two copies will drift: import validation and read-time validation would disagree, so data could pass one gate and be silently dropped by the other.
@@ -132,6 +144,8 @@ The same rect-geometry validator was pasted byte-for-byte into both files by the
 
 ### N7. Fill-opacity sanitization lives in the UI layer and is passed as a callback
 
+**Status: ✅ Fixed** — `DEFAULT_FILL_OPACITY` and `sanitizeFillOpacity` moved to `repository.ts` and are exported; `importAllData` no longer takes a callback and calls the local function. The `0.4` fallbacks in `EditZoneDialog.tsx` and `ZoneOverlay.tsx` now use the constant (DDL default left as-is). The post-import theme block is replaced by a new `reloadThemeMode()` store action (in-memory only, no DB write), reused by `init()` so the union check lives once. Typecheck passes.
+
 **Files:** [app/settings.tsx](../app/settings.tsx#L133-L166), [src/db/repository.ts](../src/db/repository.ts#L235)
 
 `sanitizeFillOpacity` and `DEFAULT_FILL_OPACITY` are defined in the settings screen and injected into `repository.importAllData` as a function parameter — so the data-integrity rule lives in the UI while the INSERT lives in the repository, and any future caller must re-supply the callback or write unvalidated data. The 0.4 default is also independently hardcoded in `schema.ts`, `EditZoneDialog.tsx`, and `ZoneOverlay.tsx`. Related duplication: after import, settings re-reads and re-validates `themeMode` with the same literal-union check `useAppStore.init` already performs, then rewrites the identical value to the DB.
@@ -141,6 +155,8 @@ The same rect-geometry validator was pasted byte-for-byte into both files by the
 > Consolidate fill-opacity handling in this Expo app: 1) Move `DEFAULT_FILL_OPACITY = 0.4` and `sanitizeFillOpacity` into `src/db/repository.ts`, export both, and remove the `sanitizeFillOpacity` parameter from `importAllData` (call the local function directly). 2) Replace the hardcoded `0.4` fallbacks in `src/components/dialogs/EditZoneDialog.tsx` and `src/components/ZoneOverlay.tsx` with the imported constant (leave the SQL DDL default in `schema.ts` as-is, but add the constant reference in a comment is NOT needed — just leave DDL alone). 3) In `app/settings.tsx`, replace the post-import `getPreference("themeMode")` + literal-union check + `setThemeMode` block with a new store action `reloadThemeMode()` in `src/store/useAppStore.ts` that reads the preference and updates only in-memory state (no DB write — the imported row is already in the DB); reuse it from `init()` so the union check exists once. Verify with `npx tsc --noEmit` and an export→import round trip preserving opacity and theme.
 
 ### N8. `withDb` globally serializes all DB access and is a nested-call deadlock footgun
+
+**Status: ⚠️ Made safe; queue retained pending a web smoke test.** Removing the queue is the preferred outcome but is conditioned on a web run (`expo start --web`, exercise search-while-navigating + import) to confirm no worker errors — not doable in this environment. So the queue stays and a documented invariant was added: a `withDb` callback must never call `withDb` (deadlock), and repository functions must remain single-level. Revisit removal once the web test can be run now that N1's malformed SQL is fixed.
 
 **File:** [src/db/database.ts](../src/db/database.ts#L15-L26)
 

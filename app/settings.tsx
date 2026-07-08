@@ -2,8 +2,7 @@ import React, { useState } from "react";
 import { View, StyleSheet, Alert, ScrollView, Platform } from "react-native";
 import { Text, Button, Divider, SegmentedButtons } from "react-native-paper";
 import Constants from "expo-constants";
-import { exportAllData, importAllData } from "../src/db/repository";
-import { getPreference } from "../src/db/preferences";
+import { exportAllData, importAllData, isValidGeometry } from "../src/db/repository";
 import { useAppStore, ThemeMode } from "../src/store/useAppStore";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
@@ -38,6 +37,7 @@ export default function SettingsScreen() {
   const loadZones = useAppStore((s) => s.loadZones);
   const themeMode = useAppStore((s) => s.themeMode);
   const setThemeMode = useAppStore((s) => s.setThemeMode);
+  const reloadThemeMode = useAppStore((s) => s.reloadThemeMode);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
 
@@ -93,22 +93,6 @@ export default function SettingsScreen() {
     const rawZones = data.zones as Record<string, unknown>[];
     const rawItems = data.items as Record<string, unknown>[];
 
-    const isValidGeometry = (g: unknown): boolean => {
-      if (typeof g !== "object" || g === null) return false;
-      const { type, x, y, w, h } = g as Record<string, unknown>;
-      return (
-        type === "rect" &&
-        typeof x === "number" &&
-        Number.isFinite(x) &&
-        typeof y === "number" &&
-        Number.isFinite(y) &&
-        typeof w === "number" &&
-        Number.isFinite(w) &&
-        typeof h === "number" &&
-        Number.isFinite(h)
-      );
-    };
-
     const isValidZone = (z: Record<string, unknown>) => {
       if (
         typeof z.id !== "string" ||
@@ -129,12 +113,6 @@ export default function SettingsScreen() {
       typeof i.id === "string" &&
       typeof i.name === "string" &&
       typeof i.zone_id === "string";
-
-    const DEFAULT_FILL_OPACITY = 0.4;
-    const sanitizeFillOpacity = (v: unknown): number =>
-      typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1
-        ? v
-        : DEFAULT_FILL_OPACITY;
 
     const rawPreferences = Array.isArray(data.preferences)
       ? (data.preferences as Record<string, unknown>[])
@@ -160,13 +138,10 @@ export default function SettingsScreen() {
     const doImport = async () => {
       setImporting(true);
       try {
-        await importAllData(rawZones, rawItems, rawPreferences, sanitizeFillOpacity);
+        await importAllData(rawZones, rawItems, rawPreferences);
 
         await loadZones();
-        const restoredThemeMode = await getPreference("themeMode");
-        if (restoredThemeMode === "auto" || restoredThemeMode === "light" || restoredThemeMode === "dark") {
-          await setThemeMode(restoredThemeMode);
-        }
+        await reloadThemeMode();
         Alert.alert(t("settings.import_success_title"), t("settings.import_success"));
       } catch (e) {
         Alert.alert(t("settings.error"), t("settings.import_error") + " " + (e as Error).message);

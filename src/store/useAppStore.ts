@@ -17,6 +17,7 @@ type AppState = {
 
   init: () => Promise<void>;
   setThemeMode: (mode: ThemeMode) => Promise<void>;
+  reloadThemeMode: () => Promise<void>;
   loadZones: () => Promise<void>;
   addItem: (name: string, zoneId: string, notes?: string) => Promise<void>;
   deleteItem: (itemId: string) => Promise<void>;
@@ -49,10 +50,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ initError: null });
     try {
       await getDb();
-      const storedMode = await getPreference("themeMode");
-      if (storedMode === "auto" || storedMode === "light" || storedMode === "dark") {
-        set({ themeMode: storedMode });
-      }
+      await get().reloadThemeMode();
       await get().loadZones();
       set({ initialized: true });
     } catch (err) {
@@ -63,6 +61,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   setThemeMode: async (mode) => {
     set({ themeMode: mode });
     await setPreference("themeMode", mode);
+  },
+
+  // Reads the persisted themeMode into in-memory state without writing back
+  // to the DB. Used on startup and after an import (whose row is already in
+  // the DB) so the UI reflects the stored/restored theme.
+  reloadThemeMode: async () => {
+    const storedMode = await getPreference("themeMode");
+    if (storedMode === "auto" || storedMode === "light" || storedMode === "dark") {
+      set({ themeMode: storedMode });
+    }
   },
 
   loadZones: async () => {

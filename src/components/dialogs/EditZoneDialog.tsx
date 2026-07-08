@@ -4,6 +4,7 @@ import { Dialog, Portal, TextInput, Button, Text } from "react-native-paper";
 import Slider from "@react-native-community/slider";
 import { useTranslation } from "react-i18next";
 import { Zone } from "../../db/database";
+import { DEFAULT_FILL_OPACITY } from "../../db/repository";
 import { ColorPickerField } from "../ColorPickerField";
 
 type Props = {
@@ -24,13 +25,13 @@ export function EditZoneDialog({
   const { t } = useTranslation();
   const [name, setName] = useState("");
   const [color, setColor] = useState("#4A90D9");
-  const [fillOpacity, setFillOpacity] = useState(0.4);
+  const [fillOpacity, setFillOpacity] = useState(DEFAULT_FILL_OPACITY);
 
   useEffect(() => {
     if (zone && visible) {
       setName(zone.name);
       setColor(zone.color);
-      setFillOpacity(zone.fill_opacity ?? 0.4);
+      setFillOpacity(zone.fill_opacity ?? DEFAULT_FILL_OPACITY);
     }
   }, [zone, visible]);
 
