@@ -1,5 +1,6 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { View, FlatList, StyleSheet, Alert, ScrollView } from "react-native";
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import { View, FlatList, StyleSheet, Alert, ScrollView, Animated } from "react-native";
+import { Swipeable } from "react-native-gesture-handler";
 import { useLocalSearchParams, useRouter, useNavigation } from "expo-router";
 import {
   Text,
@@ -47,6 +48,7 @@ export default function ZoneDetailScreen() {
   const [zoneEditVisible, setZoneEditVisible] = useState(false);
   const [adding, setAdding] = useState(false);
   const newItemNameSelection = useTextSelectionFix();
+  const swipeableRefs = useRef<Map<string, Swipeable>>(new Map());
 
   const zone = zones.find((z) => z.id === id);
 
@@ -111,6 +113,7 @@ export default function ZoneDetailScreen() {
 
   const handleToggleOutOfVan = async (item: Item) => {
     setMenuVisible(null);
+    swipeableRefs.current.get(item.id)?.close();
     await setItemOutOfVan(item.id, !item.out_of_van);
     await loadItems();
   };
@@ -236,6 +239,39 @@ export default function ZoneDetailScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         renderItem={({ item }) => (
+          <Swipeable
+            ref={(ref) => {
+              if (ref) swipeableRefs.current.set(item.id, ref);
+              else swipeableRefs.current.delete(item.id);
+            }}
+            overshootRight={false}
+            renderRightActions={(_progress, drag) => (
+              <Animated.View
+                style={[
+                  styles.swipeAction,
+                  {
+                    backgroundColor: palette.danger,
+                    transform: [
+                      {
+                        translateX: drag.interpolate({
+                          inputRange: [-100, 0],
+                          outputRange: [0, 100],
+                          extrapolate: "clamp",
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
+                <IconButton
+                  icon={item.out_of_van ? "tray-arrow-down" : "exit-to-app"}
+                  iconColor="#fff"
+                  size={26}
+                  onPress={() => handleToggleOutOfVan(item)}
+                />
+              </Animated.View>
+            )}
+          >
           <List.Item
             title={item.name}
             description={item.notes || undefined}
@@ -305,6 +341,7 @@ export default function ZoneDetailScreen() {
               </Menu>
             )}
           />
+          </Swipeable>
         )}
         ItemSeparatorComponent={Divider}
         ListEmptyComponent={
@@ -385,6 +422,11 @@ const styles = StyleSheet.create({
   },
   addInput: { flex: 1 },
   itemIcons: { flexDirection: "row" },
+  swipeAction: {
+    width: 64,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   listContent: { paddingBottom: 120 },
   scrollArea: { maxHeight: 400 },
   zoneColorDot: {
