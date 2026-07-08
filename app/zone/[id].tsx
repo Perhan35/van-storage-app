@@ -366,7 +366,7 @@ export default function ZoneDetailScreen() {
               if (!zone.checklist && !hasIcons) return null;
               return (
                 <View style={[styles.itemLeft, props.style]}>
-                  {zone.checklist && (
+                  {!!zone.checklist && (
                     <Checkbox.Android
                       status={item.checked ? "checked" : "unchecked"}
                       onPress={() => handleToggleChecked(item)}
