@@ -1,20 +1,21 @@
 import React, { useEffect, useState } from "react";
 import { StyleSheet } from "react-native";
-import { Dialog, Portal, TextInput, Button } from "react-native-paper";
+import { Dialog, Portal, TextInput, Button, SegmentedButtons } from "react-native-paper";
 import { useTranslation } from "react-i18next";
-import { Item } from "../../db/database";
+import { Item, Season } from "../../db/database";
 import { useTextSelectionFix } from "../../hooks/useTextSelectionFix";
 
 type Props = {
   item: Item | null;
   onCancel: () => void;
-  onSave: (name: string, notes: string) => void;
+  onSave: (name: string, notes: string, season: Season) => void;
 };
 
 export function EditItemDialog({ item, onCancel, onSave }: Props) {
   const { t } = useTranslation();
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
+  const [season, setSeason] = useState<Season>("none");
   const nameSelection = useTextSelectionFix();
   const notesSelection = useTextSelectionFix();
 
@@ -22,6 +23,7 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
     if (item) {
       setName(item.name);
       setNotes(item.notes);
+      setSeason(item.season);
       nameSelection.resetSelection();
       notesSelection.resetSelection();
     }
@@ -30,7 +32,7 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
   const handleSave = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    onSave(trimmed, notes.trim());
+    onSave(trimmed, notes.trim(), season);
   };
 
   return (
@@ -56,6 +58,16 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
             onSelectionChange={notesSelection.onSelectionChange}
             multiline
             style={styles.input}
+          />
+          <SegmentedButtons
+            value={season}
+            onValueChange={(v) => setSeason(v as Season)}
+            style={styles.input}
+            buttons={[
+              { value: "none", label: t("season.none") },
+              { value: "summer", icon: "weather-sunny", accessibilityLabel: t("season.summer") },
+              { value: "winter", icon: "snowflake", accessibilityLabel: t("season.winter") },
+            ]}
           />
         </Dialog.Content>
         <Dialog.Actions>

@@ -33,6 +33,10 @@ export const ITEM_COLUMNS_TO_ADD: { name: string; ddl: string }[] = [
     name: "out_of_van",
     ddl: "ALTER TABLE items ADD COLUMN out_of_van INTEGER NOT NULL DEFAULT 0",
   },
+  {
+    name: "season",
+    ddl: "ALTER TABLE items ADD COLUMN season TEXT NOT NULL DEFAULT 'none'",
+  },
 ];
 
 export const ZONE_COLUMNS_TO_ADD: { name: string; ddl: string }[] = [

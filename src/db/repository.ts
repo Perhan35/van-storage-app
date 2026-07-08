@@ -1,4 +1,4 @@
-import { withDb, Zone, Item, ZoneWithCount } from "./database";
+import { withDb, Zone, Item, ZoneWithCount, Season } from "./database";
 
 export const DEFAULT_FILL_OPACITY = 0.4;
 
@@ -82,12 +82,13 @@ export function deleteItem(itemId: string): Promise<void> {
 export function updateItem(
   itemId: string,
   name: string,
-  notes: string
+  notes: string,
+  season: Season
 ): Promise<void> {
   return withDb(async (db) => {
     await db.runAsync(
-      "UPDATE items SET name = ?, notes = ?, updated_at = datetime('now') WHERE id = ?",
-      [name, notes, itemId]
+      "UPDATE items SET name = ?, notes = ?, season = ?, updated_at = datetime('now') WHERE id = ?",
+      [name, notes, season, itemId]
     );
   });
 }
@@ -131,6 +132,21 @@ export function getOutOfVanItems(): Promise<(Item & { zone_name: string })[]> {
       `SELECT i.*, z.name as zone_name
        FROM items i JOIN zones z ON i.zone_id = z.id
        WHERE i.out_of_van = 1
+       ORDER BY i.name COLLATE NOCASE`
+    )
+  );
+}
+
+export function sanitizeSeason(v: unknown): Season {
+  return v === "summer" || v === "winter" ? v : "none";
+}
+
+export function listSeasonalItems(): Promise<(Item & { zone_name: string })[]> {
+  return withDb((db) =>
+    db.getAllAsync<Item & { zone_name: string }>(
+      `SELECT i.*, z.name as zone_name
+       FROM items i JOIN zones z ON i.zone_id = z.id
+       WHERE i.season != 'none'
        ORDER BY i.name COLLATE NOCASE`
     )
   );
@@ -268,13 +284,14 @@ export function importAllData(
 
       for (const item of rawItems) {
         await db.runAsync(
-          "INSERT INTO items (id, name, zone_id, notes, out_of_van, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO items (id, name, zone_id, notes, out_of_van, season, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
           [
             item.id as string,
             item.name as string,
             item.zone_id as string,
             (item.notes as string) ?? "",
             (item.out_of_van as number) ?? 0,
+            sanitizeSeason(item.season),
             (item.created_at as string) ?? new Date().toISOString(),
             (item.updated_at as string) ?? new Date().toISOString(),
           ]

@@ -7,6 +7,7 @@ import { searchItems } from "../src/db/repository";
 import { Item } from "../src/db/database";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
+import { seasonIconName, seasonIconColor } from "../src/components/seasonIcon";
 
 type SearchResult = Item & { zone_name: string };
 
@@ -101,13 +102,21 @@ export default function SearchScreen() {
                 : `📍 ${item.zone_name}`
             }
             onPress={() => handleItemPress(item)}
-            left={(props) => (
-              <List.Icon
-                {...props}
-                icon={item.out_of_van ? "exit-to-app" : "package-variant"}
-                color={item.out_of_van ? palette.danger : undefined}
-              />
-            )}
+            left={(props) => {
+              const seasonIcon = seasonIconName(item.season);
+              return (
+                <View style={styles.itemIcons}>
+                  <List.Icon
+                    {...props}
+                    icon={item.out_of_van ? "exit-to-app" : "package-variant"}
+                    color={item.out_of_van ? palette.danger : undefined}
+                  />
+                  {seasonIcon && (
+                    <List.Icon {...props} icon={seasonIcon} color={seasonIconColor(item.season)} />
+                  )}
+                </View>
+              );
+            }}
           />
         )}
         ItemSeparatorComponent={Divider}
@@ -140,5 +149,6 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   searchbar: { margin: 12 },
+  itemIcons: { flexDirection: "row" },
   emptyContainer: { padding: 32, alignItems: "center" },
 });

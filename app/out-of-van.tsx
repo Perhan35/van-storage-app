@@ -1,14 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, FlatList, StyleSheet } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
-import { Button, Divider, IconButton, List, Menu, Text } from "react-native-paper";
+import { Button, Divider, IconButton, List, Menu, SegmentedButtons, Text } from "react-native-paper";
 import { useAppStore } from "../src/store/useAppStore";
 import { getOutOfVanItems } from "../src/db/repository";
-import { Item } from "../src/db/database";
+import { Item, Season } from "../src/db/database";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
+import { seasonIconName, seasonIconColor } from "../src/components/seasonIcon";
 
 type OutItem = Item & { zone_name: string };
+type SeasonFilter = Season | "all";
 
 export default function OutOfVanScreen() {
   const router = useRouter();
@@ -19,6 +21,7 @@ export default function OutOfVanScreen() {
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
   const [items, setItems] = useState<OutItem[]>([]);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
+  const [seasonFilter, setSeasonFilter] = useState<SeasonFilter>("all");
   const [menuVisible, setMenuVisible] = useState(false);
 
   const load = useCallback(async () => {
@@ -67,9 +70,9 @@ export default function OutOfVanScreen() {
     }
   }, [availableZones, selectedZoneId]);
 
-  const visibleItems = selectedZoneId
-    ? items.filter((item) => item.zone_id === selectedZoneId)
-    : items;
+  const visibleItems = items
+    .filter((item) => !selectedZoneId || item.zone_id === selectedZoneId)
+    .filter((item) => seasonFilter === "all" || item.season === seasonFilter);
 
   const selectedZone = availableZones.find((z) => z.id === selectedZoneId);
 
@@ -143,16 +146,35 @@ export default function OutOfVanScreen() {
           </Menu>
         </View>
       )}
+      <View style={styles.filterRow}>
+        <SegmentedButtons
+          value={seasonFilter}
+          onValueChange={(v) => setSeasonFilter(v as SeasonFilter)}
+          buttons={[
+            { value: "all", label: t("out.filter_all") },
+            { value: "summer", icon: "weather-sunny", accessibilityLabel: t("out.filter_summer") },
+            { value: "winter", icon: "snowflake", accessibilityLabel: t("out.filter_winter") },
+            { value: "none", label: t("out.filter_none") },
+          ]}
+        />
+      </View>
       <FlatList
         data={visibleItems}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
+        renderItem={({ item }) => {
+          const seasonIcon = seasonIconName(item.season);
+          return (
           <List.Item
             title={item.name}
             description={`📍 ${item.zone_name}${item.notes ? ` • ${item.notes}` : ""}`}
             onPress={() => handleLocate(item)}
             left={(props) => (
-              <List.Icon {...props} icon="exit-to-app" color={palette.danger} />
+              <View style={styles.itemIcons}>
+                <List.Icon {...props} icon="exit-to-app" color={palette.danger} />
+                {seasonIcon && (
+                  <List.Icon {...props} icon={seasonIcon} color={seasonIconColor(item.season)} />
+                )}
+              </View>
             )}
             right={() => (
               <IconButton
@@ -162,7 +184,8 @@ export default function OutOfVanScreen() {
               />
             )}
           />
-        )}
+          );
+        }}
         ItemSeparatorComponent={Divider}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
@@ -183,4 +206,5 @@ const styles = StyleSheet.create({
   filterRow: { paddingHorizontal: 16, paddingTop: 12, alignItems: "flex-start" },
   filterButton: { borderRadius: 8 },
   filterButtonContent: { flexDirection: "row-reverse" },
+  itemIcons: { flexDirection: "row" },
 });

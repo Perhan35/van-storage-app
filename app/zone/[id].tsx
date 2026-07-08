@@ -20,6 +20,8 @@ import { useAppTheme } from "../../src/theme/useAppTheme";
 import { EditItemDialog } from "../../src/components/dialogs/EditItemDialog";
 import { EditZoneDialog } from "../../src/components/dialogs/EditZoneDialog";
 import { useTextSelectionFix } from "../../src/hooks/useTextSelectionFix";
+import { Season } from "../../src/db/database";
+import { seasonIconName, seasonIconColor } from "../../src/components/seasonIcon";
 
 export default function ZoneDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -94,9 +96,9 @@ export default function ZoneDetailScreen() {
     ]);
   };
 
-  const handleSaveEdit = async (name: string, notes: string) => {
+  const handleSaveEdit = async (name: string, notes: string, season: Season) => {
     if (!editingItem) return;
-    await updateItem(editingItem.id, name, notes);
+    await updateItem(editingItem.id, name, notes, season);
     setEditingItem(null);
     await loadItems();
   };
@@ -238,11 +240,20 @@ export default function ZoneDetailScreen() {
             title={item.name}
             description={item.notes || undefined}
             onPress={() => setEditingItem(item)}
-            left={(props) =>
-              item.out_of_van ? (
-                <List.Icon {...props} icon="exit-to-app" color={palette.danger} />
-              ) : null
-            }
+            left={(props) => {
+              const seasonIcon = seasonIconName(item.season);
+              if (!item.out_of_van && !seasonIcon) return null;
+              return (
+                <View style={styles.itemIcons}>
+                  {!!item.out_of_van && (
+                    <List.Icon {...props} icon="exit-to-app" color={palette.danger} />
+                  )}
+                  {!!seasonIcon && (
+                    <List.Icon {...props} icon={seasonIcon} color={seasonIconColor(item.season)} />
+                  )}
+                </View>
+              );
+            }}
             right={() => (
               <Menu
                 visible={menuVisible === item.id}
@@ -373,6 +384,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   addInput: { flex: 1 },
+  itemIcons: { flexDirection: "row" },
   listContent: { paddingBottom: 120 },
   scrollArea: { maxHeight: 400 },
   zoneColorDot: {

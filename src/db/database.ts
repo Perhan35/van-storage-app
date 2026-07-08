@@ -86,12 +86,15 @@ export type Zone = {
   fill_opacity: number;
 };
 
+export type Season = "summer" | "winter" | "none";
+
 export type Item = {
   id: string;
   name: string;
   zone_id: string;
   notes: string;
   out_of_van: number;
+  season: Season;
 };
 
 export type ZoneWithCount = Zone & { item_count: number };

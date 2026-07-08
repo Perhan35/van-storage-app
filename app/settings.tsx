@@ -3,9 +3,10 @@ import { View, StyleSheet, Alert, ScrollView, Platform } from "react-native";
 import { Text, Button, Divider, SegmentedButtons } from "react-native-paper";
 import Constants from "expo-constants";
 import { exportAllData, importAllData, isValidGeometry } from "../src/db/repository";
-import { useAppStore, ThemeMode } from "../src/store/useAppStore";
+import { useAppStore, ThemeMode, SeasonMode } from "../src/store/useAppStore";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
+import { SeasonChangeoverDialog } from "../src/components/dialogs/SeasonChangeoverDialog";
 
 function downloadJsonWeb(data: string, filename: string) {
   const blob = new Blob([data], { type: "application/json" });
@@ -38,8 +39,17 @@ export default function SettingsScreen() {
   const themeMode = useAppStore((s) => s.themeMode);
   const setThemeMode = useAppStore((s) => s.setThemeMode);
   const reloadThemeMode = useAppStore((s) => s.reloadThemeMode);
+  const seasonMode = useAppStore((s) => s.seasonMode);
+  const setSeasonMode = useAppStore((s) => s.setSeasonMode);
+  const reloadSeasonMode = useAppStore((s) => s.reloadSeasonMode);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [changeoverVisible, setChangeoverVisible] = useState(false);
+
+  const handleSeasonModeChange = (mode: SeasonMode) => {
+    setSeasonMode(mode);
+    setChangeoverVisible(true);
+  };
 
   const handleExport = async () => {
     setExporting(true);
@@ -142,6 +152,7 @@ export default function SettingsScreen() {
 
         await loadZones();
         await reloadThemeMode();
+        await reloadSeasonMode();
         Alert.alert(t("settings.import_success_title"), t("settings.import_success"));
       } catch (e) {
         Alert.alert(t("settings.error"), t("settings.import_error") + " " + (e as Error).message);
@@ -235,12 +246,42 @@ export default function SettingsScreen() {
       <Divider />
       <View style={styles.section}>
         <Text variant="titleMedium" style={styles.sectionTitle}>
+          {t("settings.title_season")}
+        </Text>
+        <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
+          {t("settings.desc_season")}
+        </Text>
+        <SegmentedButtons
+          value={seasonMode}
+          onValueChange={(v) => handleSeasonModeChange(v as SeasonMode)}
+          buttons={[
+            { value: "summer", label: t("settings.season_summer"), icon: "weather-sunny" },
+            { value: "winter", label: t("settings.season_winter"), icon: "snowflake" },
+          ]}
+        />
+        <Button
+          mode="text"
+          icon="clipboard-list-outline"
+          onPress={() => setChangeoverVisible(true)}
+          style={styles.button}
+        >
+          {t("settings.season_reopen")}
+        </Button>
+      </View>
+      <Divider />
+      <View style={styles.section}>
+        <Text variant="titleMedium" style={styles.sectionTitle}>
           {t("settings.title_about")}
         </Text>
         <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
           {t("settings.desc_about", { version: Constants.expoConfig?.version ?? "" })}
         </Text>
       </View>
+      <SeasonChangeoverDialog
+        visible={changeoverVisible}
+        season={seasonMode}
+        onDismiss={() => setChangeoverVisible(false)}
+      />
     </ScrollView>
   );
 }

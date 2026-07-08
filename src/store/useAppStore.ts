@@ -1,9 +1,10 @@
 import { create } from "zustand";
-import { getDb, Zone, ZoneWithCount } from "../db/database";
+import { getDb, Zone, ZoneWithCount, Season } from "../db/database";
 import { getPreference, setPreference } from "../db/preferences";
 import * as repo from "../db/repository";
 
 export type ThemeMode = "auto" | "light" | "dark";
+export type SeasonMode = "summer" | "winter";
 
 let highlightTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -14,14 +15,17 @@ type AppState = {
   initError: string | null;
   editMode: boolean;
   themeMode: ThemeMode;
+  seasonMode: SeasonMode;
 
   init: () => Promise<void>;
   setThemeMode: (mode: ThemeMode) => Promise<void>;
   reloadThemeMode: () => Promise<void>;
+  setSeasonMode: (mode: SeasonMode) => Promise<void>;
+  reloadSeasonMode: () => Promise<void>;
   loadZones: () => Promise<void>;
   addItem: (name: string, zoneId: string, notes?: string) => Promise<void>;
   deleteItem: (itemId: string) => Promise<void>;
-  updateItem: (itemId: string, name: string, notes: string) => Promise<void>;
+  updateItem: (itemId: string, name: string, notes: string, season: Season) => Promise<void>;
   moveItem: (itemId: string, newZoneId: string) => Promise<void>;
   setItemOutOfVan: (itemId: string, outOfVan: boolean) => Promise<void>;
   setHighlightedZoneId: (zoneId: string | null) => void;
@@ -44,6 +48,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   initError: null,
   editMode: false,
   themeMode: "auto",
+  seasonMode: "summer",
 
   init: async () => {
     if (get().initialized) return;
@@ -51,6 +56,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await getDb();
       await get().reloadThemeMode();
+      await get().reloadSeasonMode();
       await get().loadZones();
       set({ initialized: true });
     } catch (err) {
@@ -73,6 +79,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  setSeasonMode: async (mode) => {
+    set({ seasonMode: mode });
+    await setPreference("seasonMode", mode);
+  },
+
+  // Mirrors reloadThemeMode: reads the persisted seasonMode into in-memory
+  // state without writing back, for startup and post-import refresh.
+  reloadSeasonMode: async () => {
+    const storedMode = await getPreference("seasonMode");
+    if (storedMode === "summer" || storedMode === "winter") {
+      set({ seasonMode: storedMode });
+    }
+  },
+
   loadZones: async () => {
     const zones = await repo.listZonesWithCounts();
     set({ zones });
@@ -89,8 +109,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadZones();
   },
 
-  updateItem: async (itemId, name, notes) => {
-    await repo.updateItem(itemId, name, notes);
+  updateItem: async (itemId, name, notes, season) => {
+    await repo.updateItem(itemId, name, notes, season);
     await get().loadZones();
   },
 

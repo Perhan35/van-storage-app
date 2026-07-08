@@ -35,6 +35,11 @@ const resources = {
       "settings.theme_auto": "Auto",
       "settings.theme_light": "Light",
       "settings.theme_dark": "Dark",
+      "settings.title_season": "Season",
+      "settings.desc_season": "Switch between summer and winter mode to see what to take out of or put back into the van.",
+      "settings.season_summer": "Summer",
+      "settings.season_winter": "Winter",
+      "settings.season_reopen": "View season changeover",
       "settings.title_about": "About",
       "settings.desc_about": "Van Storage v{{version}} by Perhan\n\nInventory app for all types of vans",
       "settings.export_success_title": "Export",
@@ -57,6 +62,10 @@ const resources = {
       "out.currently_out_other": "{{count}} items currently out of the van",
       "out.empty": "No item is currently out of the van",
       "out.all_zones": "All zones",
+      "out.filter_all": "All",
+      "out.filter_summer": "Summer",
+      "out.filter_winter": "Winter",
+      "out.filter_none": "None",
 
       "search.placeholder": "Search an item...",
       "search.out_of_van": "Out of van",
@@ -88,7 +97,18 @@ const resources = {
       "zone.split_zone_alert_title": "Split zone",
       "zone.split_zone_alert_text": "Split \"{{name}}\" in two ({{direction}})?\n\nExisting items will be moved to the first zone.",
       "zone.split_left_right": "left / right",
-      "zone.split_top_bottom": "top / bottom"
+      "zone.split_top_bottom": "top / bottom",
+      "zone.season": "Season",
+
+      "season.summer": "Summer",
+      "season.winter": "Winter",
+      "season.none": "None",
+
+      "changeover.title": "Switching to {{season}} mode",
+      "changeover.to_remove": "To take out of the van",
+      "changeover.to_add": "To put back in the van",
+      "changeover.nothing": "Nothing to change, everything is already in place.",
+      "changeover.close": "Close"
     },
   },
   fr: {
@@ -123,6 +143,11 @@ const resources = {
       "settings.theme_auto": "Auto",
       "settings.theme_light": "Clair",
       "settings.theme_dark": "Sombre",
+      "settings.title_season": "Saison",
+      "settings.desc_season": "Basculez entre le mode été et hiver pour savoir quoi sortir ou remettre dans le van.",
+      "settings.season_summer": "Été",
+      "settings.season_winter": "Hiver",
+      "settings.season_reopen": "Voir le changement de saison",
       "settings.title_about": "À propos",
       "settings.desc_about": "Van Storage v{{version}} par Perhan\n\nApplication d'inventaire pour tous types de Vans",
       "settings.export_success_title": "Export",
@@ -145,6 +170,10 @@ const resources = {
       "out.currently_out_other": "{{count}} objets actuellement sortis du van",
       "out.empty": "Aucun objet n'est actuellement sorti du van",
       "out.all_zones": "Toutes les zones",
+      "out.filter_all": "Tous",
+      "out.filter_summer": "Été",
+      "out.filter_winter": "Hiver",
+      "out.filter_none": "Aucun",
 
       "search.placeholder": "Chercher un objet...",
       "search.out_of_van": "Sorti du van",
@@ -176,7 +205,18 @@ const resources = {
       "zone.split_zone_alert_title": "Splitter la zone",
       "zone.split_zone_alert_text": "Diviser \"{{name}}\" en deux ({{direction}}) ?\n\nLes objets existants seront déplacés dans la première zone.",
       "zone.split_left_right": "gauche / droite",
-      "zone.split_top_bottom": "haut / bas"
+      "zone.split_top_bottom": "haut / bas",
+      "zone.season": "Saison",
+
+      "season.summer": "Été",
+      "season.winter": "Hiver",
+      "season.none": "Aucun",
+
+      "changeover.title": "Passage en mode {{season}}",
+      "changeover.to_remove": "À sortir du van",
+      "changeover.to_add": "À remettre dans le van",
+      "changeover.nothing": "Rien à changer, tout est déjà en place.",
+      "changeover.close": "Fermer"
     },
   },
 };
