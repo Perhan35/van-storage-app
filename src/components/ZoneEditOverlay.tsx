@@ -7,7 +7,7 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 import { ZoneWithCount, Zone } from "../db/database";
-import { SVG_W, SVG_H } from "./VanLayoutSVG";
+import { SVG_W, SVG_H } from "./vanLayoutConstants";
 
 const HANDLE_SIZE = 24;
 const MIN_ZONE_SIZE_SVG = 30;

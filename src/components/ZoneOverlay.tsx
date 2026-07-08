@@ -16,6 +16,9 @@ import { lightPalette } from "../theme/palette";
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
+// Fallback for zones with a missing/empty color; react-native-svg rejects "".
+const FALLBACK_ZONE_COLOR = "#78909C";
+
 const FONT_SIZES = [11, 10, 9, 8] as const;
 const CHAR_WIDTH_RATIO = 0.58;
 const LINE_HEIGHT_RATIO = 1.18;
@@ -129,6 +132,7 @@ export function ZoneOverlay({ zone, highlighted }: Props) {
   const cx = x + w / 2;
   const cy = y + h / 2;
 
+  const zoneColor = zone.color || FALLBACK_ZONE_COLOR;
   const restOpacity = zone.fill_opacity ?? DEFAULT_FILL_OPACITY;
   const opacity = useSharedValue(restOpacity);
 
@@ -212,7 +216,7 @@ export function ZoneOverlay({ zone, highlighted }: Props) {
         height={h}
         rx={8}
         ry={8}
-        fill={zone.color}
+        fill={zoneColor}
         animatedProps={animatedProps}
       />
       <Rect
@@ -223,14 +227,14 @@ export function ZoneOverlay({ zone, highlighted }: Props) {
         rx={8}
         ry={8}
         fill="none"
-        stroke={highlighted ? "#FFFFFF" : zone.color}
+        stroke={highlighted ? "#FFFFFF" : zoneColor}
         strokeWidth={highlighted ? 3 : 1.5}
       />
       <SvgText
         x={textCx}
         y={firstBaselineY}
         textAnchor="middle"
-        fill={isDark ? "#FFFFFF" : getReadableTextColor(zone.color, zone.fill_opacity ?? DEFAULT_FILL_OPACITY, lightPalette.background)}
+        fill={isDark ? "#FFFFFF" : getReadableTextColor(zoneColor, zone.fill_opacity ?? DEFAULT_FILL_OPACITY, lightPalette.background)}
         fontSize={fontSize}
         fontWeight="600"
         transform={

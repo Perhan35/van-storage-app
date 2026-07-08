@@ -7,9 +7,7 @@ import { ZoneEditOverlay } from "./ZoneEditOverlay";
 import { useAppStore } from "../store/useAppStore";
 import { Zone } from "../db/database";
 import { useTranslation } from "react-i18next";
-
-export const SVG_W = 300;
-export const SVG_H = 600;
+import { SVG_W, SVG_H } from "./vanLayoutConstants";
 
 type Props = {
   onZonePress: (zoneId: string) => void;
