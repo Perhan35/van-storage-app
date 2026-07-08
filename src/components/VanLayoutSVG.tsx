@@ -165,6 +165,9 @@ export function VanLayoutSVG({ onZonePress }: Props) {
             scale={svgScale}
             offsetX={svgOffsetX}
             offsetY={svgOffsetY}
+            otherZones={zones
+              .filter((z) => z.id !== zone.id)
+              .map((z) => z.geometry)}
             onGeometryChange={handleGeometryChange}
           />
         ))}

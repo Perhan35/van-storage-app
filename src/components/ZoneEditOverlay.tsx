@@ -12,16 +12,85 @@ import {
   ZONE_MAX_X,
   ZONE_MIN_Y,
   ZONE_MAX_Y,
+  ZONE_SNAP_THRESHOLD_PX,
+  ZONE_SNAP_GAP_SVG,
 } from "./vanLayoutConstants";
 
 const HANDLE_SIZE = 24;
 const MIN_ZONE_SIZE_SVG = 30;
+
+// --- Edge-snapping helpers (run on the UI thread inside gesture worklets) ---
+//
+// For one axis, "main" is the axis being moved (e.g. x while dragging
+// horizontally) and "cross" is the other one (e.g. y), used only to decide
+// whether two zones are actually side by side before offering an adjacency
+// snap - otherwise a zone on the other side of the van could snap to an
+// unrelated edge just because the numbers line up.
+
+function startSnapCandidates(
+  mainOthers: [number, number][],
+  crossOthers: [number, number][],
+  crossStart: number,
+  crossEnd: number,
+  gap: number
+): number[] {
+  "worklet";
+  const candidates: number[] = [];
+  for (let i = 0; i < mainOthers.length; i++) {
+    const [os, oe] = mainOthers[i];
+    candidates.push(os); // flush alignment: our start matches their start
+    const [cs, ce] = crossOthers[i];
+    if (crossStart < ce && cs < crossEnd) {
+      candidates.push(oe + gap); // adjacency: we start right after them
+    }
+  }
+  return candidates;
+}
+
+function endSnapCandidates(
+  mainOthers: [number, number][],
+  crossOthers: [number, number][],
+  crossStart: number,
+  crossEnd: number,
+  gap: number
+): number[] {
+  "worklet";
+  const candidates: number[] = [];
+  for (let i = 0; i < mainOthers.length; i++) {
+    const [os, oe] = mainOthers[i];
+    candidates.push(oe); // flush alignment: our end matches their end
+    const [cs, ce] = crossOthers[i];
+    if (crossStart < ce && cs < crossEnd) {
+      candidates.push(os - gap); // adjacency: we end right before them
+    }
+  }
+  return candidates;
+}
+
+function snapToNearest(
+  value: number,
+  candidates: number[],
+  threshold: number
+): number {
+  "worklet";
+  let best = value;
+  let bestDist = threshold;
+  for (let i = 0; i < candidates.length; i++) {
+    const dist = Math.abs(candidates[i] - value);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = candidates[i];
+    }
+  }
+  return best;
+}
 
 type Props = {
   zone: ZoneWithCount;
   scale: number;
   offsetX: number;
   offsetY: number;
+  otherZones: Zone["geometry"][];
   onGeometryChange: (zoneId: string, geometry: Zone["geometry"]) => void;
 };
 
@@ -30,9 +99,15 @@ export function ZoneEditOverlay({
   scale,
   offsetX,
   offsetY,
+  otherZones,
   onGeometryChange,
 }: Props) {
   const { x, y, w, h } = zone.geometry;
+
+  // Other zones' edges, split by axis, recomputed whenever the set of
+  // zones or their geometry changes (used inside the gesture worklets).
+  const othersX: [number, number][] = otherZones.map((o) => [o.x, o.x + o.w]);
+  const othersY: [number, number][] = otherZones.map((o) => [o.y, o.y + o.h]);
 
   // Shared values track the current SVG-coordinate geometry during gestures
   const svgX = useSharedValue(x);
@@ -78,14 +153,49 @@ export function ZoneEditOverlay({
     .onUpdate((e) => {
       const dx = e.translationX / scale;
       const dy = e.translationY / scale;
-      svgX.value = Math.min(
-        Math.max(ZONE_MIN_X, startX.value + dx),
-        ZONE_MAX_X - svgW.value
+      const w = svgW.value;
+      const h = svgH.value;
+      const threshold = ZONE_SNAP_THRESHOLD_PX / scale;
+
+      let newX = startX.value + dx;
+      let newY = startY.value + dy;
+
+      const xCandidates = startSnapCandidates(
+        othersX,
+        othersY,
+        newY,
+        newY + h,
+        ZONE_SNAP_GAP_SVG
+      ).concat(
+        endSnapCandidates(
+          othersX,
+          othersY,
+          newY,
+          newY + h,
+          ZONE_SNAP_GAP_SVG
+        ).map((c) => c - w)
       );
-      svgY.value = Math.min(
-        Math.max(ZONE_MIN_Y, startY.value + dy),
-        ZONE_MAX_Y - svgH.value
+      newX = snapToNearest(newX, xCandidates, threshold);
+
+      const yCandidates = startSnapCandidates(
+        othersY,
+        othersX,
+        newX,
+        newX + w,
+        ZONE_SNAP_GAP_SVG
+      ).concat(
+        endSnapCandidates(
+          othersY,
+          othersX,
+          newX,
+          newX + w,
+          ZONE_SNAP_GAP_SVG
+        ).map((c) => c - h)
       );
+      newY = snapToNearest(newY, yCandidates, threshold);
+
+      svgX.value = Math.min(Math.max(ZONE_MIN_X, newX), ZONE_MAX_X - w);
+      svgY.value = Math.min(Math.max(ZONE_MIN_Y, newY), ZONE_MAX_Y - h);
     })
     .onEnd(() => {
       runOnJS(commitGeometry)(
@@ -106,16 +216,35 @@ export function ZoneEditOverlay({
     .onUpdate((e) => {
       const dw = e.translationX / scale;
       const dh = e.translationY / scale;
-      const maxW = ZONE_MAX_X - svgX.value;
-      const maxH = ZONE_MAX_Y - svgY.value;
-      svgW.value = Math.min(
-        Math.max(MIN_ZONE_SIZE_SVG, startW.value + dw),
-        maxW
+      const x = svgX.value;
+      const y = svgY.value;
+      const maxW = ZONE_MAX_X - x;
+      const maxH = ZONE_MAX_Y - y;
+      const threshold = ZONE_SNAP_THRESHOLD_PX / scale;
+
+      const rawW = Math.min(Math.max(MIN_ZONE_SIZE_SVG, startW.value + dw), maxW);
+      const rawH = Math.min(Math.max(MIN_ZONE_SIZE_SVG, startH.value + dh), maxH);
+
+      const endXCandidates = endSnapCandidates(
+        othersX,
+        othersY,
+        y,
+        y + rawH,
+        ZONE_SNAP_GAP_SVG
       );
-      svgH.value = Math.min(
-        Math.max(MIN_ZONE_SIZE_SVG, startH.value + dh),
-        maxH
+      const endX = snapToNearest(x + rawW, endXCandidates, threshold);
+
+      const endYCandidates = endSnapCandidates(
+        othersY,
+        othersX,
+        x,
+        x + rawW,
+        ZONE_SNAP_GAP_SVG
       );
+      const endY = snapToNearest(y + rawH, endYCandidates, threshold);
+
+      svgW.value = Math.min(Math.max(MIN_ZONE_SIZE_SVG, endX - x), maxW);
+      svgH.value = Math.min(Math.max(MIN_ZONE_SIZE_SVG, endY - y), maxH);
     })
     .onEnd(() => {
       runOnJS(commitGeometry)(
@@ -140,12 +269,43 @@ export function ZoneEditOverlay({
       const dy = e.translationY / scale;
       const anchorX = startX.value + startW.value;
       const anchorY = startY.value + startH.value;
-      const newW = Math.min(
+      const threshold = ZONE_SNAP_THRESHOLD_PX / scale;
+
+      const rawW = Math.min(
         Math.max(MIN_ZONE_SIZE_SVG, startW.value - dx),
         anchorX - ZONE_MIN_X
       );
-      const newH = Math.min(
+      const rawH = Math.min(
         Math.max(MIN_ZONE_SIZE_SVG, startH.value - dy),
+        anchorY - ZONE_MIN_Y
+      );
+      const rawX = anchorX - rawW;
+      const rawY = anchorY - rawH;
+
+      const startXCandidates = startSnapCandidates(
+        othersX,
+        othersY,
+        rawY,
+        anchorY,
+        ZONE_SNAP_GAP_SVG
+      );
+      const newX = snapToNearest(rawX, startXCandidates, threshold);
+
+      const startYCandidates = startSnapCandidates(
+        othersY,
+        othersX,
+        rawX,
+        anchorX,
+        ZONE_SNAP_GAP_SVG
+      );
+      const newY = snapToNearest(rawY, startYCandidates, threshold);
+
+      const newW = Math.min(
+        Math.max(MIN_ZONE_SIZE_SVG, anchorX - newX),
+        anchorX - ZONE_MIN_X
+      );
+      const newH = Math.min(
+        Math.max(MIN_ZONE_SIZE_SVG, anchorY - newY),
         anchorY - ZONE_MIN_Y
       );
       svgX.value = anchorX - newW;
