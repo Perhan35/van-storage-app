@@ -37,11 +37,19 @@ export const ITEM_COLUMNS_TO_ADD: { name: string; ddl: string }[] = [
     name: "season",
     ddl: "ALTER TABLE items ADD COLUMN season TEXT NOT NULL DEFAULT 'none'",
   },
+  {
+    name: "checked",
+    ddl: "ALTER TABLE items ADD COLUMN checked INTEGER NOT NULL DEFAULT 0",
+  },
 ];
 
 export const ZONE_COLUMNS_TO_ADD: { name: string; ddl: string }[] = [
   {
     name: "fill_opacity",
     ddl: "ALTER TABLE zones ADD COLUMN fill_opacity REAL NOT NULL DEFAULT 0.4",
+  },
+  {
+    name: "checklist",
+    ddl: "ALTER TABLE zones ADD COLUMN checklist INTEGER NOT NULL DEFAULT 0",
   },
 ];

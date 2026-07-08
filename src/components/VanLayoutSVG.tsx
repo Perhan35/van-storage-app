@@ -1,9 +1,11 @@
 import React, { useState, useCallback } from "react";
 import { View, LayoutChangeEvent, StyleSheet, Pressable } from "react-native";
 import Svg, { Text as SvgText } from "react-native-svg";
+import { useSharedValue } from "react-native-reanimated";
 import { VanOutline } from "./VanOutline";
 import { ZoneOverlay } from "./ZoneOverlay";
 import { ZoneEditOverlay } from "./ZoneEditOverlay";
+import { useZoomScale } from "./ZoomableContainer";
 import { useAppStore } from "../store/useAppStore";
 import { Zone, ZoneWithCount } from "../db/database";
 import { useTranslation } from "react-i18next";
@@ -44,6 +46,11 @@ export function VanLayoutSVG({ onZonePress }: Props) {
     width: number;
     height: number;
   } | null>(null);
+
+  // Live pinch-zoom level from the ancestor ZoomableContainer, used to
+  // convert screen-pixel drag deltas to SVG units as the user zooms in.
+  const fallbackZoomScale = useSharedValue(1);
+  const zoomScale = useZoomScale() ?? fallbackZoomScale;
 
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -162,7 +169,8 @@ export function VanLayoutSVG({ onZonePress }: Props) {
           <ZoneEditOverlay
             key={zone.id}
             zone={zone}
-            scale={svgScale}
+            fitScale={svgScale}
+            zoomScale={zoomScale}
             offsetX={svgOffsetX}
             offsetY={svgOffsetY}
             otherZones={zones

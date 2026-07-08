@@ -84,6 +84,7 @@ export type Zone = {
   geometry: { type: "rect"; x: number; y: number; w: number; h: number };
   sort_order: number;
   fill_opacity: number;
+  checklist: number;
 };
 
 export type Season = "summer" | "winter" | "none";
@@ -95,6 +96,7 @@ export type Item = {
   notes: string;
   out_of_van: number;
   season: Season;
+  checked: number;
 };
 
 export type ZoneWithCount = Zone & { item_count: number };

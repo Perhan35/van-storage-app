@@ -5,6 +5,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   runOnJS,
+  SharedValue,
 } from "react-native-reanimated";
 import { ZoneWithCount, Zone } from "../db/database";
 import {
@@ -87,7 +88,12 @@ function snapToNearest(
 
 type Props = {
   zone: ZoneWithCount;
-  scale: number;
+  // Fixed SVG-to-screen fit scale (from the viewBox fit, ignores pinch zoom).
+  fitScale: number;
+  // Live pinch-zoom level applied on top of fitScale by the ancestor
+  // ZoomableContainer. Read directly in gesture worklets so drag/resize
+  // math stays accurate while the user is actively zooming.
+  zoomScale: SharedValue<number>;
   offsetX: number;
   offsetY: number;
   otherZones: Zone["geometry"][];
@@ -96,7 +102,8 @@ type Props = {
 
 export function ZoneEditOverlay({
   zone,
-  scale,
+  fitScale,
+  zoomScale,
   offsetX,
   offsetY,
   otherZones,
@@ -151,6 +158,7 @@ export function ZoneEditOverlay({
       startY.value = svgY.value;
     })
     .onUpdate((e) => {
+      const scale = fitScale * zoomScale.value;
       const dx = e.translationX / scale;
       const dy = e.translationY / scale;
       const w = svgW.value;
@@ -214,6 +222,7 @@ export function ZoneEditOverlay({
       startH.value = svgH.value;
     })
     .onUpdate((e) => {
+      const scale = fitScale * zoomScale.value;
       const dw = e.translationX / scale;
       const dh = e.translationY / scale;
       const x = svgX.value;
@@ -265,6 +274,7 @@ export function ZoneEditOverlay({
       startH.value = svgH.value;
     })
     .onUpdate((e) => {
+      const scale = fitScale * zoomScale.value;
       const dx = e.translationX / scale;
       const dy = e.translationY / scale;
       const anchorX = startX.value + startW.value;
@@ -322,22 +332,24 @@ export function ZoneEditOverlay({
       );
     });
 
-  // Animated style for the zone body (moves + resizes in real time)
+  // Animated style for the zone body (moves + resizes in real time).
+  // Positioned in fit-scale units only - the ancestor ZoomableContainer's
+  // transform applies pinch zoom visually on top of this.
   const bodyStyle = useAnimatedStyle(() => ({
     position: "absolute" as const,
-    left: svgX.value * scale + offsetX,
-    top: svgY.value * scale + offsetY,
-    width: svgW.value * scale,
-    height: svgH.value * scale,
+    left: svgX.value * fitScale + offsetX,
+    top: svgY.value * fitScale + offsetY,
+    width: svgW.value * fitScale,
+    height: svgH.value * fitScale,
   }));
 
   // Bottom-right handle
   const brHandleStyle = useAnimatedStyle(() => ({
     position: "absolute" as const,
     left:
-      (svgX.value + svgW.value) * scale + offsetX - HANDLE_SIZE / 2,
+      (svgX.value + svgW.value) * fitScale + offsetX - HANDLE_SIZE / 2,
     top:
-      (svgY.value + svgH.value) * scale + offsetY - HANDLE_SIZE / 2,
+      (svgY.value + svgH.value) * fitScale + offsetY - HANDLE_SIZE / 2,
     width: HANDLE_SIZE,
     height: HANDLE_SIZE,
   }));
@@ -345,8 +357,8 @@ export function ZoneEditOverlay({
   // Top-left handle
   const tlHandleStyle = useAnimatedStyle(() => ({
     position: "absolute" as const,
-    left: svgX.value * scale + offsetX - HANDLE_SIZE / 2,
-    top: svgY.value * scale + offsetY - HANDLE_SIZE / 2,
+    left: svgX.value * fitScale + offsetX - HANDLE_SIZE / 2,
+    top: svgY.value * fitScale + offsetY - HANDLE_SIZE / 2,
     width: HANDLE_SIZE,
     height: HANDLE_SIZE,
   }));

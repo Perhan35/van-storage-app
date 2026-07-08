@@ -28,10 +28,23 @@ type AppState = {
   updateItem: (itemId: string, name: string, notes: string, season: Season) => Promise<void>;
   moveItem: (itemId: string, newZoneId: string) => Promise<void>;
   setItemOutOfVan: (itemId: string, outOfVan: boolean) => Promise<void>;
+  setItemChecked: (itemId: string, checked: boolean) => Promise<void>;
+  resetChecklist: (zoneId: string) => Promise<void>;
   setHighlightedZoneId: (zoneId: string | null) => void;
-  updateZone: (zoneId: string, name: string, color: string, fillOpacity: number) => Promise<void>;
+  updateZone: (
+    zoneId: string,
+    name: string,
+    color: string,
+    fillOpacity: number,
+    checklist: boolean
+  ) => Promise<void>;
   deleteZone: (zoneId: string) => Promise<void>;
-  addZone: (name: string, color: string, geometry: Zone["geometry"]) => Promise<void>;
+  addZone: (
+    name: string,
+    color: string,
+    geometry: Zone["geometry"],
+    checklist?: boolean
+  ) => Promise<void>;
   splitZone: (zoneId: string) => Promise<string | undefined>;
   toggleEditMode: () => void;
   updateZoneGeometry: (zoneId: string, geometry: Zone["geometry"]) => Promise<void>;
@@ -124,6 +137,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadZones();
   },
 
+  setItemChecked: async (itemId, checked) => {
+    await repo.setItemChecked(itemId, checked);
+    await get().loadZones();
+  },
+
+  resetChecklist: async (zoneId) => {
+    await repo.resetChecklistItems(zoneId);
+    await get().loadZones();
+  },
+
   setHighlightedZoneId: (zoneId) => {
     if (highlightTimer) {
       clearTimeout(highlightTimer);
@@ -138,8 +161,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  updateZone: async (zoneId, name, color, fillOpacity) => {
-    await repo.updateZone(zoneId, name, color, fillOpacity);
+  updateZone: async (zoneId, name, color, fillOpacity, checklist) => {
+    await repo.updateZone(zoneId, name, color, fillOpacity, checklist);
     await get().loadZones();
   },
 
@@ -148,9 +171,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadZones();
   },
 
-  addZone: async (name, color, geometry) => {
+  addZone: async (name, color, geometry, checklist = false) => {
     const id = generateId();
-    await repo.insertZone(id, name, color, geometry);
+    await repo.insertZone(id, name, color, geometry, checklist);
     await get().loadZones();
   },
 

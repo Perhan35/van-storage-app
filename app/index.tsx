@@ -48,7 +48,7 @@ export default function VanMapScreen() {
     return <View style={[styles.container, { backgroundColor: palette.background }]} />;
   }
 
-  const handleCreateZone = async (name: string, color: string) => {
+  const handleCreateZone = async (name: string, color: string, checklist: boolean) => {
     let maxBottom = 70;
     for (const z of zones) {
       const bottom = z.geometry.y + z.geometry.h;
@@ -63,13 +63,13 @@ export default function VanMapScreen() {
       h: 60,
     };
 
-    await addZone(name, color, geometry);
+    await addZone(name, color, geometry, checklist);
     setAddZoneVisible(false);
   };
 
   return (
     <View style={[styles.container, { backgroundColor: palette.background }]}>
-      <ZoomableContainer enabled={!editMode}>
+      <ZoomableContainer panMinPointers={editMode ? 2 : 1}>
         <VanLayoutSVG
           onZonePress={(zoneId) => router.push(`/zone/${zoneId}`)}
         />

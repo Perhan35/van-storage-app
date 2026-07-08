@@ -1,19 +1,32 @@
-import React, { useEffect } from "react";
+import React, { createContext, useContext, useEffect } from "react";
 import { View, StyleSheet, LayoutChangeEvent } from "react-native";
 import { GestureDetector, Gesture } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  SharedValue,
 } from "react-native-reanimated";
 
 type Props = {
   children: React.ReactNode;
   enabled?: boolean;
+  // Minimum touch points required to pan the canvas. Callers that also host
+  // their own single-finger drag gestures inside the canvas (e.g. zone
+  // editing) should raise this so a 1-finger drag isn't stolen by panning.
+  panMinPointers?: number;
 };
 
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 4;
 const MIN_VISIBLE_FRACTION = 0.25;
+
+// Live pinch-zoom level, so descendants (e.g. zone edit gesture math) can
+// convert screen-pixel deltas to content-space units as the user zooms.
+const ZoomScaleContext = createContext<SharedValue<number> | null>(null);
+
+export function useZoomScale() {
+  return useContext(ZoomScaleContext);
+}
 
 function clampTranslate(
   translate: number,
@@ -27,7 +40,11 @@ function clampTranslate(
   return Math.min(Math.max(translate, -maxTranslate), maxTranslate);
 }
 
-export function ZoomableContainer({ children, enabled = true }: Props) {
+export function ZoomableContainer({
+  children,
+  enabled = true,
+  panMinPointers = 1,
+}: Props) {
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
   const gesturesEnabled = useSharedValue(enabled);
@@ -104,7 +121,7 @@ export function ZoomableContainer({ children, enabled = true }: Props) {
     });
 
   const pan = Gesture.Pan()
-    .minPointers(1)
+    .minPointers(panMinPointers)
     .minDistance(10)
     .onStart(() => {
       if (!gesturesEnabled.value) return;
@@ -170,7 +187,9 @@ export function ZoomableContainer({ children, enabled = true }: Props) {
     <View style={styles.container} onLayout={onLayout}>
       <GestureDetector gesture={composed}>
         <Animated.View style={[styles.inner, animatedStyle]}>
-          {children}
+          <ZoomScaleContext.Provider value={scale}>
+            {children}
+          </ZoomScaleContext.Provider>
         </Animated.View>
       </GestureDetector>
     </View>

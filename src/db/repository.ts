@@ -53,7 +53,7 @@ export function listZonesWithCounts(): Promise<ZoneWithCount[]> {
 export function listItemsForZone(zoneId: string): Promise<Item[]> {
   return withDb((db) =>
     db.getAllAsync<Item>(
-      "SELECT * FROM items WHERE zone_id = ? ORDER BY name COLLATE NOCASE",
+      "SELECT * FROM items WHERE zone_id = ? ORDER BY checked ASC, name COLLATE NOCASE",
       [zoneId]
     )
   );
@@ -126,6 +126,24 @@ export function setItemOutOfVan(itemId: string, outOfVan: boolean): Promise<void
   });
 }
 
+export function setItemChecked(itemId: string, checked: boolean): Promise<void> {
+  return withDb(async (db) => {
+    await db.runAsync(
+      "UPDATE items SET checked = ?, updated_at = datetime('now') WHERE id = ?",
+      [checked ? 1 : 0, itemId]
+    );
+  });
+}
+
+export function resetChecklistItems(zoneId: string): Promise<void> {
+  return withDb(async (db) => {
+    await db.runAsync(
+      "UPDATE items SET checked = 0, updated_at = datetime('now') WHERE zone_id = ? AND checked = 1",
+      [zoneId]
+    );
+  });
+}
+
 export function getOutOfVanItems(): Promise<(Item & { zone_name: string })[]> {
   return withDb((db) =>
     db.getAllAsync<Item & { zone_name: string }>(
@@ -156,12 +174,13 @@ export function updateZone(
   zoneId: string,
   name: string,
   color: string,
-  fillOpacity: number
+  fillOpacity: number,
+  checklist: boolean
 ): Promise<void> {
   return withDb(async (db) => {
     await db.runAsync(
-      "UPDATE zones SET name = ?, color = ?, fill_opacity = ?, updated_at = datetime('now') WHERE id = ?",
-      [name, color, fillOpacity, zoneId]
+      "UPDATE zones SET name = ?, color = ?, fill_opacity = ?, checklist = ?, updated_at = datetime('now') WHERE id = ?",
+      [name, color, fillOpacity, checklist ? 1 : 0, zoneId]
     );
   });
 }
@@ -176,7 +195,8 @@ export function insertZone(
   id: string,
   name: string,
   color: string,
-  geometry: Zone["geometry"]
+  geometry: Zone["geometry"],
+  checklist: boolean = false
 ): Promise<void> {
   return withDb(async (db) => {
     await db.withTransactionAsync(async () => {
@@ -185,8 +205,8 @@ export function insertZone(
       );
       const order = (maxOrder?.m ?? 0) + 1;
       await db.runAsync(
-        "INSERT INTO zones (id, name, color, geometry, sort_order) VALUES (?, ?, ?, ?, ?)",
-        [id, name, color, JSON.stringify(geometry), order]
+        "INSERT INTO zones (id, name, color, geometry, sort_order, checklist) VALUES (?, ?, ?, ?, ?, ?)",
+        [id, name, color, JSON.stringify(geometry), order, checklist ? 1 : 0]
       );
     });
   });
@@ -268,13 +288,14 @@ export function importAllData(
 
       for (const zone of rawZones) {
         await db.runAsync(
-          "INSERT INTO zones (id, name, color, geometry, fill_opacity, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO zones (id, name, color, geometry, fill_opacity, checklist, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
           [
             zone.id as string,
             zone.name as string,
             zone.color as string,
             zone.geometry as string,
             sanitizeFillOpacity(zone.fill_opacity),
+            zone.checklist ? 1 : 0,
             (zone.sort_order as number) ?? 0,
             (zone.created_at as string) ?? new Date().toISOString(),
             (zone.updated_at as string) ?? new Date().toISOString(),
@@ -284,7 +305,7 @@ export function importAllData(
 
       for (const item of rawItems) {
         await db.runAsync(
-          "INSERT INTO items (id, name, zone_id, notes, out_of_van, season, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO items (id, name, zone_id, notes, out_of_van, season, checked, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
           [
             item.id as string,
             item.name as string,
@@ -292,6 +313,7 @@ export function importAllData(
             (item.notes as string) ?? "",
             (item.out_of_van as number) ?? 0,
             sanitizeSeason(item.season),
+            item.checked ? 1 : 0,
             (item.created_at as string) ?? new Date().toISOString(),
             (item.updated_at as string) ?? new Date().toISOString(),
           ]

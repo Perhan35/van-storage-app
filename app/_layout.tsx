@@ -53,20 +53,24 @@ function HeaderRight() {
 
   return (
     <View style={{ flexDirection: "row", alignItems: "center" }}>
-      <IconButton
-        icon="exit-to-app"
-        size={24}
-        iconColor={palette.headerTint}
-        style={{ margin: 0 }}
-        onPress={() => router.push("/out-of-van")}
-      />
-      <IconButton
-        icon="magnify"
-        size={24}
-        iconColor={palette.headerTint}
-        style={{ margin: 0 }}
-        onPress={() => router.push("/search")}
-      />
+      {!editMode && (
+        <IconButton
+          icon="exit-to-app"
+          size={24}
+          iconColor={palette.headerTint}
+          style={{ margin: 0 }}
+          onPress={() => router.push("/out-of-van")}
+        />
+      )}
+      {!editMode && (
+        <IconButton
+          icon="magnify"
+          size={24}
+          iconColor={palette.headerTint}
+          style={{ margin: 0 }}
+          onPress={() => router.push("/search")}
+        />
+      )}
       {editMode && (
         <Text style={{ color: palette.headerTint, fontWeight: "600", fontSize: 12, marginHorizontal: 4 }}>
           {t("nav.edit_mode")}
@@ -79,13 +83,15 @@ function HeaderRight() {
         style={{ margin: 0 }}
         onPress={toggleEditMode}
       />
-      <IconButton
-        icon="cog"
-        size={24}
-        iconColor={palette.headerTint}
-        style={{ margin: 0 }}
-        onPress={() => router.push("/settings")}
-      />
+      {!editMode && (
+        <IconButton
+          icon="cog"
+          size={24}
+          iconColor={palette.headerTint}
+          style={{ margin: 0 }}
+          onPress={() => router.push("/settings")}
+        />
+      )}
     </View>
   );
 }

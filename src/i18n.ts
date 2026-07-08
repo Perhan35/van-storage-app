@@ -99,6 +99,9 @@ const resources = {
       "zone.split_left_right": "left / right",
       "zone.split_top_bottom": "top / bottom",
       "zone.season": "Season",
+      "zone.checklist": "Checklist (checkable items)",
+      "zone.reset_checklist": "Reset checked items",
+      "zone.reset_checklist_confirm": "Uncheck all checked items in this zone?",
 
       "season.summer": "Summer",
       "season.winter": "Winter",
@@ -207,6 +210,9 @@ const resources = {
       "zone.split_left_right": "gauche / droite",
       "zone.split_top_bottom": "haut / bas",
       "zone.season": "Saison",
+      "zone.checklist": "Liste à cocher (objets cochables)",
+      "zone.reset_checklist": "Réinitialiser les objets cochés",
+      "zone.reset_checklist_confirm": "Décocher tous les objets cochés de cette zone ?",
 
       "season.summer": "Été",
       "season.winter": "Hiver",

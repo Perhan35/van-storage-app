@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { Dialog, Portal, TextInput, Button, Text } from "react-native-paper";
+import { Dialog, Portal, TextInput, Button, Text, Checkbox } from "react-native-paper";
 import Slider from "@react-native-community/slider";
 import { useTranslation } from "react-i18next";
 import { Zone } from "../../db/database";
@@ -12,7 +12,7 @@ type Props = {
   zone: Zone | null;
   visible: boolean;
   onCancel: () => void;
-  onSave: (name: string, color: string, fillOpacity: number) => void;
+  onSave: (name: string, color: string, fillOpacity: number, checklist: boolean) => void;
   onDelete: () => void;
 };
 
@@ -27,6 +27,7 @@ export function EditZoneDialog({
   const [name, setName] = useState("");
   const [color, setColor] = useState("#4A90D9");
   const [fillOpacity, setFillOpacity] = useState(DEFAULT_FILL_OPACITY);
+  const [checklist, setChecklist] = useState(false);
   const nameSelection = useTextSelectionFix();
 
   useEffect(() => {
@@ -34,6 +35,7 @@ export function EditZoneDialog({
       setName(zone.name);
       setColor(zone.color);
       setFillOpacity(zone.fill_opacity ?? DEFAULT_FILL_OPACITY);
+      setChecklist(!!zone.checklist);
       nameSelection.resetSelection();
     }
   }, [zone, visible]);
@@ -41,7 +43,7 @@ export function EditZoneDialog({
   const handleSave = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    onSave(trimmed, color, fillOpacity);
+    onSave(trimmed, color, fillOpacity, checklist);
   };
 
   return (
@@ -84,6 +86,13 @@ export function EditZoneDialog({
               </Text>
             </View>
           </View>
+          <Checkbox.Item
+            label={t("zone.checklist")}
+            status={checklist ? "checked" : "unchecked"}
+            onPress={() => setChecklist((v) => !v)}
+            style={styles.checklistItem}
+            mode="android"
+          />
         </Dialog.Content>
         <Dialog.Actions>
           <Button textColor="#D32F2F" onPress={onDelete}>
@@ -109,4 +118,5 @@ const styles = StyleSheet.create({
     marginTop: -4,
   },
   opacityHint: { color: "#999" },
+  checklistItem: { paddingHorizontal: 0, marginTop: 8 },
 });

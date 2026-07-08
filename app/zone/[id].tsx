@@ -12,6 +12,7 @@ import {
   Dialog,
   Portal,
   Menu,
+  Checkbox,
 } from "react-native-paper";
 import { useAppStore } from "../../src/store/useAppStore";
 import { listItemsForZone } from "../../src/db/repository";
@@ -36,6 +37,8 @@ export default function ZoneDetailScreen() {
   const updateItem = useAppStore((s) => s.updateItem);
   const moveItem = useAppStore((s) => s.moveItem);
   const setItemOutOfVan = useAppStore((s) => s.setItemOutOfVan);
+  const setItemChecked = useAppStore((s) => s.setItemChecked);
+  const resetChecklist = useAppStore((s) => s.resetChecklist);
   const updateZone = useAppStore((s) => s.updateZone);
   const deleteZone = useAppStore((s) => s.deleteZone);
   const splitZone = useAppStore((s) => s.splitZone);
@@ -64,10 +67,25 @@ export default function ZoneDetailScreen() {
   }, [loadItems]);
 
   useEffect(() => {
-    if (zone) {
-      navigation.setOptions({ title: zone.name });
-    }
-  }, [zone, navigation]);
+    if (!zone) return;
+    navigation.setOptions({
+      title: zone.name,
+      headerRight: zone.checklist
+        ? () => {
+            const hasChecked = items.some((i) => i.checked);
+            if (!hasChecked) return null;
+            return (
+              <IconButton
+                icon="checkbox-multiple-blank-outline"
+                iconColor={palette.headerTint}
+                accessibilityLabel={t("zone.reset_checklist")}
+                onPress={handleResetChecklist}
+              />
+            );
+          }
+        : undefined,
+    });
+  }, [zone, items, navigation, palette]);
 
   const handleAddItem = async () => {
     const trimmed = newItemName.trim();
@@ -118,9 +136,34 @@ export default function ZoneDetailScreen() {
     await loadItems();
   };
 
-  const handleSaveZone = async (name: string, color: string, fillOpacity: number) => {
+  const handleToggleChecked = async (item: Item) => {
+    swipeableRefs.current.get(item.id)?.close();
+    await setItemChecked(item.id, !item.checked);
+    await loadItems();
+  };
+
+  const handleResetChecklist = () => {
     if (!id) return;
-    await updateZone(id, name, color, fillOpacity);
+    Alert.alert(t("zone.reset_checklist"), t("zone.reset_checklist_confirm"), [
+      { text: t("map.cancel"), style: "cancel" },
+      {
+        text: t("zone.reset_checklist"),
+        onPress: async () => {
+          await resetChecklist(id);
+          await loadItems();
+        },
+      },
+    ]);
+  };
+
+  const handleSaveZone = async (
+    name: string,
+    color: string,
+    fillOpacity: number,
+    checklist: boolean
+  ) => {
+    if (!id) return;
+    await updateZone(id, name, color, fillOpacity, checklist);
     setZoneEditVisible(false);
   };
 
@@ -245,6 +288,41 @@ export default function ZoneDetailScreen() {
               else swipeableRefs.current.delete(item.id);
             }}
             overshootRight={false}
+            onSwipeableOpen={(direction) => {
+              if (direction === "right") handleToggleOutOfVan(item);
+              else if (direction === "left" && zone.checklist)
+                handleToggleChecked(item);
+            }}
+            renderLeftActions={
+              zone.checklist
+                ? (_progress, drag) => (
+                    <Animated.View
+                      style={[
+                        styles.swipeAction,
+                        {
+                          backgroundColor: palette.primary,
+                          transform: [
+                            {
+                              translateX: drag.interpolate({
+                                inputRange: [0, 100],
+                                outputRange: [-100, 0],
+                                extrapolate: "clamp",
+                              }),
+                            },
+                          ],
+                        },
+                      ]}
+                    >
+                      <IconButton
+                        icon={item.checked ? "checkbox-blank-outline" : "check-bold"}
+                        iconColor="#fff"
+                        size={26}
+                        onPress={() => handleToggleChecked(item)}
+                      />
+                    </Animated.View>
+                  )
+                : undefined
+            }
             renderRightActions={(_progress, drag) => (
               <Animated.View
                 style={[
@@ -276,16 +354,29 @@ export default function ZoneDetailScreen() {
             title={item.name}
             description={item.notes || undefined}
             onPress={() => setEditingItem(item)}
+            style={item.checked ? styles.checkedRow : undefined}
+            titleStyle={
+              item.checked
+                ? { color: palette.onSurfaceVariant, textDecorationLine: "line-through" }
+                : undefined
+            }
             left={(props) => {
               const seasonIcon = seasonIconName(item.season);
-              if (!item.out_of_van && !seasonIcon) return null;
+              const hasIcons = !!item.out_of_van || !!seasonIcon;
+              if (!zone.checklist && !hasIcons) return null;
               return (
-                <View style={styles.itemIcons}>
+                <View style={[styles.itemLeft, props.style]}>
+                  {zone.checklist && (
+                    <Checkbox.Android
+                      status={item.checked ? "checked" : "unchecked"}
+                      onPress={() => handleToggleChecked(item)}
+                    />
+                  )}
                   {!!item.out_of_van && (
-                    <List.Icon {...props} icon="exit-to-app" color={palette.danger} />
+                    <List.Icon icon="exit-to-app" color={palette.danger} />
                   )}
                   {!!seasonIcon && (
-                    <List.Icon {...props} icon={seasonIcon} color={seasonIconColor(item.season)} />
+                    <List.Icon icon={seasonIcon} color={seasonIconColor(item.season)} />
                   )}
                 </View>
               );
@@ -421,7 +512,8 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   addInput: { flex: 1 },
-  itemIcons: { flexDirection: "row" },
+  itemLeft: { flexDirection: "row", alignItems: "center" },
+  checkedRow: { opacity: 0.55 },
   swipeAction: {
     width: 64,
     justifyContent: "center",
