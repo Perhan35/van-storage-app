@@ -127,6 +127,9 @@ export function VanLayoutSVG({ onZonePress }: Props) {
             key={zone.id}
             zone={zone}
             highlighted={highlightedZoneId === zone.id}
+            dimmed={
+              highlightedZoneId !== null && highlightedZoneId !== zone.id
+            }
           />
         ))}
       </Svg>

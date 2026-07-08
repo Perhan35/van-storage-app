@@ -134,7 +134,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       highlightTimer = setTimeout(() => {
         highlightTimer = null;
         set({ highlightedZoneId: null });
-      }, 4000);
+      }, 6000);
     }
   },
 

@@ -124,9 +124,10 @@ function fitText(
 type Props = {
   zone: ZoneWithCount;
   highlighted: boolean;
+  dimmed: boolean;
 };
 
-export function ZoneOverlay({ zone, highlighted }: Props) {
+export function ZoneOverlay({ zone, highlighted, dimmed }: Props) {
   const { isDark } = useAppTheme();
   const { x, y, w, h } = zone.geometry;
   const cx = x + w / 2;
@@ -135,22 +136,40 @@ export function ZoneOverlay({ zone, highlighted }: Props) {
   const zoneColor = zone.color || FALLBACK_ZONE_COLOR;
   const restOpacity = zone.fill_opacity ?? DEFAULT_FILL_OPACITY;
   const opacity = useSharedValue(restOpacity);
+  const strokeWidth = useSharedValue(1.5);
+  const strokeOpacity = useSharedValue(1);
 
   useEffect(() => {
     if (highlighted) {
-      opacity.value = withRepeat(
-        withTiming(0.9, { duration: 500 }),
+      opacity.value = withRepeat(withTiming(1, { duration: 350 }), -1, true);
+      strokeWidth.value = withRepeat(
+        withTiming(6, { duration: 350 }),
         -1,
         true
       );
+      strokeOpacity.value = withTiming(1, { duration: 200 });
+    } else if (dimmed) {
+      cancelAnimation(opacity);
+      cancelAnimation(strokeWidth);
+      opacity.value = withTiming(restOpacity * 0.15, { duration: 300 });
+      strokeWidth.value = withTiming(1.5, { duration: 300 });
+      strokeOpacity.value = withTiming(0.15, { duration: 300 });
     } else {
       cancelAnimation(opacity);
-      opacity.value = restOpacity;
+      cancelAnimation(strokeWidth);
+      opacity.value = withTiming(restOpacity, { duration: 300 });
+      strokeWidth.value = withTiming(1.5, { duration: 300 });
+      strokeOpacity.value = withTiming(1, { duration: 300 });
     }
-  }, [highlighted, restOpacity]);
+  }, [highlighted, dimmed, restOpacity]);
 
   const animatedProps = useAnimatedProps(() => ({
     opacity: opacity.value,
+  }));
+
+  const animatedStrokeProps = useAnimatedProps(() => ({
+    strokeWidth: strokeWidth.value,
+    opacity: strokeOpacity.value,
   }));
 
   // Badge: small, hugging the top-right corner.
@@ -219,7 +238,7 @@ export function ZoneOverlay({ zone, highlighted }: Props) {
         fill={zoneColor}
         animatedProps={animatedProps}
       />
-      <Rect
+      <AnimatedRect
         x={x}
         y={y}
         width={w}
@@ -228,7 +247,7 @@ export function ZoneOverlay({ zone, highlighted }: Props) {
         ry={8}
         fill="none"
         stroke={highlighted ? "#FFFFFF" : zoneColor}
-        strokeWidth={highlighted ? 3 : 1.5}
+        animatedProps={animatedStrokeProps}
       />
       <SvgText
         x={textCx}
