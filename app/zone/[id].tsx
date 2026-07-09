@@ -34,6 +34,8 @@ import { useTextSelectionFix } from "../../src/hooks/useTextSelectionFix";
 import { Season } from "../../src/db/database";
 import { seasonIconName, seasonIconColor } from "../../src/components/seasonIcon";
 
+const ACTION_WIDTH = 64;
+
 // Slides the action button in from its edge as the row is swiped open.
 // `translation` mirrors the legacy Swipeable's `drag` value: positive while
 // revealing a left action, negative while revealing a right action.
@@ -55,8 +57,18 @@ function SwipeActionButton({
       {
         translateX:
           side === "left"
-            ? interpolate(translation.value, [0, 100], [-100, 0], Extrapolation.CLAMP)
-            : interpolate(translation.value, [-100, 0], [0, 100], Extrapolation.CLAMP),
+            ? interpolate(
+                translation.value,
+                [0, ACTION_WIDTH],
+                [-ACTION_WIDTH, 0],
+                Extrapolation.CLAMP
+              )
+            : interpolate(
+                translation.value,
+                [-ACTION_WIDTH, 0],
+                [0, ACTION_WIDTH],
+                Extrapolation.CLAMP
+              ),
       },
     ],
   }));
@@ -527,7 +539,7 @@ const styles = StyleSheet.create({
   itemLeft: { flexDirection: "row", alignItems: "center" },
   checkedRow: { opacity: 0.55 },
   swipeAction: {
-    width: 64,
+    width: ACTION_WIDTH,
     justifyContent: "center",
     alignItems: "center",
   },
