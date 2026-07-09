@@ -1,0 +1,104 @@
+name: Build Android APK
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Read app version
+        id: version
+        run: |
+          APP_VERSION=$(jq -r '.expo.version' app.json)
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+          echo "version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check tag matches app.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$TAG_VERSION" != "$APP_VERSION" ]; then
+            echo "::warning::Tag $GITHUB_REF_NAME does not match app.json version $APP_VERSION"
+          fi
+
+      - name: Derive and inject Android versionCode
+        run: |
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$APP_VERSION"
+          VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          jq --argjson vc "$VERSION_CODE" '.expo.android.versionCode = $vc' app.json > app.json.tmp
+          mv app.json.tmp app.json
+
+      - name: Prebuild Android project
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Restore release keystore
+        run: echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/release.jks
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+
+      - name: Build release APK
+        run: cd android && ./gradlew assembleRelease --no-daemon
+
+      - name: Sign release APK
+        run: |
+          BUILD_TOOLS_DIR=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n1)
+          APK_PATH=android/app/build/outputs/apk/release/app-release.apk
+          "$BUILD_TOOLS_DIR/apksigner" sign \
+            --ks android/app/release.jks \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --key-pass env:ANDROID_KEY_PASSWORD \
+            "$APK_PATH"
+          "$BUILD_TOOLS_DIR/apksigner" verify "$APK_PATH"
+          mkdir -p dist
+          cp "$APK_PATH" "dist/my-van-inventory-v${APP_VERSION}.apk"
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      - name: Upload build artifact
+        if: "!startsWith(github.ref, 'refs/tags/v')"
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-van-inventory-v${{ env.APP_VERSION }}
+          path: dist/my-van-inventory-v${{ env.APP_VERSION }}.apk
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/my-van-inventory-v${{ env.APP_VERSION }}.apk
+          name: My Van Inventory v${{ env.APP_VERSION }}
+          body: |
+            ## Installation sur Android
+
+            1. Téléchargez le fichier `my-van-inventory-v${{ env.APP_VERSION }}.apk` ci-dessous sur votre téléphone.
+            2. Ouvrez le fichier téléchargé.
+            3. Si Android affiche un avertissement, autorisez « Installer des applications inconnues » pour l'application utilisée (navigateur ou fichiers).
+            4. Appuyez sur « Installer ».
+
+            Les mises à jour futures s'installeront directement par-dessus cette version, sans perte de données.

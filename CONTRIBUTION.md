@@ -270,6 +270,106 @@ eas build --profile production --platform ios
 
 You'll need an Apple Developer account.
 
+### GitHub Actions — automated APK build & shareable Release
+
+Pushing a version tag builds a signed Android APK on a GitHub-hosted runner (no EAS cloud) and
+attaches it to a GitHub Release, giving you a stable download link you can share with anyone
+(e.g. for sideloading onto a family member's phone). Workflow: [.github/workflows/build-android.yml](.github/workflows/build-android.yml).
+
+#### One-time setup — signing keystore & secrets
+
+Android refuses to install an update if it's signed with a different key than the currently
+installed app, so CI must always sign with the same keystore. Pick **one** of the two options
+below depending on whether a phone already has a build installed from EAS.
+
+**Option 1 — generate a brand-new keystore** (only if no app is installed anywhere yet, or you're
+fine reinstalling on every device):
+
+```bash
+keytool -genkeypair -v -keystore release.jks -alias van-storage \
+  -keyalg RSA -keysize 2048 -validity 10000 -storetype JKS
+base64 -i release.jks | pbcopy   # macOS: copies base64 to the clipboard
+```
+
+**Option 2 — reuse the existing EAS keystore** (required if a phone already has a build installed
+from `eas build`, so future GitHub Actions builds can install as updates instead of conflicting):
+
+```bash
+eas credentials -p android
+# → select build profile "preview" (or whichever profile was used to build the installed app)
+# → "credentials.json: Upload/Download credentials between EAS servers and local json"
+# → Download
+```
+
+This writes `credentials.json` plus the keystore file (path shown inside `credentials.json`,
+e.g. `credentials/android/keystore.jks`) to your project directory. Read the file to get the
+values you need:
+
+```bash
+cat credentials.json
+# {
+#   "android": {
+#     "keystore": {
+#       "keystorePath": "credentials/android/keystore.jks",
+#       "keystorePassword": "...",
+#       "keyAlias": "...",
+#       "keyPassword": "..."
+#     }
+#   }
+# }
+base64 -i credentials/android/keystore.jks | pbcopy   # macOS: copies base64 to the clipboard
+```
+
+Use `keystorePassword`, `keyAlias`, and `keyPassword` from that file as the corresponding secret
+values below. Once the secrets are saved in GitHub, delete the local copies —
+they contain plaintext passwords and must never be committed:
+
+```bash
+rm -rf credentials.json credentials/
+```
+
+With either option, back up the keystore file itself somewhere safe (e.g. a password manager or
+encrypted drive) — if it's lost, no future build can update an existing install. It must stay out
+of git (`.gitignore` already ignores `*.jks`).
+
+In **GitHub → Settings → Secrets and variables → Actions**, add these repository secrets:
+
+| Secret | Value |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | base64 content of the keystore file (copied above) |
+| `ANDROID_KEYSTORE_PASSWORD` | the keystore password (chosen, or from `credentials.json`) |
+| `ANDROID_KEY_ALIAS` | the key alias (chosen, or `keyAlias` from `credentials.json`) |
+| `ANDROID_KEY_PASSWORD` | the key password (chosen, or `keyPassword` from `credentials.json`) |
+
+#### Triggering a build
+
+The app version lives in `expo.version` in [app.json](app.json) — it's the single source of
+truth: the app displays it in Settings, and CI reads the same field to name the APK and to derive
+the Android `versionCode`.
+
+```bash
+# 1. Bump the version (keep app.json and package.json in sync)
+#    "version" in app.json:      2.1.5 → 2.1.6
+#    "version" in package.json:  2.1.5 → 2.1.6
+
+# 2. Commit and push
+git add app.json package.json
+git commit -m "chore: bump version to 2.1.6"
+git push
+
+# 3. Tag with a matching v-prefixed tag and push the tag — this triggers the build
+git tag v2.1.6
+git push origin v2.1.6
+```
+
+A few minutes later a GitHub Release `v2.1.6` appears with `my-van-inventory-v2.1.6.apk`
+attached — share that release page's link. Anyone with the link can download the APK and
+install it directly (allowing "install unknown apps" the first time).
+
+You can also trigger a test build without cutting a tag, using the **Run workflow** button on
+the Actions tab (`workflow_dispatch`); this uploads the APK as a build artifact instead of
+creating a Release.
+
 ### Web
 
 To produce a static web bundle (deployable to Netlify, Vercel, GitHub Pages, …):
