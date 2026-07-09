@@ -351,6 +351,7 @@ the Android `versionCode`.
 # 1. Bump the version (keep app.json and package.json in sync)
 #    "version" in app.json:      2.1.5 → 2.1.6
 #    "version" in package.json:  2.1.5 → 2.1.6
+npm i #update package-lock.json
 
 # 2. Commit and push
 git add app.json package.json
