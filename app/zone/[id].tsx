@@ -1,6 +1,15 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { View, FlatList, StyleSheet, Alert, ScrollView, Animated } from "react-native";
-import { Swipeable } from "react-native-gesture-handler";
+import { View, FlatList, StyleSheet, Alert, ScrollView } from "react-native";
+import ReanimatedSwipeable, {
+  SwipeableMethods,
+  SwipeDirection,
+} from "react-native-gesture-handler/ReanimatedSwipeable";
+import Animated, {
+  useAnimatedStyle,
+  interpolate,
+  Extrapolation,
+  SharedValue,
+} from "react-native-reanimated";
 import { useLocalSearchParams, useRouter, useNavigation } from "expo-router";
 import {
   Text,
@@ -24,6 +33,40 @@ import { EditZoneDialog } from "../../src/components/dialogs/EditZoneDialog";
 import { useTextSelectionFix } from "../../src/hooks/useTextSelectionFix";
 import { Season } from "../../src/db/database";
 import { seasonIconName, seasonIconColor } from "../../src/components/seasonIcon";
+
+// Slides the action button in from its edge as the row is swiped open.
+// `translation` mirrors the legacy Swipeable's `drag` value: positive while
+// revealing a left action, negative while revealing a right action.
+function SwipeActionButton({
+  translation,
+  side,
+  backgroundColor,
+  icon,
+  onPress,
+}: {
+  translation: SharedValue<number>;
+  side: "left" | "right";
+  backgroundColor: string;
+  icon: string;
+  onPress: () => void;
+}) {
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateX:
+          side === "left"
+            ? interpolate(translation.value, [0, 100], [-100, 0], Extrapolation.CLAMP)
+            : interpolate(translation.value, [-100, 0], [0, 100], Extrapolation.CLAMP),
+      },
+    ],
+  }));
+
+  return (
+    <Animated.View style={[styles.swipeAction, { backgroundColor }, animatedStyle]}>
+      <IconButton icon={icon} iconColor="#fff" size={26} onPress={onPress} />
+    </Animated.View>
+  );
+}
 
 export default function ZoneDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -51,7 +94,7 @@ export default function ZoneDetailScreen() {
   const [zoneEditVisible, setZoneEditVisible] = useState(false);
   const [adding, setAdding] = useState(false);
   const newItemNameSelection = useTextSelectionFix();
-  const swipeableRefs = useRef<Map<string, Swipeable>>(new Map());
+  const swipeableRefs = useRef<Map<string, SwipeableMethods>>(new Map());
 
   const zone = zones.find((z) => z.id === id);
 
@@ -198,7 +241,7 @@ export default function ZoneDetailScreen() {
       [
         { text: t("map.cancel"), style: "cancel" },
         {
-          text: "Split",
+          text: t("zone.split_confirm"),
           onPress: async () => {
             if (id) {
               const newZoneId = await splitZone(id);
@@ -282,72 +325,41 @@ export default function ZoneDetailScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         renderItem={({ item }) => (
-          <Swipeable
+          <ReanimatedSwipeable
             ref={(ref) => {
               if (ref) swipeableRefs.current.set(item.id, ref);
               else swipeableRefs.current.delete(item.id);
             }}
             overshootRight={false}
             onSwipeableOpen={(direction) => {
-              if (direction === "right") handleToggleOutOfVan(item);
-              else if (direction === "left" && zone.checklist)
+              // ReanimatedSwipeable's SwipeDirection is inverted relative to the
+              // legacy Swipeable: LEFT means the row moved left, revealing the
+              // *right* actions panel (out-of-van), and vice versa.
+              if (direction === SwipeDirection.LEFT) handleToggleOutOfVan(item);
+              else if (direction === SwipeDirection.RIGHT && zone.checklist)
                 handleToggleChecked(item);
             }}
             renderLeftActions={
               zone.checklist
-                ? (_progress, drag) => (
-                    <Animated.View
-                      style={[
-                        styles.swipeAction,
-                        {
-                          backgroundColor: palette.primary,
-                          transform: [
-                            {
-                              translateX: drag.interpolate({
-                                inputRange: [0, 100],
-                                outputRange: [-100, 0],
-                                extrapolate: "clamp",
-                              }),
-                            },
-                          ],
-                        },
-                      ]}
-                    >
-                      <IconButton
-                        icon={item.checked ? "checkbox-blank-outline" : "check-bold"}
-                        iconColor="#fff"
-                        size={26}
-                        onPress={() => handleToggleChecked(item)}
-                      />
-                    </Animated.View>
+                ? (_progress, translation) => (
+                    <SwipeActionButton
+                      translation={translation}
+                      side="left"
+                      backgroundColor={palette.primary}
+                      icon={item.checked ? "checkbox-blank-outline" : "check-bold"}
+                      onPress={() => handleToggleChecked(item)}
+                    />
                   )
                 : undefined
             }
-            renderRightActions={(_progress, drag) => (
-              <Animated.View
-                style={[
-                  styles.swipeAction,
-                  {
-                    backgroundColor: palette.danger,
-                    transform: [
-                      {
-                        translateX: drag.interpolate({
-                          inputRange: [-100, 0],
-                          outputRange: [0, 100],
-                          extrapolate: "clamp",
-                        }),
-                      },
-                    ],
-                  },
-                ]}
-              >
-                <IconButton
-                  icon={item.out_of_van ? "tray-arrow-down" : "exit-to-app"}
-                  iconColor="#fff"
-                  size={26}
-                  onPress={() => handleToggleOutOfVan(item)}
-                />
-              </Animated.View>
+            renderRightActions={(_progress, translation) => (
+              <SwipeActionButton
+                translation={translation}
+                side="right"
+                backgroundColor={palette.danger}
+                icon={item.out_of_van ? "tray-arrow-down" : "exit-to-app"}
+                onPress={() => handleToggleOutOfVan(item)}
+              />
             )}
           >
           <List.Item
@@ -432,7 +444,7 @@ export default function ZoneDetailScreen() {
               </Menu>
             )}
           />
-          </Swipeable>
+          </ReanimatedSwipeable>
         )}
         ItemSeparatorComponent={Divider}
         ListEmptyComponent={

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { getDb, Zone, ZoneWithCount, Season } from "../db/database";
 import { getPreference, setPreference } from "../db/preferences";
 import * as repo from "../db/repository";
+import i18n from "../i18n";
 
 export type ThemeMode = "auto" | "light" | "dark";
 export type SeasonMode = "summer" | "winter";
@@ -190,14 +191,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       const halfW = (w - gap) / 2;
       geom1 = { type: "rect", x, y, w: halfW, h };
       geom2 = { type: "rect", x: x + halfW + gap, y, w: halfW, h };
-      suffix1 = " (gauche)";
-      suffix2 = " (droite)";
+      suffix1 = i18n.t("zone.split_suffix_left");
+      suffix2 = i18n.t("zone.split_suffix_right");
     } else {
       const halfH = (h - gap) / 2;
       geom1 = { type: "rect", x, y, w, h: halfH };
       geom2 = { type: "rect", x, y: y + halfH + gap, w, h: halfH };
-      suffix1 = " (haut)";
-      suffix2 = " (bas)";
+      suffix1 = i18n.t("zone.split_suffix_top");
+      suffix2 = i18n.t("zone.split_suffix_bottom");
     }
 
     const id1 = generateId();

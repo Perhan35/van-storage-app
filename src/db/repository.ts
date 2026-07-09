@@ -239,12 +239,12 @@ export function splitZoneInDb(
       const order = (maxOrder?.m ?? 0) + 1;
 
       await db.runAsync(
-        "INSERT INTO zones (id, name, color, geometry, sort_order) VALUES (?, ?, ?, ?, ?)",
-        [id1, zone.name + suffix1, zone.color, JSON.stringify(geom1), order]
+        "INSERT INTO zones (id, name, color, geometry, sort_order, fill_opacity, checklist) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [id1, zone.name + suffix1, zone.color, JSON.stringify(geom1), order, zone.fill_opacity, zone.checklist]
       );
       await db.runAsync(
-        "INSERT INTO zones (id, name, color, geometry, sort_order) VALUES (?, ?, ?, ?, ?)",
-        [id2, zone.name + suffix2, zone.color, JSON.stringify(geom2), order + 1]
+        "INSERT INTO zones (id, name, color, geometry, sort_order, fill_opacity, checklist) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [id2, zone.name + suffix2, zone.color, JSON.stringify(geom2), order + 1, zone.fill_opacity, zone.checklist]
       );
 
       // Move all items to the first new zone
