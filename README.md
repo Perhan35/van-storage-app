@@ -1,3 +1,5 @@
+[![Build Android APK](https://github.com/Perhan35/van-storage-app/actions/workflows/build-android.yml/badge.svg?branch=main)](https://github.com/Perhan35/van-storage-app/actions/workflows/build-android.yml)
+
 # My Van Inventory
 
 A mobile-first inventory app for camper vans. It lets you draw a top-down map of your van, split it into colored zones (cupboards, drawers, garage, roof box…), and keep track of every item stored inside — so you never have to dig through three cabinets to find the headlamp again.
