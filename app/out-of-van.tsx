@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, FlatList, StyleSheet } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Button, Divider, IconButton, List, Menu, SegmentedButtons, Text } from "react-native-paper";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppStore } from "../src/store/useAppStore";
 import { getOutOfVanItems } from "../src/db/repository";
 import { Item, Season } from "../src/db/database";
@@ -16,6 +17,7 @@ export default function OutOfVanScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const { palette } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const zones = useAppStore((s) => s.zones);
   const setItemOutOfVan = useAppStore((s) => s.setItemOutOfVan);
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
@@ -161,6 +163,7 @@ export default function OutOfVanScreen() {
       <FlatList
         data={visibleItems}
         keyExtractor={(item) => item.id}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
         renderItem={({ item }) => {
           const seasonIcon = seasonIconName(item.season);
           return (

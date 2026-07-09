@@ -3,6 +3,7 @@ import { View, StyleSheet, Alert, ScrollView, Platform } from "react-native";
 import { Text, Button, Divider, SegmentedButtons } from "react-native-paper";
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { exportAllData, importAllData, isValidGeometry } from "../src/db/repository";
 import { useAppStore, ThemeMode, SeasonMode } from "../src/store/useAppStore";
 import { useTranslation } from "react-i18next";
@@ -39,6 +40,7 @@ export default function SettingsScreen() {
   const { t } = useTranslation();
   const { palette } = useAppTheme();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const lastVersionTapRef = useRef(0);
   const loadZones = useAppStore((s) => s.loadZones);
   const themeMode = useAppStore((s) => s.themeMode);
@@ -213,7 +215,10 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView style={[styles.container, { backgroundColor: palette.surface }]}>
+    <ScrollView
+      style={[styles.container, { backgroundColor: palette.surface }]}
+      contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+    >
       <View style={styles.section}>
         <Text variant="titleMedium" style={styles.sectionTitle}>
           {t("settings.title_data")}
