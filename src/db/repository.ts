@@ -170,6 +170,16 @@ export function listSeasonalItems(): Promise<(Item & { zone_name: string })[]> {
   );
 }
 
+export function listAllItems(): Promise<(Item & { zone_name: string })[]> {
+  return withDb((db) =>
+    db.getAllAsync<Item & { zone_name: string }>(
+      `SELECT i.*, z.name as zone_name
+       FROM items i JOIN zones z ON i.zone_id = z.id
+       ORDER BY i.name COLLATE NOCASE`
+    )
+  );
+}
+
 export function updateZone(
   zoneId: string,
   name: string,

@@ -44,6 +44,21 @@ const styles = StyleSheet.create({
   retryLabel: { fontSize: 15, fontWeight: "600" },
 });
 
+function GameHeaderRight() {
+  const router = useRouter();
+  const { palette } = useAppTheme();
+
+  return (
+    <IconButton
+      icon="close"
+      size={26}
+      iconColor={palette.headerTint}
+      style={{ margin: 0 }}
+      onPress={() => router.back()}
+    />
+  );
+}
+
 function HeaderRight() {
   const router = useRouter();
   const { t } = useTranslation();
@@ -140,6 +155,14 @@ export default function RootLayout() {
           <Stack.Screen
             name="settings"
             options={{ title: t("nav.settings") }}
+          />
+          <Stack.Screen
+            name="game"
+            options={{
+              title: t("game.title"),
+              headerBackVisible: false,
+              headerRight: () => <GameHeaderRight />,
+            }}
           />
         </Stack>
       </PaperProvider>

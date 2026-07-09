@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { View, StyleSheet, Alert, ScrollView, Platform } from "react-native";
 import { Text, Button, Divider, SegmentedButtons } from "react-native-paper";
+import { useRouter } from "expo-router";
 import Constants from "expo-constants";
 import { exportAllData, importAllData, isValidGeometry } from "../src/db/repository";
 import { useAppStore, ThemeMode, SeasonMode } from "../src/store/useAppStore";
@@ -32,9 +33,13 @@ function pickFileWeb(): Promise<string | null> {
   });
 }
 
+const DOUBLE_TAP_WINDOW_MS = 500;
+
 export default function SettingsScreen() {
   const { t } = useTranslation();
   const { palette } = useAppTheme();
+  const router = useRouter();
+  const lastVersionTapRef = useRef(0);
   const loadZones = useAppStore((s) => s.loadZones);
   const themeMode = useAppStore((s) => s.themeMode);
   const setThemeMode = useAppStore((s) => s.setThemeMode);
@@ -45,6 +50,16 @@ export default function SettingsScreen() {
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [changeoverVisible, setChangeoverVisible] = useState(false);
+
+  const handleVersionTap = () => {
+    const now = Date.now();
+    if (now - lastVersionTapRef.current < DOUBLE_TAP_WINDOW_MS) {
+      lastVersionTapRef.current = 0;
+      router.push("/game");
+    } else {
+      lastVersionTapRef.current = now;
+    }
+  };
 
   const handleSeasonModeChange = (mode: SeasonMode) => {
     setSeasonMode(mode);
@@ -274,7 +289,14 @@ export default function SettingsScreen() {
           {t("settings.title_about")}
         </Text>
         <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
-          {t("settings.desc_about", { version: Constants.expoConfig?.version ?? "" })}
+          {t("settings.desc_about")}
+        </Text>
+        <Text
+          variant="bodySmall"
+          onPress={handleVersionTap}
+          style={{ color: palette.onSurfaceVariant }}
+        >
+          {t("settings.version_label", { version: Constants.expoConfig?.version ?? "" })}
         </Text>
       </View>
       <SeasonChangeoverDialog
