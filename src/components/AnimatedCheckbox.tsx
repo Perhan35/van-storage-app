@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useCallback } from "react";
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -14,19 +14,26 @@ type Props = {
   onPress: () => void;
 };
 
-// A quick squash-and-pop gives the tap a tactile "landed" feel that the
-// stock Checkbox.Android lacks — same widget underneath, just wrapped.
+// A quick pop gives the tap a tactile "landed" feel that the stock
+// Checkbox.Android lacks. We fire it straight from the press handler rather
+// than reacting to `checked`: that prop only flips after an async DB
+// round-trip (setItemChecked → loadItems), so on Android the animation
+// arrived too late — and too subtly, overlapping Paper's own internal
+// squash — to read as a reaction to the tap. Popping up (rather than down)
+// keeps it visually distinct from that built-in squash.
 export function AnimatedCheckbox({ checked, onPress }: Props) {
   const scale = useSharedValue(1);
   const reducedMotion = useReducedMotion();
 
-  useEffect(() => {
-    if (reducedMotion) return;
-    scale.value = withSequence(
-      withTiming(0.75, { duration: 90 }),
-      withSpring(1, { damping: 9, stiffness: 220 })
-    );
-  }, [checked, reducedMotion, scale]);
+  const handlePress = useCallback(() => {
+    if (!reducedMotion) {
+      scale.value = withSequence(
+        withTiming(1.35, { duration: 110 }),
+        withSpring(1, { damping: 8, stiffness: 200 })
+      );
+    }
+    onPress();
+  }, [onPress, reducedMotion, scale]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -34,7 +41,7 @@ export function AnimatedCheckbox({ checked, onPress }: Props) {
 
   return (
     <Animated.View style={animatedStyle}>
-      <Checkbox.Android status={checked ? "checked" : "unchecked"} onPress={onPress} />
+      <Checkbox.Android status={checked ? "checked" : "unchecked"} onPress={handlePress} />
     </Animated.View>
   );
 }

@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
-import { View, FlatList, StyleSheet, Alert, ScrollView } from "react-native";
+import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { View, StyleSheet, Alert, ScrollView } from "react-native";
 import ReanimatedSwipeable, {
   SwipeableMethods,
   SwipeDirection,
@@ -8,6 +8,7 @@ import Animated, {
   useAnimatedStyle,
   interpolate,
   Extrapolation,
+  LinearTransition,
   SharedValue,
 } from "react-native-reanimated";
 import { useLocalSearchParams, useRouter, useNavigation } from "expo-router";
@@ -40,6 +41,15 @@ import { AnimatedCheckRow } from "../../src/components/AnimatedCheckRow";
 import { AnimatedOutOfVanRow } from "../../src/components/AnimatedOutOfVanRow";
 
 const ACTION_WIDTH = 64;
+
+// How long a freshly-checked item stays put before sliding to the bottom.
+const MOVE_DELAY_MS = 1000;
+
+const COMPLETED_HEADER_ID = "__completed_header__";
+
+// The checklist list holds items plus a single synthetic "Completed" divider.
+type CompletedHeaderRow = { __header: true; id: string; count: number };
+type ListRow = Item | CompletedHeaderRow;
 
 // Slides the action button in from its edge as the row is swiped open.
 // `translation` mirrors the legacy Swipeable's `drag` value: positive while
@@ -111,6 +121,19 @@ export default function ZoneDetailScreen() {
   const [movingItem, setMovingItem] = useState<Item | null>(null);
   const [zoneEditVisible, setZoneEditVisible] = useState(false);
   const swipeableRefs = useRef<Map<string, SwipeableMethods>>(new Map());
+  // Items just checked linger in place (checked + struck through) for a beat
+  // before sliding into the "Completed" section — these are the ids waiting
+  // out that beat, plus the timers that release them.
+  const [pendingMoveIds, setPendingMoveIds] = useState<Set<string>>(new Set());
+  const moveTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  useEffect(
+    () => () => {
+      moveTimers.current.forEach((timer) => clearTimeout(timer));
+      moveTimers.current.clear();
+    },
+    []
+  );
 
   const zone = zones.find((z) => z.id === id);
 
@@ -124,6 +147,38 @@ export default function ZoneDetailScreen() {
   useEffect(() => {
     loadItems();
   }, [loadItems]);
+
+  // A checked item counts as "done" (and sinks to the bottom) only once its
+  // linger window has elapsed — while pending it keeps its active-list spot.
+  const isDone = useCallback(
+    (item: Item) => !!item.checked && !pendingMoveIds.has(item.id),
+    [pendingMoveIds]
+  );
+
+  // Stable partition: active items keep their loaded order on top, done items
+  // fall to the bottom (also keeping their relative order).
+  const sortedItems = useMemo(() => {
+    if (!zone?.checklist) return items;
+    return items
+      .map((item, index) => ({ item, index }))
+      .sort((a, b) => {
+        const rank = Number(isDone(a.item)) - Number(isDone(b.item));
+        return rank !== 0 ? rank : a.index - b.index;
+      })
+      .map((entry) => entry.item);
+  }, [items, zone?.checklist, isDone]);
+
+  // Inject a "Completed" divider ahead of the first done item.
+  const listData = useMemo<ListRow[]>(() => {
+    if (!zone?.checklist) return sortedItems;
+    const firstDone = sortedItems.findIndex(isDone);
+    if (firstDone === -1) return sortedItems;
+    return [
+      ...sortedItems.slice(0, firstDone),
+      { __header: true, id: COMPLETED_HEADER_ID, count: sortedItems.length - firstDone },
+      ...sortedItems.slice(firstDone),
+    ];
+  }, [sortedItems, zone?.checklist, isDone]);
 
   useEffect(() => {
     if (!zone) return;
@@ -235,10 +290,52 @@ export default function ZoneDetailScreen() {
     await loadItems();
   };
 
+  const clearPendingMove = useCallback((itemId: string) => {
+    const timer = moveTimers.current.get(itemId);
+    if (timer) {
+      clearTimeout(timer);
+      moveTimers.current.delete(itemId);
+    }
+    setPendingMoveIds((prev) => {
+      if (!prev.has(itemId)) return prev;
+      const next = new Set(prev);
+      next.delete(itemId);
+      return next;
+    });
+  }, []);
+
   const handleToggleChecked = async (item: Item) => {
     swipeableRefs.current.get(item.id)?.close();
-    await setItemChecked(item.id, !item.checked);
-    await loadItems();
+    const nextChecked = !item.checked;
+    // Reset any in-flight move so re-tapping doesn't leave a stale timer.
+    clearPendingMove(item.id);
+    // Reflect the toggle immediately so the checkbox + strikethrough land the
+    // instant the row is tapped, rather than after the async DB write.
+    setItems((prev) =>
+      prev.map((it) => (it.id === item.id ? { ...it, checked: nextChecked ? 1 : 0 } : it))
+    );
+    if (nextChecked && zone?.checklist) {
+      // Hold the item in its current spot (checked + struck through) for a beat
+      // so the completion registers, then release it to slide into "Completed".
+      setPendingMoveIds((prev) => new Set(prev).add(item.id));
+      const timer = setTimeout(() => {
+        moveTimers.current.delete(item.id);
+        setPendingMoveIds((prev) => {
+          if (!prev.has(item.id)) return prev;
+          const next = new Set(prev);
+          next.delete(item.id);
+          return next;
+        });
+      }, MOVE_DELAY_MS);
+      moveTimers.current.set(item.id, timer);
+    }
+    try {
+      await setItemChecked(item.id, nextChecked);
+    } catch {
+      // Roll the optimistic toggle back if the write failed.
+      clearPendingMove(item.id);
+      await loadItems();
+    }
   };
 
   const handleResetChecklist = () => {
@@ -326,11 +423,25 @@ export default function ZoneDetailScreen() {
   return (
     <View style={[styles.container, { backgroundColor: zone.color + "26" }]}>
       {/* Items list */}
-      <FlatList
-        data={items}
+      <Animated.FlatList
+        data={listData}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => (
+        itemLayoutAnimation={LinearTransition.duration(300)}
+        renderItem={({ item }) => {
+          if ("__header" in item) {
+            return (
+              <View style={styles.completedHeader}>
+                <Text
+                  variant="labelMedium"
+                  style={{ color: palette.onSurfaceVariant }}
+                >
+                  {t("zone.completed", { count: item.count })}
+                </Text>
+              </View>
+            );
+          }
+          return (
           <ReanimatedSwipeable
             ref={(ref) => {
               if (ref) swipeableRefs.current.set(item.id, ref);
@@ -499,7 +610,8 @@ export default function ZoneDetailScreen() {
           </AnimatedCheckRow>
           </AnimatedOutOfVanRow>
           </ReanimatedSwipeable>
-        )}
+          );
+        }}
         ItemSeparatorComponent={Divider}
         ListEmptyComponent={
           <View style={styles.center}>
@@ -591,6 +703,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   listContent: { paddingBottom: 120 },
+  completedHeader: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 6 },
   scrollArea: { maxHeight: 400 },
   zoneColorDot: {
     width: 24,
