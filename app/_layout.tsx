@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { View, StyleSheet, Text, Pressable, useColorScheme } from "react-native";
+import { View, StyleSheet, Text, Pressable, useColorScheme, LogBox } from "react-native";
 import { Stack, useRouter } from "expo-router";
 import { PaperProvider, IconButton } from "react-native-paper";
 import { StatusBar } from "expo-status-bar";
@@ -10,6 +10,14 @@ import { useAppTheme } from "../src/theme/useAppTheme";
 import { paperDarkTheme, paperLightTheme, darkPalette, lightPalette } from "../src/theme/palette";
 import { configureNotificationHandler } from "../src/notifications/reminders";
 import i18n from "../src/i18n";
+
+// expo-notifications warns on import when running in Expo Go (SDK 53+ dropped
+// support there); real dev client / production builds never hit this. Silence
+// the in-app overlay for it since it's expected noise, not an actionable bug.
+LogBox.ignoreLogs([
+  "`expo-notifications` functionality is not fully supported in Expo Go",
+  "expo-notifications: Android Push notifications (remote notifications) functionality",
+]);
 
 // Rendered *instead of* RootLayout when a render error escapes, so it must not
 // depend on PaperProvider or the store — use plain RN components, the default
