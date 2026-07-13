@@ -19,7 +19,7 @@ import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
 import { seasonIconName, seasonIconColor } from "../src/components/seasonIcon";
 
-type SearchResult = Item & { zone_name: string };
+type SearchResult = Item & { zone_name: string; zone_checklist: number };
 
 const SEARCH_DEBOUNCE_MS = 250;
 const ACTION_WIDTH = 64;
@@ -147,6 +147,7 @@ export default function SearchScreen() {
   };
 
   const handleToggleChecked = async (item: SearchResult) => {
+    if (!item.zone_checklist) return;
     swipeableRefs.current.get(item.id)?.close();
     const checked = !item.checked;
     await setItemChecked(item.id, checked);
@@ -184,15 +185,19 @@ export default function SearchScreen() {
               if (direction === SwipeDirection.LEFT) handleToggleOutOfVan(item);
               else if (direction === SwipeDirection.RIGHT) handleToggleChecked(item);
             }}
-            renderLeftActions={(_progress, translation) => (
-              <SwipeActionButton
-                translation={translation}
-                side="left"
-                backgroundColor={palette.primary}
-                icon={item.checked ? "checkbox-blank-outline" : "check-bold"}
-                onPress={() => handleToggleChecked(item)}
-              />
-            )}
+            renderLeftActions={
+              item.zone_checklist
+                ? (_progress, translation) => (
+                    <SwipeActionButton
+                      translation={translation}
+                      side="left"
+                      backgroundColor={palette.primary}
+                      icon={item.checked ? "checkbox-blank-outline" : "check-bold"}
+                      onPress={() => handleToggleChecked(item)}
+                    />
+                  )
+                : undefined
+            }
             renderRightActions={(_progress, translation) => (
               <SwipeActionButton
                 translation={translation}
@@ -223,7 +228,7 @@ export default function SearchScreen() {
                   <View style={styles.itemIcons}>
                     <List.Icon
                       {...props}
-                      icon={item.out_of_van ? "exit-to-app" : "package-variant"}
+                      icon={item.out_of_van ? "exit-to-app" : "van-utility"}
                       color={item.out_of_van ? palette.danger : undefined}
                     />
                     {seasonIcon && (

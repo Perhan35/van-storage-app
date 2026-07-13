@@ -1,20 +1,15 @@
 import React, { useState } from "react";
-import { View, StyleSheet, ScrollView } from "react-native";
+import { View, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
-import {
-  FAB,
-  Portal,
-  Dialog,
-  Text,
-  List,
-  Button,
-} from "react-native-paper";
+import { FAB, Text, Button } from "react-native-paper";
 import { VanLayoutSVG } from "../src/components/VanLayoutSVG";
 import { ZoomableContainer } from "../src/components/ZoomableContainer";
 import { useAppStore } from "../src/store/useAppStore";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
 import { CreateZoneDialog } from "../src/components/dialogs/CreateZoneDialog";
+import { AddItemDialog } from "../src/components/dialogs/AddItemDialog";
+import { Season } from "../src/db/database";
 
 export default function VanMapScreen() {
   const router = useRouter();
@@ -25,11 +20,12 @@ export default function VanMapScreen() {
   const init = useAppStore((s) => s.init);
   const zones = useAppStore((s) => s.zones);
   const addZone = useAppStore((s) => s.addZone);
+  const addItem = useAppStore((s) => s.addItem);
   const editMode = useAppStore((s) => s.editMode);
 
   const [fabOpen, setFabOpen] = useState(false);
   const [addZoneVisible, setAddZoneVisible] = useState(false);
-  const [zonePicker, setZonePicker] = useState(false);
+  const [addItemVisible, setAddItemVisible] = useState(false);
 
   if (initError) {
     return (
@@ -67,6 +63,17 @@ export default function VanMapScreen() {
     setAddZoneVisible(false);
   };
 
+  const handleCreateItem = async (
+    name: string,
+    notes: string,
+    season: Season,
+    zoneId: string
+  ) => {
+    await addItem(name, zoneId, notes, season);
+    setAddItemVisible(false);
+    router.push(`/zone/${zoneId}`);
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: palette.background }]}>
       <ZoomableContainer panMinPointers={editMode ? 2 : 1}>
@@ -83,7 +90,7 @@ export default function VanMapScreen() {
           {
             icon: "package-variant-plus",
             label: t("map.add_item"),
-            onPress: () => setZonePicker(true),
+            onPress: () => setAddItemVisible(true),
           },
           {
             icon: "shape-plus",
@@ -101,40 +108,13 @@ export default function VanMapScreen() {
         onCreate={handleCreateZone}
       />
 
-      <Portal>
-        {/* Zone picker for adding object */}
-        <Dialog visible={zonePicker} onDismiss={() => setZonePicker(false)}>
-          <Dialog.Title>{t("map.which_zone")}</Dialog.Title>
-          <Dialog.ScrollArea style={styles.scrollArea}>
-            <ScrollView>
-              {zones.map((zone) => (
-                <List.Item
-                  key={zone.id}
-                  title={zone.name}
-                  description={t(
-                    zone.item_count === 1
-                      ? "map.objects_count_one"
-                      : "map.objects_count_other",
-                    { count: zone.item_count }
-                  )}
-                  left={() => (
-                    <View
-                      style={[
-                        styles.zoneColorDot,
-                        { backgroundColor: zone.color },
-                      ]}
-                    />
-                  )}
-                  onPress={() => {
-                    setZonePicker(false);
-                    router.push(`/zone/${zone.id}`);
-                  }}
-                />
-              ))}
-            </ScrollView>
-          </Dialog.ScrollArea>
-        </Dialog>
-      </Portal>
+      <AddItemDialog
+        visible={addItemVisible}
+        zones={zones}
+        zoneId={zones[0]?.id ?? ""}
+        onCancel={() => setAddItemVisible(false)}
+        onSave={handleCreateItem}
+      />
     </View>
   );
 }
@@ -142,12 +122,4 @@ export default function VanMapScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   centered: { justifyContent: "center", alignItems: "center", padding: 24 },
-  scrollArea: { maxHeight: 400 },
-  zoneColorDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    marginLeft: 8,
-    alignSelf: "center",
-  },
 });

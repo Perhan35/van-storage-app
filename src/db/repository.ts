@@ -63,12 +63,13 @@ export function insertItem(
   id: string,
   name: string,
   zoneId: string,
-  notes: string
+  notes: string,
+  season: Season = "none"
 ): Promise<void> {
   return withDb(async (db) => {
     await db.runAsync(
-      "INSERT INTO items (id, name, zone_id, notes) VALUES (?, ?, ?, ?)",
-      [id, name, zoneId, notes]
+      "INSERT INTO items (id, name, zone_id, notes, season) VALUES (?, ?, ?, ?, ?)",
+      [id, name, zoneId, notes, season]
     );
   });
 }
@@ -104,11 +105,11 @@ export function moveItem(itemId: string, newZoneId: string): Promise<void> {
 
 export function searchItems(
   query: string
-): Promise<(Item & { zone_name: string })[]> {
+): Promise<(Item & { zone_name: string; zone_checklist: number })[]> {
   return withDb((db) => {
     const escapedQuery = query.replace(/[\\%_]/g, "\\$&");
-    return db.getAllAsync<Item & { zone_name: string }>(
-      `SELECT i.*, z.name as zone_name
+    return db.getAllAsync<Item & { zone_name: string; zone_checklist: number }>(
+      `SELECT i.*, z.name as zone_name, z.checklist as zone_checklist
        FROM items i JOIN zones z ON i.zone_id = z.id
        WHERE i.name LIKE ?1 ESCAPE '\\' COLLATE NOCASE OR i.notes LIKE ?1 ESCAPE '\\' COLLATE NOCASE
        ORDER BY i.name COLLATE NOCASE`,

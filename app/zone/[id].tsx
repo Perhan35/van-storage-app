@@ -13,11 +13,9 @@ import Animated, {
 import { useLocalSearchParams, useRouter, useNavigation } from "expo-router";
 import {
   Text,
-  TextInput,
   IconButton,
   List,
   Divider,
-  Button,
   Dialog,
   Portal,
   Menu,
@@ -30,7 +28,7 @@ import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../../src/theme/useAppTheme";
 import { EditItemDialog } from "../../src/components/dialogs/EditItemDialog";
 import { EditZoneDialog } from "../../src/components/dialogs/EditZoneDialog";
-import { useTextSelectionFix } from "../../src/hooks/useTextSelectionFix";
+import { AddItemDialog } from "../../src/components/dialogs/AddItemDialog";
 import { Season } from "../../src/db/database";
 import { seasonIconName, seasonIconColor } from "../../src/components/seasonIcon";
 
@@ -99,13 +97,11 @@ export default function ZoneDetailScreen() {
   const splitZone = useAppStore((s) => s.splitZone);
 
   const [items, setItems] = useState<Item[]>([]);
-  const [newItemName, setNewItemName] = useState("");
+  const [addItemVisible, setAddItemVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [menuVisible, setMenuVisible] = useState<string | null>(null);
   const [movingItem, setMovingItem] = useState<Item | null>(null);
   const [zoneEditVisible, setZoneEditVisible] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const newItemNameSelection = useTextSelectionFix();
   const swipeableRefs = useRef<Map<string, SwipeableMethods>>(new Map());
 
   const zone = zones.find((z) => z.id === id);
@@ -125,35 +121,39 @@ export default function ZoneDetailScreen() {
     if (!zone) return;
     navigation.setOptions({
       title: zone.name,
-      headerRight: zone.checklist
-        ? () => {
-            const hasChecked = items.some((i) => i.checked);
-            if (!hasChecked) return null;
-            return (
+      headerRight: () => {
+        const hasChecked = !!zone.checklist && items.some((i) => i.checked);
+        return (
+          <View style={styles.headerActions}>
+            {hasChecked && (
               <IconButton
                 icon="checkbox-multiple-blank-outline"
                 iconColor={palette.headerTint}
                 accessibilityLabel={t("zone.reset_checklist")}
                 onPress={handleResetChecklist}
               />
-            );
-          }
-        : undefined,
+            )}
+            <IconButton
+              icon="plus-circle-outline"
+              iconColor={palette.headerTint}
+              accessibilityLabel={t("zone.add_item")}
+              onPress={() => setAddItemVisible(true)}
+            />
+          </View>
+        );
+      },
     });
   }, [zone, items, navigation, palette]);
 
-  const handleAddItem = async () => {
-    const trimmed = newItemName.trim();
-    if (!trimmed || !id || adding) return;
-    setAdding(true);
-    try {
-      await addItem(trimmed, id);
-      setNewItemName("");
-      newItemNameSelection.resetSelection();
-      await loadItems();
-    } finally {
-      setAdding(false);
-    }
+  const handleCreateItem = async (
+    name: string,
+    notes: string,
+    season: Season,
+    targetZoneId: string
+  ) => {
+    await addItem(name, targetZoneId, notes, season);
+    setAddItemVisible(false);
+    await loadItems();
   };
 
   const handleDeleteItem = (item: Item) => {
@@ -309,28 +309,6 @@ export default function ZoneDetailScreen() {
         </Text>
       </View>
 
-      {/* Add item */}
-      <View style={styles.addRow}>
-        <TextInput
-          mode="outlined"
-          placeholder={t("zone.add_item")}
-          value={newItemName}
-          onChangeText={setNewItemName}
-          selection={newItemNameSelection.selection}
-          onSelectionChange={newItemNameSelection.onSelectionChange}
-          onSubmitEditing={handleAddItem}
-          style={styles.addInput}
-          dense
-        />
-        <IconButton
-          icon="plus-circle"
-          size={32}
-          iconColor={palette.primary}
-          onPress={handleAddItem}
-          disabled={adding}
-        />
-      </View>
-
       {/* Items list */}
       <FlatList
         data={items}
@@ -468,6 +446,15 @@ export default function ZoneDetailScreen() {
         }
       />
 
+      <AddItemDialog
+        visible={addItemVisible}
+        zones={zones}
+        zoneId={id ?? ""}
+        zoneLocked
+        onCancel={() => setAddItemVisible(false)}
+        onSave={handleCreateItem}
+      />
+
       <EditItemDialog
         item={editingItem}
         onCancel={() => setEditingItem(null)}
@@ -529,13 +516,7 @@ const styles = StyleSheet.create({
   colorDot: { width: 16, height: 16, borderRadius: 8, marginRight: 8 },
   headerTitle: { flex: 1 },
   itemCount: { marginTop: 4 },
-  addRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  addInput: { flex: 1 },
+  headerActions: { flexDirection: "row", alignItems: "center" },
   itemLeft: { flexDirection: "row", alignItems: "center" },
   checkedRow: { opacity: 0.55 },
   swipeAction: {

@@ -88,7 +88,8 @@ const resources = {
       "search.error": "Search failed. Please try again.",
 
       "zone.not_found": "Zone not found",
-      "zone.add_item": "Add an item...",
+      "zone.add_item": "Add an item",
+      "zone.new_item": "New item",
       "zone.edit": "Edit",
       "zone.move": "Move",
       "zone.put_back": "Put back in the van",
@@ -218,7 +219,8 @@ const resources = {
       "search.error": "La recherche a échoué. Veuillez réessayer.",
 
       "zone.not_found": "Zone introuvable",
-      "zone.add_item": "Ajouter un objet...",
+      "zone.add_item": "Ajouter un objet",
+      "zone.new_item": "Nouvel objet",
       "zone.edit": "Modifier",
       "zone.move": "Déplacer",
       "zone.put_back": "Remettre dans le van",

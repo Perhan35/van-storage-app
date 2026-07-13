@@ -24,7 +24,7 @@ type AppState = {
   setSeasonMode: (mode: SeasonMode) => Promise<void>;
   reloadSeasonMode: () => Promise<void>;
   loadZones: () => Promise<void>;
-  addItem: (name: string, zoneId: string, notes?: string) => Promise<void>;
+  addItem: (name: string, zoneId: string, notes?: string, season?: Season) => Promise<void>;
   deleteItem: (itemId: string) => Promise<void>;
   updateItem: (itemId: string, name: string, notes: string, season: Season) => Promise<void>;
   moveItem: (itemId: string, newZoneId: string) => Promise<void>;
@@ -112,9 +112,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ zones });
   },
 
-  addItem: async (name, zoneId, notes = "") => {
+  addItem: async (name, zoneId, notes = "", season = "none") => {
     const id = generateId();
-    await repo.insertItem(id, name, zoneId, notes);
+    await repo.insertItem(id, name, zoneId, notes, season);
     await get().loadZones();
   },
 
