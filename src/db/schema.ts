@@ -41,6 +41,14 @@ export const ITEM_COLUMNS_TO_ADD: { name: string; ddl: string }[] = [
     name: "checked",
     ddl: "ALTER TABLE items ADD COLUMN checked INTEGER NOT NULL DEFAULT 0",
   },
+  {
+    name: "expiration_date",
+    ddl: "ALTER TABLE items ADD COLUMN expiration_date TEXT",
+  },
+  {
+    name: "reminder_days",
+    ddl: "ALTER TABLE items ADD COLUMN reminder_days INTEGER NOT NULL DEFAULT 7",
+  },
 ];
 
 export const ZONE_COLUMNS_TO_ADD: { name: string; ddl: string }[] = [

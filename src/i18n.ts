@@ -122,6 +122,9 @@ const resources = {
       "zone.checklist": "Checklist (checkable items)",
       "zone.reset_checklist": "Reset checked items",
       "zone.reset_checklist_confirm": "Uncheck all checked items in this zone?",
+      "zone.add_expiration": "Add an expiration date",
+      "zone.reminder_days": "Remind me N days before",
+      "zone.expires_on": "Expires on {{date}}",
 
       "season.summer": "Summer",
       "season.winter": "Winter",
@@ -131,7 +134,24 @@ const resources = {
       "changeover.to_remove": "To take out of the van",
       "changeover.to_add": "To put back in the van",
       "changeover.nothing": "Nothing to change, everything is already in place.",
-      "changeover.close": "Close"
+      "changeover.close": "Close",
+
+      "settings.title_reminders": "Expiration Reminders",
+      "settings.desc_reminders": "Get notified before an item's expiration date is reached.",
+      "settings.reminders_enabled": "Enable reminders",
+      "settings.reminders_permission": "Notification permission was denied. You can still see expiration status in the app.",
+      "settings.view_expirations": "View items with an expiration date",
+
+      "expiration.cat_expired": "Expired",
+      "expiration.cat_soon": "Expiring soon",
+      "expiration.cat_ok": "Up to date",
+      "expiration.overview_title": "Expiration dates",
+      "expiration.startup_title": "Items expiring soon",
+      "expiration.empty": "No item has an expiration date yet.",
+      "expiration.close": "Close",
+
+      "reminder.title": "Expiration reminder",
+      "reminder.body": "{{name}} expires on {{date}}"
     },
   },
   fr: {
@@ -253,6 +273,9 @@ const resources = {
       "zone.checklist": "Liste à cocher (objets cochables)",
       "zone.reset_checklist": "Réinitialiser les objets cochés",
       "zone.reset_checklist_confirm": "Décocher tous les objets cochés de cette zone ?",
+      "zone.add_expiration": "Ajouter une date de péremption",
+      "zone.reminder_days": "Me prévenir N jours avant",
+      "zone.expires_on": "Périme le {{date}}",
 
       "season.summer": "Été",
       "season.winter": "Hiver",
@@ -262,7 +285,24 @@ const resources = {
       "changeover.to_remove": "À sortir du van",
       "changeover.to_add": "À remettre dans le van",
       "changeover.nothing": "Rien à changer, tout est déjà en place.",
-      "changeover.close": "Fermer"
+      "changeover.close": "Fermer",
+
+      "settings.title_reminders": "Rappels de péremption",
+      "settings.desc_reminders": "Soyez prévenu avant qu'un objet n'atteigne sa date de péremption.",
+      "settings.reminders_enabled": "Activer les rappels",
+      "settings.reminders_permission": "L'autorisation de notification a été refusée. Le statut de péremption reste visible dans l'application.",
+      "settings.view_expirations": "Voir les objets avec une date de péremption",
+
+      "expiration.cat_expired": "Périmés",
+      "expiration.cat_soon": "Bientôt périmés",
+      "expiration.cat_ok": "À jour",
+      "expiration.overview_title": "Dates de péremption",
+      "expiration.startup_title": "Objets bientôt périmés",
+      "expiration.empty": "Aucun objet n'a de date de péremption pour le moment.",
+      "expiration.close": "Fermer",
+
+      "reminder.title": "Rappel de péremption",
+      "reminder.body": "{{name}} périme le {{date}}"
     },
   },
 };

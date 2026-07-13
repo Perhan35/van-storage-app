@@ -2,7 +2,7 @@
   "expo": {
     "name": "My Van Inventory",
     "slug": "van-storage",
-    "version": "2.3.2",
+    "version": "2.3.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -34,7 +34,9 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-font"
+      "expo-font",
+      "@react-native-community/datetimepicker",
+      "expo-notifications"
     ],
     "scheme": "van-storage",
     "extra": {

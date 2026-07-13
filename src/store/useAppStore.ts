@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { getDb, Zone, ZoneWithCount, Season } from "../db/database";
 import { getPreference, setPreference } from "../db/preferences";
 import * as repo from "../db/repository";
+import { cancelAllReminders, requestNotificationPermissions, syncReminders } from "../notifications/reminders";
 import i18n from "../i18n";
 
 export type ThemeMode = "auto" | "light" | "dark";
@@ -17,16 +18,36 @@ type AppState = {
   editMode: boolean;
   themeMode: ThemeMode;
   seasonMode: SeasonMode;
+  remindersEnabled: boolean;
+  expirationAlertShown: boolean;
 
   init: () => Promise<void>;
   setThemeMode: (mode: ThemeMode) => Promise<void>;
   reloadThemeMode: () => Promise<void>;
   setSeasonMode: (mode: SeasonMode) => Promise<void>;
   reloadSeasonMode: () => Promise<void>;
+  setRemindersEnabled: (enabled: boolean) => Promise<boolean>;
+  reloadRemindersEnabled: () => Promise<void>;
+  setExpirationAlertShown: (shown: boolean) => void;
+  syncRemindersIfEnabled: () => Promise<void>;
   loadZones: () => Promise<void>;
-  addItem: (name: string, zoneId: string, notes?: string, season?: Season) => Promise<void>;
+  addItem: (
+    name: string,
+    zoneId: string,
+    notes?: string,
+    season?: Season,
+    expirationDate?: string | null,
+    reminderDays?: number
+  ) => Promise<void>;
   deleteItem: (itemId: string) => Promise<void>;
-  updateItem: (itemId: string, name: string, notes: string, season: Season) => Promise<void>;
+  updateItem: (
+    itemId: string,
+    name: string,
+    notes: string,
+    season: Season,
+    expirationDate: string | null,
+    reminderDays: number
+  ) => Promise<void>;
   moveItem: (itemId: string, newZoneId: string) => Promise<void>;
   setItemOutOfVan: (itemId: string, outOfVan: boolean) => Promise<void>;
   setItemChecked: (itemId: string, checked: boolean) => Promise<void>;
@@ -63,6 +84,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   editMode: false,
   themeMode: "auto",
   seasonMode: "summer",
+  remindersEnabled: false,
+  expirationAlertShown: false,
 
   init: async () => {
     if (get().initialized) return;
@@ -71,6 +94,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await getDb();
       await get().reloadThemeMode();
       await get().reloadSeasonMode();
+      await get().reloadRemindersEnabled();
       await get().loadZones();
       set({ initialized: true });
     } catch (err) {
@@ -107,25 +131,57 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  setRemindersEnabled: async (enabled) => {
+    if (!enabled) {
+      set({ remindersEnabled: false });
+      await setPreference("remindersEnabled", "off");
+      await cancelAllReminders();
+      return true;
+    }
+    const granted = await requestNotificationPermissions();
+    set({ remindersEnabled: granted });
+    await setPreference("remindersEnabled", granted ? "on" : "off");
+    if (granted) await get().syncRemindersIfEnabled();
+    return granted;
+  },
+
+  // Mirrors reloadThemeMode: reads the persisted preference into in-memory
+  // state without writing back, for startup and post-import refresh.
+  reloadRemindersEnabled: async () => {
+    const stored = await getPreference("remindersEnabled");
+    set({ remindersEnabled: stored === "on" });
+  },
+
+  setExpirationAlertShown: (shown) => set({ expirationAlertShown: shown }),
+
+  syncRemindersIfEnabled: async () => {
+    if (!get().remindersEnabled) return;
+    const items = await repo.listAllItems();
+    await syncReminders(items);
+  },
+
   loadZones: async () => {
     const zones = await repo.listZonesWithCounts();
     set({ zones });
   },
 
-  addItem: async (name, zoneId, notes = "", season = "none") => {
+  addItem: async (name, zoneId, notes = "", season = "none", expirationDate = null, reminderDays = 7) => {
     const id = generateId();
-    await repo.insertItem(id, name, zoneId, notes, season);
+    await repo.insertItem(id, name, zoneId, notes, season, expirationDate, reminderDays);
     await get().loadZones();
+    await get().syncRemindersIfEnabled();
   },
 
   deleteItem: async (itemId) => {
     await repo.deleteItem(itemId);
     await get().loadZones();
+    await get().syncRemindersIfEnabled();
   },
 
-  updateItem: async (itemId, name, notes, season) => {
-    await repo.updateItem(itemId, name, notes, season);
+  updateItem: async (itemId, name, notes, season, expirationDate, reminderDays) => {
+    await repo.updateItem(itemId, name, notes, season, expirationDate, reminderDays);
     await get().loadZones();
+    await get().syncRemindersIfEnabled();
   },
 
   moveItem: async (itemId, newZoneId) => {

@@ -4,6 +4,7 @@ import { Dialog, Portal, TextInput, Button, SegmentedButtons, List } from "react
 import { useTranslation } from "react-i18next";
 import { Season, ZoneWithCount } from "../../db/database";
 import { useTextSelectionFix } from "../../hooks/useTextSelectionFix";
+import { ExpirationField } from "../ExpirationField";
 
 type Props = {
   visible: boolean;
@@ -11,7 +12,14 @@ type Props = {
   zoneId: string;
   zoneLocked?: boolean;
   onCancel: () => void;
-  onSave: (name: string, notes: string, season: Season, zoneId: string) => void;
+  onSave: (
+    name: string,
+    notes: string,
+    season: Season,
+    zoneId: string,
+    expirationDate: string | null,
+    reminderDays: number
+  ) => void;
 };
 
 export function AddItemDialog({ visible, zones, zoneId, zoneLocked = false, onCancel, onSave }: Props) {
@@ -21,6 +29,8 @@ export function AddItemDialog({ visible, zones, zoneId, zoneLocked = false, onCa
   const [season, setSeason] = useState<Season>("none");
   const [selectedZoneId, setSelectedZoneId] = useState(zoneId);
   const [zonePickerVisible, setZonePickerVisible] = useState(false);
+  const [expirationDate, setExpirationDate] = useState<string | null>(null);
+  const [reminderDaysText, setReminderDaysText] = useState("7");
   const nameSelection = useTextSelectionFix();
   const notesSelection = useTextSelectionFix();
 
@@ -30,6 +40,8 @@ export function AddItemDialog({ visible, zones, zoneId, zoneLocked = false, onCa
       setNotes("");
       setSeason("none");
       setSelectedZoneId(zoneId);
+      setExpirationDate(null);
+      setReminderDaysText("7");
       nameSelection.resetSelection();
       notesSelection.resetSelection();
     }
@@ -38,7 +50,8 @@ export function AddItemDialog({ visible, zones, zoneId, zoneLocked = false, onCa
   const handleSave = () => {
     const trimmed = name.trim();
     if (!trimmed || !selectedZoneId) return;
-    onSave(trimmed, notes.trim(), season, selectedZoneId);
+    const reminderDays = Math.max(1, parseInt(reminderDaysText, 10) || 7);
+    onSave(trimmed, notes.trim(), season, selectedZoneId, expirationDate, reminderDays);
   };
 
   const selectedZone = zones.find((z) => z.id === selectedZoneId);
@@ -98,6 +111,12 @@ export function AddItemDialog({ visible, zones, zoneId, zoneLocked = false, onCa
                 { value: "summer", icon: "weather-sunny", accessibilityLabel: t("season.summer") },
                 { value: "winter", icon: "snowflake", accessibilityLabel: t("season.winter") },
               ]}
+            />
+            <ExpirationField
+              expirationDate={expirationDate}
+              reminderDaysText={reminderDaysText}
+              onChangeExpirationDate={setExpirationDate}
+              onChangeReminderDaysText={setReminderDaysText}
             />
           </Dialog.Content>
           <Dialog.Actions>

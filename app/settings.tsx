@@ -1,6 +1,6 @@
 import React, { useRef, useState } from "react";
 import { View, StyleSheet, Alert, ScrollView, Platform } from "react-native";
-import { Text, Button, Divider, SegmentedButtons } from "react-native-paper";
+import { Text, Button, Divider, SegmentedButtons, Switch } from "react-native-paper";
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,6 +9,7 @@ import { useAppStore, ThemeMode, SeasonMode } from "../src/store/useAppStore";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
 import { SeasonChangeoverDialog } from "../src/components/dialogs/SeasonChangeoverDialog";
+import { ExpirationOverviewDialog } from "../src/components/dialogs/ExpirationOverviewDialog";
 
 function downloadJsonWeb(data: string, filename: string) {
   const blob = new Blob([data], { type: "application/json" });
@@ -49,9 +50,21 @@ export default function SettingsScreen() {
   const seasonMode = useAppStore((s) => s.seasonMode);
   const setSeasonMode = useAppStore((s) => s.setSeasonMode);
   const reloadSeasonMode = useAppStore((s) => s.reloadSeasonMode);
+  const remindersEnabled = useAppStore((s) => s.remindersEnabled);
+  const setRemindersEnabled = useAppStore((s) => s.setRemindersEnabled);
+  const reloadRemindersEnabled = useAppStore((s) => s.reloadRemindersEnabled);
+  const syncRemindersIfEnabled = useAppStore((s) => s.syncRemindersIfEnabled);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [changeoverVisible, setChangeoverVisible] = useState(false);
+  const [overviewVisible, setOverviewVisible] = useState(false);
+
+  const handleToggleReminders = async (value: boolean) => {
+    const granted = await setRemindersEnabled(value);
+    if (value && !granted) {
+      Alert.alert(t("settings.error"), t("settings.reminders_permission"));
+    }
+  };
 
   const handleVersionTap = () => {
     const now = Date.now();
@@ -170,6 +183,8 @@ export default function SettingsScreen() {
         await loadZones();
         await reloadThemeMode();
         await reloadSeasonMode();
+        await reloadRemindersEnabled();
+        await syncRemindersIfEnabled();
         Alert.alert(t("settings.import_success_title"), t("settings.import_success"));
       } catch (e) {
         Alert.alert(t("settings.error"), t("settings.import_error") + " " + (e as Error).message);
@@ -291,6 +306,27 @@ export default function SettingsScreen() {
       <Divider />
       <View style={styles.section}>
         <Text variant="titleMedium" style={styles.sectionTitle}>
+          {t("settings.title_reminders")}
+        </Text>
+        <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
+          {t("settings.desc_reminders")}
+        </Text>
+        <View style={styles.switchRow}>
+          <Text variant="bodyMedium">{t("settings.reminders_enabled")}</Text>
+          <Switch value={remindersEnabled} onValueChange={handleToggleReminders} />
+        </View>
+        <Button
+          mode="text"
+          icon="calendar-clock"
+          onPress={() => setOverviewVisible(true)}
+          style={styles.button}
+        >
+          {t("settings.view_expirations")}
+        </Button>
+      </View>
+      <Divider />
+      <View style={styles.section}>
+        <Text variant="titleMedium" style={styles.sectionTitle}>
           {t("settings.title_about")}
         </Text>
         <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
@@ -309,6 +345,12 @@ export default function SettingsScreen() {
         season={seasonMode}
         onDismiss={() => setChangeoverVisible(false)}
       />
+      <ExpirationOverviewDialog
+        visible={overviewVisible}
+        categories={["expired", "soon", "ok"]}
+        title={t("expiration.overview_title")}
+        onDismiss={() => setOverviewVisible(false)}
+      />
     </ScrollView>
   );
 }
@@ -319,4 +361,10 @@ const styles = StyleSheet.create({
   sectionTitle: { marginBottom: 8 },
   description: { marginBottom: 16 },
   button: { marginBottom: 12 },
+  switchRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
 });

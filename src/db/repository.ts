@@ -64,12 +64,14 @@ export function insertItem(
   name: string,
   zoneId: string,
   notes: string,
-  season: Season = "none"
+  season: Season = "none",
+  expirationDate: string | null = null,
+  reminderDays: number = 7
 ): Promise<void> {
   return withDb(async (db) => {
     await db.runAsync(
-      "INSERT INTO items (id, name, zone_id, notes, season) VALUES (?, ?, ?, ?, ?)",
-      [id, name, zoneId, notes, season]
+      "INSERT INTO items (id, name, zone_id, notes, season, expiration_date, reminder_days) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [id, name, zoneId, notes, season, expirationDate, reminderDays]
     );
   });
 }
@@ -84,12 +86,14 @@ export function updateItem(
   itemId: string,
   name: string,
   notes: string,
-  season: Season
+  season: Season,
+  expirationDate: string | null,
+  reminderDays: number
 ): Promise<void> {
   return withDb(async (db) => {
     await db.runAsync(
-      "UPDATE items SET name = ?, notes = ?, season = ?, updated_at = datetime('now') WHERE id = ?",
-      [name, notes, season, itemId]
+      "UPDATE items SET name = ?, notes = ?, season = ?, expiration_date = ?, reminder_days = ?, updated_at = datetime('now') WHERE id = ?",
+      [name, notes, season, expirationDate, reminderDays, itemId]
     );
   });
 }
@@ -167,6 +171,17 @@ export function listSeasonalItems(): Promise<(Item & { zone_name: string })[]> {
        FROM items i JOIN zones z ON i.zone_id = z.id
        WHERE i.season != 'none'
        ORDER BY i.name COLLATE NOCASE`
+    )
+  );
+}
+
+export function listItemsWithExpiration(): Promise<(Item & { zone_name: string })[]> {
+  return withDb((db) =>
+    db.getAllAsync<Item & { zone_name: string }>(
+      `SELECT i.*, z.name as zone_name
+       FROM items i JOIN zones z ON i.zone_id = z.id
+       WHERE i.expiration_date IS NOT NULL
+       ORDER BY i.expiration_date ASC`
     )
   );
 }
@@ -316,7 +331,7 @@ export function importAllData(
 
       for (const item of rawItems) {
         await db.runAsync(
-          "INSERT INTO items (id, name, zone_id, notes, out_of_van, season, checked, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO items (id, name, zone_id, notes, out_of_van, season, checked, expiration_date, reminder_days, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           [
             item.id as string,
             item.name as string,
@@ -325,6 +340,8 @@ export function importAllData(
             (item.out_of_van as number) ?? 0,
             sanitizeSeason(item.season),
             item.checked ? 1 : 0,
+            (item.expiration_date as string) ?? null,
+            (item.reminder_days as number) ?? 7,
             (item.created_at as string) ?? new Date().toISOString(),
             (item.updated_at as string) ?? new Date().toISOString(),
           ]

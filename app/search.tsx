@@ -18,6 +18,11 @@ import { Item } from "../src/db/database";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
 import { seasonIconName, seasonIconColor } from "../src/components/seasonIcon";
+import { expirationIconColor } from "../src/components/expirationIcon";
+import { getExpirationStatus } from "../src/utils/expiration";
+import { formatExpiration } from "../src/utils/date";
+import { AnimatedCheckRow } from "../src/components/AnimatedCheckRow";
+import { AnimatedOutOfVanRow } from "../src/components/AnimatedOutOfVanRow";
 
 type SearchResult = Item & { zone_name: string; zone_checklist: number };
 
@@ -70,7 +75,7 @@ function SwipeActionButton({
 
 export default function SearchScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { palette } = useAppTheme();
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
   const setItemOutOfVan = useAppStore((s) => s.setItemOutOfVan);
@@ -202,21 +207,48 @@ export default function SearchScreen() {
               <SwipeActionButton
                 translation={translation}
                 side="right"
-                backgroundColor={item.out_of_van ? "#2e7d32" : palette.danger}
+                backgroundColor={item.out_of_van ? palette.success : palette.danger}
                 icon={item.out_of_van ? "van-utility" : "exit-to-app"}
                 onPress={() => handleToggleOutOfVan(item)}
               />
             )}
           >
+            <AnimatedOutOfVanRow
+              outOfVan={!!item.out_of_van}
+              outColor={palette.danger}
+              inColor={palette.success}
+            >
+            <AnimatedCheckRow checked={!!item.checked}>
             <List.Item
               title={item.name}
-              description={
-                item.out_of_van
+              description={(props) => {
+                const zoneLine = item.out_of_van
                   ? `📍 ${item.zone_name} • ${t("search.out_of_van")}`
-                  : `📍 ${item.zone_name}`
-              }
+                  : `📍 ${item.zone_name}`;
+                return (
+                  <View>
+                    <Text style={{ color: props.color, fontSize: props.fontSize }}>
+                      {zoneLine}
+                    </Text>
+                    {!!item.expiration_date && (
+                      <Text
+                        style={{
+                          color: expirationIconColor(
+                            getExpirationStatus(item.expiration_date, item.reminder_days),
+                            palette
+                          ),
+                          fontSize: props.fontSize,
+                        }}
+                      >
+                        {t("zone.expires_on", {
+                          date: formatExpiration(item.expiration_date, i18n.language),
+                        })}
+                      </Text>
+                    )}
+                  </View>
+                );
+              }}
               onPress={() => handleItemPress(item)}
-              style={item.checked ? styles.checkedRow : undefined}
               titleStyle={
                 item.checked
                   ? { color: palette.onSurfaceVariant, textDecorationLine: "line-through" }
@@ -238,6 +270,8 @@ export default function SearchScreen() {
                 );
               }}
             />
+            </AnimatedCheckRow>
+            </AnimatedOutOfVanRow>
           </ReanimatedSwipeable>
         )}
         ItemSeparatorComponent={Divider}
@@ -272,7 +306,6 @@ const styles = StyleSheet.create({
   searchbar: { margin: 12 },
   itemIcons: { flexDirection: "row" },
   emptyContainer: { padding: 32, alignItems: "center" },
-  checkedRow: { opacity: 0.55 },
   swipeAction: {
     width: ACTION_WIDTH,
     justifyContent: "center",

@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { useAppStore } from "../src/store/useAppStore";
 import { useAppTheme } from "../src/theme/useAppTheme";
 import { paperDarkTheme, paperLightTheme, darkPalette, lightPalette } from "../src/theme/palette";
+import { configureNotificationHandler } from "../src/notifications/reminders";
 import i18n from "../src/i18n";
 
 // Rendered *instead of* RootLayout when a render error escapes, so it must not
@@ -117,6 +118,7 @@ export default function RootLayout() {
   const { palette, isDark } = useAppTheme();
 
   useEffect(() => {
+    configureNotificationHandler();
     init();
   }, []);
 

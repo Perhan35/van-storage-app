@@ -19,7 +19,6 @@ import {
   Dialog,
   Portal,
   Menu,
-  Checkbox,
   FAB,
 } from "react-native-paper";
 import { useAppStore } from "../../src/store/useAppStore";
@@ -32,6 +31,12 @@ import { EditZoneDialog } from "../../src/components/dialogs/EditZoneDialog";
 import { AddItemDialog } from "../../src/components/dialogs/AddItemDialog";
 import { Season } from "../../src/db/database";
 import { seasonIconName, seasonIconColor } from "../../src/components/seasonIcon";
+import { expirationIconName, expirationIconColor } from "../../src/components/expirationIcon";
+import { getExpirationStatus } from "../../src/utils/expiration";
+import { formatExpiration } from "../../src/utils/date";
+import { AnimatedCheckbox } from "../../src/components/AnimatedCheckbox";
+import { AnimatedCheckRow } from "../../src/components/AnimatedCheckRow";
+import { AnimatedOutOfVanRow } from "../../src/components/AnimatedOutOfVanRow";
 
 const ACTION_WIDTH = 64;
 
@@ -83,7 +88,7 @@ export default function ZoneDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const navigation = useNavigation();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { palette } = useAppTheme();
   const zones = useAppStore((s) => s.zones);
   const addItem = useAppStore((s) => s.addItem);
@@ -178,9 +183,11 @@ export default function ZoneDetailScreen() {
     name: string,
     notes: string,
     season: Season,
-    targetZoneId: string
+    targetZoneId: string,
+    expirationDate: string | null,
+    reminderDays: number
   ) => {
-    await addItem(name, targetZoneId, notes, season);
+    await addItem(name, targetZoneId, notes, season, expirationDate, reminderDays);
     setAddItemVisible(false);
     await loadItems();
   };
@@ -200,9 +207,15 @@ export default function ZoneDetailScreen() {
     ]);
   };
 
-  const handleSaveEdit = async (name: string, notes: string, season: Season) => {
+  const handleSaveEdit = async (
+    name: string,
+    notes: string,
+    season: Season,
+    expirationDate: string | null,
+    reminderDays: number
+  ) => {
     if (!editingItem) return;
-    await updateItem(editingItem.id, name, notes, season);
+    await updateItem(editingItem.id, name, notes, season, expirationDate, reminderDays);
     setEditingItem(null);
     await loadItems();
   };
@@ -347,17 +360,50 @@ export default function ZoneDetailScreen() {
               <SwipeActionButton
                 translation={translation}
                 side="right"
-                backgroundColor={item.out_of_van ? "#2e7d32" : palette.danger}
+                backgroundColor={item.out_of_van ? palette.success : palette.danger}
                 icon={item.out_of_van ? "van-utility" : "exit-to-app"}
                 onPress={() => handleToggleOutOfVan(item)}
               />
             )}
           >
+          <AnimatedOutOfVanRow
+            outOfVan={!!item.out_of_van}
+            outColor={palette.danger}
+            inColor={palette.success}
+          >
+          <AnimatedCheckRow checked={!!item.checked}>
           <List.Item
             title={item.name}
-            description={item.notes || undefined}
+            description={
+              item.expiration_date
+                ? (props) => {
+                    const status = getExpirationStatus(item.expiration_date as string, item.reminder_days);
+                    return (
+                      <View>
+                        {!!item.notes && (
+                          <Text
+                            style={{ color: props.color, fontSize: props.fontSize }}
+                            numberOfLines={2}
+                          >
+                            {item.notes}
+                          </Text>
+                        )}
+                        <Text
+                          style={{
+                            color: expirationIconColor(status, palette),
+                            fontSize: props.fontSize,
+                          }}
+                        >
+                          {t("zone.expires_on", {
+                            date: formatExpiration(item.expiration_date as string, i18n.language),
+                          })}
+                        </Text>
+                      </View>
+                    );
+                  }
+                : item.notes || undefined
+            }
             onPress={() => setEditingItem(item)}
-            style={item.checked ? styles.checkedRow : undefined}
             titleStyle={
               item.checked
                 ? { color: palette.onSurfaceVariant, textDecorationLine: "line-through" }
@@ -365,13 +411,20 @@ export default function ZoneDetailScreen() {
             }
             left={(props) => {
               const seasonIcon = seasonIconName(item.season);
-              const hasIcons = !!item.out_of_van || !!seasonIcon;
+              const rawExpirationStatus = item.expiration_date
+                ? getExpirationStatus(item.expiration_date, item.reminder_days)
+                : null;
+              // Only surface the calendar icon when the item is actually at
+              // risk (expired or expiring soon) — an up-to-date expiration
+              // date doesn't need a persistent icon on the row.
+              const expirationStatus = rawExpirationStatus === "ok" ? null : rawExpirationStatus;
+              const hasIcons = !!item.out_of_van || !!seasonIcon || !!expirationStatus;
               if (!zone.checklist && !hasIcons) return null;
               return (
                 <View style={[styles.itemLeft, props.style]}>
                   {!!zone.checklist && (
-                    <Checkbox.Android
-                      status={item.checked ? "checked" : "unchecked"}
+                    <AnimatedCheckbox
+                      checked={!!item.checked}
                       onPress={() => handleToggleChecked(item)}
                     />
                   )}
@@ -380,6 +433,12 @@ export default function ZoneDetailScreen() {
                   )}
                   {!!seasonIcon && (
                     <List.Icon icon={seasonIcon} color={seasonIconColor(item.season)} />
+                  )}
+                  {!!expirationStatus && (
+                    <List.Icon
+                      icon={expirationIconName(expirationStatus)}
+                      color={expirationIconColor(expirationStatus, palette)}
+                    />
                   )}
                 </View>
               );
@@ -435,6 +494,8 @@ export default function ZoneDetailScreen() {
               </Menu>
             )}
           />
+          </AnimatedCheckRow>
+          </AnimatedOutOfVanRow>
           </ReanimatedSwipeable>
         )}
         ItemSeparatorComponent={Divider}
@@ -522,7 +583,6 @@ const styles = StyleSheet.create({
   headerTitleContainer: { alignItems: "center" },
   headerActions: { flexDirection: "row", alignItems: "center" },
   itemLeft: { flexDirection: "row", alignItems: "center" },
-  checkedRow: { opacity: 0.55 },
   swipeAction: {
     width: ACTION_WIDTH,
     justifyContent: "center",

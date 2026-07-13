@@ -97,6 +97,8 @@ export type Item = {
   out_of_van: number;
   season: Season;
   checked: number;
+  expiration_date: string | null;
+  reminder_days: number;
 };
 
 export type ZoneWithCount = Zone & { item_count: number };

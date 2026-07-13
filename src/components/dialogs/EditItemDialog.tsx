@@ -4,11 +4,18 @@ import { Dialog, Portal, TextInput, Button, SegmentedButtons } from "react-nativ
 import { useTranslation } from "react-i18next";
 import { Item, Season } from "../../db/database";
 import { useTextSelectionFix } from "../../hooks/useTextSelectionFix";
+import { ExpirationField } from "../ExpirationField";
 
 type Props = {
   item: Item | null;
   onCancel: () => void;
-  onSave: (name: string, notes: string, season: Season) => void;
+  onSave: (
+    name: string,
+    notes: string,
+    season: Season,
+    expirationDate: string | null,
+    reminderDays: number
+  ) => void;
 };
 
 export function EditItemDialog({ item, onCancel, onSave }: Props) {
@@ -16,6 +23,8 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
   const [season, setSeason] = useState<Season>("none");
+  const [expirationDate, setExpirationDate] = useState<string | null>(null);
+  const [reminderDaysText, setReminderDaysText] = useState("7");
   const nameSelection = useTextSelectionFix();
   const notesSelection = useTextSelectionFix();
 
@@ -24,6 +33,8 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
       setName(item.name);
       setNotes(item.notes);
       setSeason(item.season);
+      setExpirationDate(item.expiration_date);
+      setReminderDaysText(String(item.reminder_days));
       nameSelection.resetSelection();
       notesSelection.resetSelection();
     }
@@ -32,7 +43,8 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
   const handleSave = () => {
     const trimmed = name.trim();
     if (!trimmed) return;
-    onSave(trimmed, notes.trim(), season);
+    const reminderDays = Math.max(1, parseInt(reminderDaysText, 10) || 7);
+    onSave(trimmed, notes.trim(), season, expirationDate, reminderDays);
   };
 
   return (
@@ -68,6 +80,12 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
               { value: "summer", icon: "weather-sunny", accessibilityLabel: t("season.summer") },
               { value: "winter", icon: "snowflake", accessibilityLabel: t("season.winter") },
             ]}
+          />
+          <ExpirationField
+            expirationDate={expirationDate}
+            reminderDaysText={reminderDaysText}
+            onChangeExpirationDate={setExpirationDate}
+            onChangeReminderDaysText={setReminderDaysText}
           />
         </Dialog.Content>
         <Dialog.Actions>

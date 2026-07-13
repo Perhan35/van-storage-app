@@ -12,6 +12,7 @@ export type Palette = {
   onSurfaceVariant: string;
   divider: string;
   danger: string;
+  success: string;
   warningSurface: string;
   warningOn: string;
   editModeAccent: string;
@@ -30,6 +31,7 @@ export const lightPalette: Palette = {
   onSurfaceVariant: "#757575",
   divider: "#E0E0E0",
   danger: "#D32F2F",
+  success: "#2E7D32",
   warningSurface: "#FFF3E0",
   warningOn: "#E65100",
   editModeAccent: "#FFD54F",
@@ -48,6 +50,7 @@ export const darkPalette: Palette = {
   onSurfaceVariant: "#B0B0B0",
   divider: "#2F2F2F",
   danger: "#EF5350",
+  success: "#66BB6A",
   warningSurface: "#3A2A18",
   warningOn: "#FFB74D",
   editModeAccent: "#FFD54F",

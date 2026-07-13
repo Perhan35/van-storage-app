@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, FlatList, StyleSheet } from "react-native";
+import Animated, { LinearTransition, SlideOutRight, useReducedMotion } from "react-native-reanimated";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Button, Divider, IconButton, List, Menu, SegmentedButtons, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -18,6 +19,7 @@ export default function OutOfVanScreen() {
   const { t } = useTranslation();
   const { palette } = useAppTheme();
   const insets = useSafeAreaInsets();
+  const reducedMotion = useReducedMotion();
   const zones = useAppStore((s) => s.zones);
   const setItemOutOfVan = useAppStore((s) => s.setItemOutOfVan);
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
@@ -167,6 +169,10 @@ export default function OutOfVanScreen() {
         renderItem={({ item }) => {
           const seasonIcon = seasonIconName(item.season);
           return (
+          <Animated.View
+            exiting={reducedMotion ? undefined : SlideOutRight.duration(280)}
+            layout={reducedMotion ? undefined : LinearTransition.duration(220)}
+          >
           <List.Item
             title={item.name}
             description={`📍 ${item.zone_name}${item.notes ? ` • ${item.notes}` : ""}`}
@@ -187,6 +193,7 @@ export default function OutOfVanScreen() {
               />
             )}
           />
+          </Animated.View>
           );
         }}
         ItemSeparatorComponent={Divider}

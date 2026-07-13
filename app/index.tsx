@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { FAB, Text, Button } from "react-native-paper";
@@ -9,7 +9,10 @@ import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
 import { CreateZoneDialog } from "../src/components/dialogs/CreateZoneDialog";
 import { AddItemDialog } from "../src/components/dialogs/AddItemDialog";
+import { ExpirationOverviewDialog } from "../src/components/dialogs/ExpirationOverviewDialog";
 import { Season } from "../src/db/database";
+import { listItemsWithExpiration } from "../src/db/repository";
+import { getExpirationStatus } from "../src/utils/expiration";
 
 export default function VanMapScreen() {
   const router = useRouter();
@@ -22,10 +25,26 @@ export default function VanMapScreen() {
   const addZone = useAppStore((s) => s.addZone);
   const addItem = useAppStore((s) => s.addItem);
   const editMode = useAppStore((s) => s.editMode);
+  const expirationAlertShown = useAppStore((s) => s.expirationAlertShown);
+  const setExpirationAlertShown = useAppStore((s) => s.setExpirationAlertShown);
 
   const [fabOpen, setFabOpen] = useState(false);
   const [addZoneVisible, setAddZoneVisible] = useState(false);
   const [addItemVisible, setAddItemVisible] = useState(false);
+  const [startupOverviewVisible, setStartupOverviewVisible] = useState(false);
+
+  // Shown once per app launch: surfaces items that are already expired or
+  // expiring soon, right after the data has finished loading.
+  useEffect(() => {
+    if (!initialized || expirationAlertShown) return;
+    setExpirationAlertShown(true);
+    listItemsWithExpiration().then((items) => {
+      const hasUrgent = items.some(
+        (item) => getExpirationStatus(item.expiration_date as string, item.reminder_days) !== "ok"
+      );
+      if (hasUrgent) setStartupOverviewVisible(true);
+    });
+  }, [initialized, expirationAlertShown]);
 
   if (initError) {
     return (
@@ -67,9 +86,11 @@ export default function VanMapScreen() {
     name: string,
     notes: string,
     season: Season,
-    zoneId: string
+    zoneId: string,
+    expirationDate: string | null,
+    reminderDays: number
   ) => {
-    await addItem(name, zoneId, notes, season);
+    await addItem(name, zoneId, notes, season, expirationDate, reminderDays);
     setAddItemVisible(false);
     router.push(`/zone/${zoneId}`);
   };
@@ -114,6 +135,13 @@ export default function VanMapScreen() {
         zoneId={zones[0]?.id ?? ""}
         onCancel={() => setAddItemVisible(false)}
         onSave={handleCreateItem}
+      />
+
+      <ExpirationOverviewDialog
+        visible={startupOverviewVisible}
+        categories={["expired", "soon"]}
+        title={t("expiration.startup_title")}
+        onDismiss={() => setStartupOverviewVisible(false)}
       />
     </View>
   );
