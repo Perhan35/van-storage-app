@@ -187,7 +187,7 @@ export default function OutOfVanScreen() {
             )}
             right={() => (
               <IconButton
-                icon="tray-arrow-down"
+                icon="van-utility"
                 size={24}
                 onPress={() => handlePutBack(item)}
               />
