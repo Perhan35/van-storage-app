@@ -11,6 +11,7 @@ import Animated, {
   SharedValue,
 } from "react-native-reanimated";
 import { useLocalSearchParams, useRouter, useNavigation } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Text,
   IconButton,
@@ -90,6 +91,7 @@ export default function ZoneDetailScreen() {
   const navigation = useNavigation();
   const { t, i18n } = useTranslation();
   const { palette } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const zones = useAppStore((s) => s.zones);
   const addItem = useAppStore((s) => s.addItem);
   const deleteItem = useAppStore((s) => s.deleteItem);
@@ -510,7 +512,7 @@ export default function ZoneDetailScreen() {
 
       <FAB
         icon="plus"
-        style={[styles.fab, { backgroundColor: palette.primary }]}
+        style={[styles.fab, { backgroundColor: palette.primary, bottom: insets.bottom + 16 }]}
         onPress={() => setAddItemVisible(true)}
         accessibilityLabel={t("zone.add_item")}
       />
