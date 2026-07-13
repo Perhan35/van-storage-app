@@ -10,6 +10,7 @@ import { Item, Season } from "../src/db/database";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
 import { seasonIconName, seasonIconColor } from "../src/components/seasonIcon";
+import { EditItemDialog } from "../src/components/dialogs/EditItemDialog";
 
 type OutItem = Item & { zone_name: string };
 type SeasonFilter = Season | "all";
@@ -23,10 +24,12 @@ export default function OutOfVanScreen() {
   const zones = useAppStore((s) => s.zones);
   const setItemOutOfVan = useAppStore((s) => s.setItemOutOfVan);
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
+  const updateItem = useAppStore((s) => s.updateItem);
   const [items, setItems] = useState<OutItem[]>([]);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [seasonFilter, setSeasonFilter] = useState<SeasonFilter>("all");
   const [menuVisible, setMenuVisible] = useState(false);
+  const [editingItem, setEditingItem] = useState<OutItem | null>(null);
 
   const load = useCallback(async () => {
     const data = await getOutOfVanItems();
@@ -88,6 +91,19 @@ export default function OutOfVanScreen() {
   const handleLocate = (item: OutItem) => {
     setHighlightedZoneId(item.zone_id);
     router.dismissTo("/");
+  };
+
+  const handleSaveEdit = async (
+    name: string,
+    notes: string,
+    season: Season,
+    expirationDate: string | null,
+    reminderDays: number
+  ) => {
+    if (!editingItem) return;
+    await updateItem(editingItem.id, name, notes, season, expirationDate, reminderDays);
+    setEditingItem(null);
+    await load();
   };
 
   return (
@@ -177,6 +193,7 @@ export default function OutOfVanScreen() {
             title={item.name}
             description={`📍 ${item.zone_name}${item.notes ? ` • ${item.notes}` : ""}`}
             onPress={() => handleLocate(item)}
+            onLongPress={() => setEditingItem(item)}
             left={(props) => (
               <View style={styles.itemIcons}>
                 <List.Icon {...props} icon="exit-to-app" color={palette.danger} />
@@ -204,6 +221,11 @@ export default function OutOfVanScreen() {
             </Text>
           </View>
         }
+      />
+      <EditItemDialog
+        item={editingItem}
+        onCancel={() => setEditingItem(null)}
+        onSave={handleSaveEdit}
       />
     </View>
   );
