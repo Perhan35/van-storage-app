@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -87,6 +89,23 @@ jobs:
           name: my-van-inventory-v${{ env.APP_VERSION }}
           path: dist/my-van-inventory-v${{ env.APP_VERSION }}.apk
 
+      - name: Generate changelog
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          git fetch --tags --force
+          CURRENT_TAG="${GITHUB_REF_NAME}"
+          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${CURRENT_TAG}$" | head -1)
+          {
+            echo "CHANGELOG<<EOF"
+            if [ -n "$PREV_TAG" ]; then
+              git log --pretty=format:'- %s' "${PREV_TAG}..${CURRENT_TAG}"
+            else
+              git log --pretty=format:'- %s'
+            fi
+            echo ""
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -102,3 +121,16 @@ jobs:
             4. Appuyez sur « Installer ».
 
             Les mises à jour futures s'installeront directement par-dessus cette version, sans perte de données.
+
+            ## Install on Android
+
+            1. Download the `my-van-inventory-v${{ env.APP_VERSION }}.apk` file below to your phone.
+            2. Open the downloaded file.
+            3. If Android shows a warning, allow "Install unknown apps" for the app you used (browser or file manager).
+            4. Tap "Install".
+
+            Future updates will install directly over this version, with no data loss.
+
+            ## Changements depuis la version précédente / Changes since previous version
+
+            ${{ env.CHANGELOG }}
