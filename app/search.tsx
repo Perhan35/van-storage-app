@@ -23,6 +23,8 @@ import { getExpirationStatus } from "../src/utils/expiration";
 import { formatExpiration } from "../src/utils/date";
 import { AnimatedCheckRow } from "../src/components/AnimatedCheckRow";
 import { AnimatedOutOfVanRow } from "../src/components/AnimatedOutOfVanRow";
+import { EditItemDialog } from "../src/components/dialogs/EditItemDialog";
+import { Season } from "../src/db/database";
 
 type SearchResult = Item & { zone_name: string; zone_checklist: number };
 
@@ -80,10 +82,12 @@ export default function SearchScreen() {
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
   const setItemOutOfVan = useAppStore((s) => s.setItemOutOfVan);
   const setItemChecked = useAppStore((s) => s.setItemChecked);
+  const updateItem = useAppStore((s) => s.updateItem);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searched, setSearched] = useState(false);
   const [searchError, setSearchError] = useState(false);
+  const [editingItem, setEditingItem] = useState<SearchResult | null>(null);
   const swipeableRefs = useRef<Map<string, SwipeableMethods>>(new Map());
 
   // Debouncing collapses fast typing into one query instead of one per
@@ -159,6 +163,19 @@ export default function SearchScreen() {
     setResults((rs) =>
       rs.map((r) => (r.id === item.id ? { ...r, checked: checked ? 1 : 0 } : r))
     );
+  };
+
+  const handleSaveEdit = async (
+    name: string,
+    notes: string,
+    season: Season,
+    expirationDate: string | null,
+    reminderDays: number
+  ) => {
+    if (!editingItem) return;
+    await updateItem(editingItem.id, name, notes, season, expirationDate, reminderDays);
+    setEditingItem(null);
+    if (query.trim().length > 0) await runSearch(query.trim());
   };
 
   const emptyTextStyle = { color: palette.onSurfaceVariant, textAlign: "center" as const };
@@ -249,6 +266,7 @@ export default function SearchScreen() {
                 );
               }}
               onPress={() => handleItemPress(item)}
+              onLongPress={() => setEditingItem(item)}
               titleStyle={
                 item.checked
                   ? { color: palette.onSurfaceVariant, textDecorationLine: "line-through" }
@@ -296,6 +314,12 @@ export default function SearchScreen() {
             </View>
           )
         }
+      />
+
+      <EditItemDialog
+        item={editingItem}
+        onCancel={() => setEditingItem(null)}
+        onSave={handleSaveEdit}
       />
     </View>
   );
