@@ -153,7 +153,35 @@ const resources = {
       "expiration.acknowledge": "Acknowledge and clear expiration date",
 
       "reminder.title": "Expiration reminder",
-      "reminder.body": "{{name}} expires on {{date}}"
+      "reminder.body": "{{name}} expires on {{date}}",
+
+      "settings.title_help": "Help",
+      "settings.desc_help": "New here? Replay the guided tour of the app.",
+      "settings.btn_tutorial": "Replay the tutorial",
+
+      "tutorial.skip": "Skip",
+      "tutorial.back": "Back",
+      "tutorial.next": "Next",
+      "tutorial.done": "Get started",
+      "tutorial.welcome_title": "Welcome to Van Storage",
+      "tutorial.welcome_desc": "Keep track of everything in your van and always know where it is. Here's a quick tour.",
+      "tutorial.zones_title": "Zones",
+      "tutorial.zones_desc": "Your van is split into zones — lockers, cupboards, drawers. Tap a zone on the map to see what's inside. Use Edit mode to create, move and resize them.",
+      "tutorial.items_title": "Items",
+      "tutorial.items_desc": "Each zone holds your items. Add them with the + button, then tap an item to edit its details.",
+      "tutorial.expiration_title": "Expiration dates",
+      "tutorial.expiration_desc": "Give perishable items (food, medicine, extinguisher…) an expiration date. The app flags them with an alert icon and can remind you before they lapse.",
+      "tutorial.season_title": "Seasons",
+      "tutorial.season_desc": "Tag items as summer or winter. When you switch season, the app tells you exactly what to take out of the van and what to put back.",
+      "tutorial.gestures_title": "Gestures on an item",
+      "tutorial.demo_item_name": "First-aid kit",
+      "tutorial.demo_item_note": "Expires Dec 2026",
+      "tutorial.gesture_swipe_left_title": "Swipe left",
+      "tutorial.gesture_swipe_left_desc": "Take the item out of the van (or put it back).",
+      "tutorial.gesture_swipe_right_title": "Swipe right",
+      "tutorial.gesture_swipe_right_desc": "Check the item off, in zones set up as a checklist.",
+      "tutorial.gesture_long_press_title": "Long press",
+      "tutorial.gesture_long_press_desc": "Open the menu to edit the item (the ⋮ button does the same)."
     },
   },
   fr: {
@@ -306,7 +334,35 @@ const resources = {
       "expiration.acknowledge": "Prise en compte et suppression de la date",
 
       "reminder.title": "Rappel de péremption",
-      "reminder.body": "{{name}} périme le {{date}}"
+      "reminder.body": "{{name}} périme le {{date}}",
+
+      "settings.title_help": "Aide",
+      "settings.desc_help": "Nouveau ici ? Relancez la visite guidée de l'application.",
+      "settings.btn_tutorial": "Revoir le tutoriel",
+
+      "tutorial.skip": "Passer",
+      "tutorial.back": "Retour",
+      "tutorial.next": "Suivant",
+      "tutorial.done": "C'est parti",
+      "tutorial.welcome_title": "Bienvenue dans Van Storage",
+      "tutorial.welcome_desc": "Gardez l'inventaire de votre van et sachez toujours où se trouve chaque objet. Voici un tour rapide.",
+      "tutorial.zones_title": "Les zones",
+      "tutorial.zones_desc": "Votre van est divisé en zones — coffres, placards, tiroirs. Touchez une zone sur le plan pour voir ce qu'elle contient. Le mode Édition permet de les créer, déplacer et redimensionner.",
+      "tutorial.items_title": "Les objets",
+      "tutorial.items_desc": "Chaque zone contient vos objets. Ajoutez-les avec le bouton +, puis touchez un objet pour modifier ses détails.",
+      "tutorial.expiration_title": "Dates de péremption",
+      "tutorial.expiration_desc": "Donnez une date de péremption aux objets périssables (nourriture, médicaments, extincteur…). L'application les signale avec une icône d'alerte et peut vous prévenir avant l'échéance.",
+      "tutorial.season_title": "Les saisons",
+      "tutorial.season_desc": "Marquez les objets comme été ou hiver. Au changement de saison, l'application vous indique exactement quoi sortir du van et quoi y remettre.",
+      "tutorial.gestures_title": "Les gestes sur un objet",
+      "tutorial.demo_item_name": "Trousse de secours",
+      "tutorial.demo_item_note": "Périme en déc. 2026",
+      "tutorial.gesture_swipe_left_title": "Glisser vers la gauche",
+      "tutorial.gesture_swipe_left_desc": "Sortir l'objet du van (ou le remettre).",
+      "tutorial.gesture_swipe_right_title": "Glisser vers la droite",
+      "tutorial.gesture_swipe_right_desc": "Cocher l'objet, dans les zones configurées en liste à cocher.",
+      "tutorial.gesture_long_press_title": "Appui long",
+      "tutorial.gesture_long_press_desc": "Ouvrir le menu pour modifier l'objet (le bouton ⋮ fait de même)."
     },
   },
 };

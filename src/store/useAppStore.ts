@@ -20,8 +20,11 @@ type AppState = {
   seasonMode: SeasonMode;
   remindersEnabled: boolean;
   expirationAlertShown: boolean;
+  tutorialVisible: boolean;
 
   init: () => Promise<void>;
+  showTutorial: () => void;
+  dismissTutorial: () => Promise<void>;
   setThemeMode: (mode: ThemeMode) => Promise<void>;
   reloadThemeMode: () => Promise<void>;
   setSeasonMode: (mode: SeasonMode) => Promise<void>;
@@ -86,6 +89,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   seasonMode: "summer",
   remindersEnabled: false,
   expirationAlertShown: false,
+  tutorialVisible: false,
 
   init: async () => {
     if (get().initialized) return;
@@ -96,10 +100,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().reloadSeasonMode();
       await get().reloadRemindersEnabled();
       await get().loadZones();
-      set({ initialized: true });
+      // First launch: no "tutorialShown" preference yet → surface the guided
+      // tour. Dismissing it records the preference so it never auto-opens again.
+      const tutorialShown = await getPreference("tutorialShown");
+      set({ initialized: true, tutorialVisible: tutorialShown !== "yes" });
     } catch (err) {
       set({ initError: err instanceof Error ? err.message : String(err) });
     }
+  },
+
+  showTutorial: () => set({ tutorialVisible: true }),
+
+  dismissTutorial: async () => {
+    set({ tutorialVisible: false });
+    await setPreference("tutorialShown", "yes");
   },
 
   setThemeMode: async (mode) => {

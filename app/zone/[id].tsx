@@ -555,6 +555,7 @@ export default function ZoneDetailScreen() {
                 : item.notes || undefined
             }
             onPress={() => setEditingItem(item)}
+            onLongPress={() => setMenuVisible(item.id)}
             titleStyle={
               item.checked
                 ? { color: palette.onSurfaceVariant, textDecorationLine: "line-through" }

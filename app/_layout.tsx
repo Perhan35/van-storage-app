@@ -9,6 +9,7 @@ import { useAppStore } from "../src/store/useAppStore";
 import { useAppTheme } from "../src/theme/useAppTheme";
 import { paperDarkTheme, paperLightTheme, darkPalette, lightPalette } from "../src/theme/palette";
 import { configureNotificationHandler } from "../src/notifications/reminders";
+import { OnboardingTutorial } from "../src/components/OnboardingTutorial";
 import i18n from "../src/i18n";
 
 // expo-notifications warns on import when running in Expo Go (SDK 53+ dropped
@@ -175,6 +176,7 @@ export default function RootLayout() {
             }}
           />
         </Stack>
+        <OnboardingTutorial />
       </PaperProvider>
     </GestureHandlerRootView>
   );

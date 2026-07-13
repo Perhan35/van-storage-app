@@ -44,6 +44,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const lastVersionTapRef = useRef(0);
   const loadZones = useAppStore((s) => s.loadZones);
+  const showTutorial = useAppStore((s) => s.showTutorial);
   const themeMode = useAppStore((s) => s.themeMode);
   const setThemeMode = useAppStore((s) => s.setThemeMode);
   const reloadThemeMode = useAppStore((s) => s.reloadThemeMode);
@@ -322,6 +323,26 @@ export default function SettingsScreen() {
           style={styles.button}
         >
           {t("settings.view_expirations")}
+        </Button>
+      </View>
+      <Divider />
+      <View style={styles.section}>
+        <Text variant="titleMedium" style={styles.sectionTitle}>
+          {t("settings.title_help")}
+        </Text>
+        <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
+          {t("settings.desc_help")}
+        </Text>
+        <Button
+          mode="outlined"
+          icon="school-outline"
+          onPress={() => {
+            router.push("/");
+            showTutorial();
+          }}
+          style={styles.button}
+        >
+          {t("settings.btn_tutorial")}
         </Button>
       </View>
       <Divider />
