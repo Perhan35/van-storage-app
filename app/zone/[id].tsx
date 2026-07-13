@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { View, StyleSheet, Alert, ScrollView } from "react-native";
+import { View, StyleSheet, Alert, ScrollView, FlatList } from "react-native";
 import ReanimatedSwipeable, {
   SwipeableMethods,
   SwipeDirection,
@@ -39,6 +39,7 @@ import { formatExpiration } from "../../src/utils/date";
 import { AnimatedCheckbox } from "../../src/components/AnimatedCheckbox";
 import { AnimatedCheckRow } from "../../src/components/AnimatedCheckRow";
 import { AnimatedOutOfVanRow } from "../../src/components/AnimatedOutOfVanRow";
+import { HighlightFlashRow } from "../../src/components/HighlightFlashRow";
 
 const ACTION_WIDTH = 64;
 
@@ -96,7 +97,7 @@ function SwipeActionButton({
 }
 
 export default function ZoneDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, highlightItemId } = useLocalSearchParams<{ id: string; highlightItemId?: string }>();
   const router = useRouter();
   const navigation = useNavigation();
   const { t, i18n } = useTranslation();
@@ -126,6 +127,12 @@ export default function ZoneDetailScreen() {
   // out that beat, plus the timers that release them.
   const [pendingMoveIds, setPendingMoveIds] = useState<Set<string>>(new Set());
   const moveTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const listRef = useRef<FlatList<ListRow>>(null);
+  // Item deep-linked from elsewhere (e.g. the expiration overview) that
+  // should be scrolled to and flashed once the list has it. Tracked
+  // separately from the route param so it only fires once per navigation.
+  const [highlightedItemId, setHighlightedItemId] = useState<string | null>(null);
+  const highlightHandledRef = useRef<string | null>(null);
 
   useEffect(
     () => () => {
@@ -179,6 +186,18 @@ export default function ZoneDetailScreen() {
       ...sortedItems.slice(firstDone),
     ];
   }, [sortedItems, zone?.checklist, isDone]);
+
+  useEffect(() => {
+    if (!highlightItemId || highlightHandledRef.current === highlightItemId) return;
+    const index = listData.findIndex((row) => !("__header" in row) && row.id === highlightItemId);
+    if (index === -1) return;
+    highlightHandledRef.current = highlightItemId;
+    setHighlightedItemId(highlightItemId);
+    const scrollTimer = setTimeout(() => {
+      listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+    }, 100);
+    return () => clearTimeout(scrollTimer);
+  }, [highlightItemId, listData]);
 
   useEffect(() => {
     if (!zone) return;
@@ -424,10 +443,22 @@ export default function ZoneDetailScreen() {
     <View style={[styles.container, { backgroundColor: zone.color + "26" }]}>
       {/* Items list */}
       <Animated.FlatList
+        ref={listRef}
         data={listData}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         itemLayoutAnimation={LinearTransition.duration(300)}
+        onScrollToIndexFailed={(info) => {
+          // Row not yet measured (e.g. off-screen on first render) — jump to
+          // an estimated offset, then retry once layout has settled.
+          listRef.current?.scrollToOffset({
+            offset: info.averageItemLength * info.index,
+            animated: false,
+          });
+          setTimeout(() => {
+            listRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.5 });
+          }, 100);
+        }}
         renderItem={({ item }) => {
           if ("__header" in item) {
             return (
@@ -487,6 +518,11 @@ export default function ZoneDetailScreen() {
             inIcon="van-utility"
           >
           <AnimatedCheckRow checked={!!item.checked}>
+          <HighlightFlashRow
+            active={highlightedItemId === item.id}
+            color={palette.editModeAccent}
+            onDone={() => setHighlightedItemId(null)}
+          >
           <List.Item
             title={item.name}
             description={
@@ -609,6 +645,7 @@ export default function ZoneDetailScreen() {
               </Menu>
             )}
           />
+          </HighlightFlashRow>
           </AnimatedCheckRow>
           </AnimatedOutOfVanRow>
           </ReanimatedSwipeable>

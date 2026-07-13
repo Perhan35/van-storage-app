@@ -99,7 +99,7 @@ export function ExpirationOverviewDialog({ visible, categories, title, onDismiss
                       )}
                       onPress={() => {
                         onDismiss();
-                        router.push(`/zone/${item.zone_id}`);
+                        router.push(`/zone/${item.zone_id}?highlightItemId=${item.id}`);
                       }}
                     />
                   ))}

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, StyleSheet, ScrollView, useWindowDimensions } from "react-native";
 import { Dialog, Portal, Text, List, Button, IconButton, Divider } from "react-native-paper";
 import { useTranslation } from "react-i18next";
+import { useRouter } from "expo-router";
 import { listSeasonalItems } from "../../db/repository";
 import { Item } from "../../db/database";
 import { SeasonMode, useAppStore } from "../../store/useAppStore";
@@ -18,6 +19,7 @@ type Props = {
 
 export function SeasonChangeoverDialog({ visible, season, onDismiss }: Props) {
   const { t } = useTranslation();
+  const router = useRouter();
   const { palette } = useAppTheme();
   const { height: windowHeight } = useWindowDimensions();
   const setItemOutOfVan = useAppStore((s) => s.setItemOutOfVan);
@@ -50,6 +52,11 @@ export function SeasonChangeoverDialog({ visible, season, onDismiss }: Props) {
     );
   };
 
+  const handleItemPress = (item: SeasonalItem) => {
+    onDismiss();
+    router.push(`/zone/${item.zone_id}?highlightItemId=${item.id}`);
+  };
+
   const renderRow = (item: SeasonalItem, action: "remove" | "add") => {
     const seasonIcon = seasonIconName(item.season);
     return (
@@ -62,6 +69,7 @@ export function SeasonChangeoverDialog({ visible, season, onDismiss }: Props) {
             <List.Icon {...props} icon={seasonIcon} color={seasonIconColor(item.season)} />
           ) : null
         }
+        onPress={() => handleItemPress(item)}
         right={(props) => (
           <IconButton
             {...props}
