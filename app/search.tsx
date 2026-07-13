@@ -202,8 +202,8 @@ export default function SearchScreen() {
               <SwipeActionButton
                 translation={translation}
                 side="right"
-                backgroundColor={palette.danger}
-                icon={item.out_of_van ? "tray-arrow-down" : "exit-to-app"}
+                backgroundColor={item.out_of_van ? "#2e7d32" : palette.danger}
+                icon={item.out_of_van ? "van-utility" : "exit-to-app"}
                 onPress={() => handleToggleOutOfVan(item)}
               />
             )}

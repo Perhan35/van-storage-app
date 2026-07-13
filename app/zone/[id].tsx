@@ -20,6 +20,7 @@ import {
   Portal,
   Menu,
   Checkbox,
+  FAB,
 } from "react-native-paper";
 import { useAppStore } from "../../src/store/useAppStore";
 import { listItemsForZone } from "../../src/db/repository";
@@ -121,6 +122,26 @@ export default function ZoneDetailScreen() {
     if (!zone) return;
     navigation.setOptions({
       title: zone.name,
+      headerStyle: { backgroundColor: zone.color },
+      headerTitle: () => (
+        <View style={styles.headerTitleContainer}>
+          <Text
+            variant="titleMedium"
+            style={{ color: palette.headerTint, fontWeight: "bold" }}
+            numberOfLines={1}
+          >
+            {zone.name}
+          </Text>
+          <Text variant="bodySmall" style={{ color: palette.headerTint }}>
+            {t(
+              items.length === 1
+                ? "map.objects_count_one"
+                : "map.objects_count_other",
+              { count: items.length }
+            )}
+          </Text>
+        </View>
+      ),
       headerRight: () => {
         const hasChecked = !!zone.checklist && items.some((i) => i.checked);
         return (
@@ -134,10 +155,18 @@ export default function ZoneDetailScreen() {
               />
             )}
             <IconButton
-              icon="plus-circle-outline"
+              icon="call-split"
+              size={20}
               iconColor={palette.headerTint}
-              accessibilityLabel={t("zone.add_item")}
-              onPress={() => setAddItemVisible(true)}
+              accessibilityLabel={t("zone.split_zone_alert_title")}
+              onPress={handleSplitZone}
+            />
+            <IconButton
+              icon="pencil"
+              size={20}
+              iconColor={palette.headerTint}
+              accessibilityLabel={t("zone.edit_zone")}
+              onPress={() => setZoneEditVisible(true)}
             />
           </View>
         );
@@ -280,35 +309,7 @@ export default function ZoneDetailScreen() {
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
   return (
-    <View style={[styles.container, { backgroundColor: palette.surface }]}>
-      {/* Zone header */}
-      <View style={[styles.header, { backgroundColor: zone.color + "33" }]}>
-        <View style={styles.headerRow}>
-          <View style={[styles.colorDot, { backgroundColor: zone.color }]} />
-          <Text variant="titleMedium" style={[styles.headerTitle, { color: palette.onSurface }]}>
-            {zone.name}
-          </Text>
-          <IconButton
-            icon="call-split"
-            size={20}
-            onPress={handleSplitZone}
-          />
-          <IconButton
-            icon="pencil"
-            size={20}
-            onPress={() => setZoneEditVisible(true)}
-          />
-        </View>
-        <Text variant="bodySmall" style={[styles.itemCount, { color: palette.onSurfaceVariant }]}>
-          {t(
-            items.length === 1
-              ? "map.objects_count_one"
-              : "map.objects_count_other",
-            { count: items.length }
-          )}
-        </Text>
-      </View>
-
+    <View style={[styles.container, { backgroundColor: zone.color + "26" }]}>
       {/* Items list */}
       <FlatList
         data={items}
@@ -346,8 +347,8 @@ export default function ZoneDetailScreen() {
               <SwipeActionButton
                 translation={translation}
                 side="right"
-                backgroundColor={palette.danger}
-                icon={item.out_of_van ? "tray-arrow-down" : "exit-to-app"}
+                backgroundColor={item.out_of_van ? "#2e7d32" : palette.danger}
+                icon={item.out_of_van ? "van-utility" : "exit-to-app"}
                 onPress={() => handleToggleOutOfVan(item)}
               />
             )}
@@ -446,6 +447,13 @@ export default function ZoneDetailScreen() {
         }
       />
 
+      <FAB
+        icon="plus"
+        style={[styles.fab, { backgroundColor: palette.primary }]}
+        onPress={() => setAddItemVisible(true)}
+        accessibilityLabel={t("zone.add_item")}
+      />
+
       <AddItemDialog
         visible={addItemVisible}
         zones={zones}
@@ -511,11 +519,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 32,
   },
-  header: { padding: 16 },
-  headerRow: { flexDirection: "row", alignItems: "center" },
-  colorDot: { width: 16, height: 16, borderRadius: 8, marginRight: 8 },
-  headerTitle: { flex: 1 },
-  itemCount: { marginTop: 4 },
+  headerTitleContainer: { alignItems: "center" },
   headerActions: { flexDirection: "row", alignItems: "center" },
   itemLeft: { flexDirection: "row", alignItems: "center" },
   checkedRow: { opacity: 0.55 },
@@ -532,5 +536,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginLeft: 8,
     alignSelf: "center",
+  },
+  fab: {
+    position: "absolute",
+    right: 16,
+    bottom: 16,
   },
 });
