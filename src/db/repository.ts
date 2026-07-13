@@ -140,6 +140,15 @@ export function setItemChecked(itemId: string, checked: boolean): Promise<void> 
   });
 }
 
+export function clearItemExpiration(itemId: string): Promise<void> {
+  return withDb(async (db) => {
+    await db.runAsync(
+      "UPDATE items SET expiration_date = NULL, updated_at = datetime('now') WHERE id = ?",
+      [itemId]
+    );
+  });
+}
+
 export function resetChecklistItems(zoneId: string): Promise<void> {
   return withDb(async (db) => {
     await db.runAsync(

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { View, StyleSheet, ScrollView } from "react-native";
-import { Dialog, Portal, List, Text, Button } from "react-native-paper";
+import { Dialog, Portal, List, Text, Button, IconButton } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "expo-router";
-import { listItemsWithExpiration } from "../../db/repository";
+import { listItemsWithExpiration, clearItemExpiration } from "../../db/repository";
 import { Item } from "../../db/database";
 import { ExpirationStatus, getExpirationStatus } from "../../utils/expiration";
 import { formatExpiration } from "../../utils/date";
@@ -32,6 +32,11 @@ export function ExpirationOverviewDialog({ visible, categories, title, onDismiss
       listItemsWithExpiration().then(setItems);
     }
   }, [visible]);
+
+  const handleAcknowledge = async (item: ItemWithZone) => {
+    await clearItemExpiration(item.id);
+    setItems((prev) => prev.filter((i) => i.id !== item.id));
+  };
 
   const categoryLabel = (status: ExpirationStatus) => {
     if (status === "expired") return t("expiration.cat_expired");
@@ -82,6 +87,14 @@ export function ExpirationOverviewDialog({ visible, categories, title, onDismiss
                           {...props}
                           icon={expirationIconName(group.status)}
                           color={expirationIconColor(group.status, palette)}
+                        />
+                      )}
+                      right={(props) => (
+                        <IconButton
+                          {...props}
+                          icon="check"
+                          accessibilityLabel={t("expiration.acknowledge")}
+                          onPress={() => handleAcknowledge(item)}
                         />
                       )}
                       onPress={() => {

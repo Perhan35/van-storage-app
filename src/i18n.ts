@@ -150,6 +150,7 @@ const resources = {
       "expiration.startup_title": "Items expiring soon",
       "expiration.empty": "No item has an expiration date yet.",
       "expiration.close": "Close",
+      "expiration.acknowledge": "Acknowledge and clear expiration date",
 
       "reminder.title": "Expiration reminder",
       "reminder.body": "{{name}} expires on {{date}}"
@@ -302,6 +303,7 @@ const resources = {
       "expiration.startup_title": "Objets bientôt périmés",
       "expiration.empty": "Aucun objet n'a de date de péremption pour le moment.",
       "expiration.close": "Fermer",
+      "expiration.acknowledge": "Prise en compte et suppression de la date",
 
       "reminder.title": "Rappel de péremption",
       "reminder.body": "{{name}} périme le {{date}}"
