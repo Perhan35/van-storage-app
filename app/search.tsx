@@ -234,6 +234,8 @@ export default function SearchScreen() {
               outOfVan={!!item.out_of_van}
               outColor={palette.danger}
               inColor={palette.success}
+              outIcon="exit-to-app"
+              inIcon="van-utility"
             >
             <AnimatedCheckRow checked={!!item.checked}>
             <List.Item
