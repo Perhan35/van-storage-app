@@ -103,7 +103,10 @@ export default function VanMapScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: palette.background }]}>
-      <ZoomableContainer panMinPointers={editMode ? 2 : 1}>
+      {/* One-finger pan works in edit mode too now that moving a zone requires
+          a press-and-hold to pick it up first (the canvas stands down while a
+          zone is grabbed). */}
+      <ZoomableContainer panMinPointers={1}>
         <VanLayoutSVG
           onZonePress={(zoneId) => router.push(`/zone/${zoneId}`)}
         />

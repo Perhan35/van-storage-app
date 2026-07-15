@@ -5,9 +5,11 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   runOnJS,
+  withTiming,
   SharedValue,
 } from "react-native-reanimated";
 import { ZoneWithCount, Zone } from "../db/database";
+import { usePanLock } from "./ZoomableContainer";
 import {
   ZONE_MIN_X,
   ZONE_MAX_X,
@@ -111,6 +113,10 @@ export function ZoneEditOverlay({
 }: Props) {
   const { x, y, w, h } = zone.geometry;
 
+  // While this zone is picked up, the ancestor canvas pan stands down so a
+  // one-finger drag moves the zone, not the whole map.
+  const panLock = usePanLock();
+
   // Other zones' edges, split by axis, recomputed whenever the set of
   // zones or their geometry changes (used inside the gesture worklets).
   const othersX: [number, number][] = otherZones.map((o) => [o.x, o.x + o.w]);
@@ -127,6 +133,10 @@ export function ZoneEditOverlay({
   const startY = useSharedValue(y);
   const startW = useSharedValue(w);
   const startH = useSharedValue(h);
+
+  // 0 = idle, 1 = zone is "picked up" (long-press held) and moving. Drives the
+  // lift feedback so it's obvious the zone is now grabbed vs. just tapped.
+  const dragActive = useSharedValue(0);
 
   // Sync when zone prop changes (e.g. after DB update)
   React.useEffect(() => {
@@ -151,11 +161,16 @@ export function ZoneEditOverlay({
   };
 
   // --- Drag gesture (move entire zone) ---
+  // Requires a short press-and-hold before it activates, so a single-finger
+  // touch that's really meant for panning/zooming the canvas doesn't drag a
+  // zone by accident. The zone visibly lifts once the hold registers.
   const dragGesture = Gesture.Pan()
-    .minDistance(4)
+    .activateAfterLongPress(250)
     .onStart(() => {
       startX.value = svgX.value;
       startY.value = svgY.value;
+      dragActive.value = withTiming(1, { duration: 120 });
+      if (panLock) panLock.value = true;
     })
     .onUpdate((e) => {
       const scale = fitScale * zoomScale.value;
@@ -212,6 +227,12 @@ export function ZoneEditOverlay({
         svgW.value,
         svgH.value
       );
+    })
+    .onFinalize(() => {
+      // Always drop the zone back down and release the canvas lock, even if the
+      // gesture is cancelled or interrupted before onEnd.
+      dragActive.value = withTiming(0, { duration: 150 });
+      if (panLock) panLock.value = false;
     });
 
   // --- Resize gesture (bottom-right handle) ---
@@ -341,6 +362,15 @@ export function ZoneEditOverlay({
     top: svgY.value * fitScale + offsetY,
     width: svgW.value * fitScale,
     height: svgH.value * fitScale,
+    // Lift the whole zone slightly while it's grabbed.
+    transform: [{ scale: 1 + dragActive.value * 0.05 }],
+  }));
+
+  // Solid "grabbed" ring that fades in over the resting dashed outline. Only a
+  // numeric opacity is animated here (Reanimated 4 can crash when animating
+  // string props like borderStyle/backgroundColor on the native side).
+  const grabbedRingStyle = useAnimatedStyle(() => ({
+    opacity: dragActive.value,
   }));
 
   // Bottom-right handle
@@ -365,10 +395,14 @@ export function ZoneEditOverlay({
 
   return (
     <>
-      {/* Draggable zone body */}
+      {/* Draggable zone body (press and hold to pick up, then drag) */}
       <GestureDetector gesture={dragGesture}>
         <Animated.View style={bodyStyle}>
           <View style={[styles.dragBody, { borderColor: zone.color }]} />
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.grabbedRing, { borderColor: zone.color }, grabbedRingStyle]}
+          />
         </Animated.View>
       </GestureDetector>
 
@@ -396,6 +430,23 @@ const styles = StyleSheet.create({
     borderStyle: "dashed",
     borderRadius: 8,
     backgroundColor: "rgba(255,255,255,0.1)",
+  },
+  // Overlaid solid ring + shadow that opacity-fades in when the zone is grabbed.
+  grabbedRing: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderWidth: 2.5,
+    borderStyle: "solid",
+    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.22)",
+    shadowColor: "#000000",
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 10,
   },
   handle: {
     width: HANDLE_SIZE,

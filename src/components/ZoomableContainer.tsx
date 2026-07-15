@@ -27,6 +27,15 @@ export function useZoomScale() {
   return useContext(ZoomScaleContext);
 }
 
+// Set to true by a descendant while it's actively dragging its own content
+// (e.g. a zone that's been picked up). The canvas pan stands down whenever
+// this is true so the two don't move at the same time.
+const PanLockContext = createContext<SharedValue<boolean> | null>(null);
+
+export function usePanLock() {
+  return useContext(PanLockContext);
+}
+
 function clampTranslate(
   translate: number,
   containerSize: number,
@@ -50,6 +59,7 @@ export function ZoomableContainer({
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
   const gesturesEnabled = useSharedValue(enabled);
+  const dragLock = useSharedValue(false);
   const containerWidth = useSharedValue(1);
   const containerHeight = useSharedValue(1);
 
@@ -132,6 +142,13 @@ export function ZoomableContainer({
     })
     .onUpdate((e) => {
       if (!gesturesEnabled.value) return;
+      // A descendant is dragging its own content (e.g. a picked-up zone):
+      // don't also pan the canvas, and undo any pan applied before the lock.
+      if (dragLock.value) {
+        panX.value = 0;
+        panY.value = 0;
+        return;
+      }
       panX.value = e.translationX;
       panY.value = e.translationY;
     })
@@ -190,7 +207,9 @@ export function ZoomableContainer({
       <GestureDetector gesture={composed}>
         <Animated.View style={[styles.inner, animatedStyle]}>
           <ZoomScaleContext.Provider value={scale}>
-            {children}
+            <PanLockContext.Provider value={dragLock}>
+              {children}
+            </PanLockContext.Provider>
           </ZoomScaleContext.Provider>
         </Animated.View>
       </GestureDetector>
