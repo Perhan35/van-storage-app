@@ -18,7 +18,6 @@ type Props = {
 
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 4;
-const MIN_VISIBLE_FRACTION = 0.25;
 
 // Live pinch-zoom level, so descendants (e.g. zone edit gesture math) can
 // convert screen-pixel deltas to content-space units as the user zooms.
@@ -35,8 +34,11 @@ function clampTranslate(
 ) {
   "worklet";
   const contentSize = containerSize * scale;
-  const maxTranslate =
-    containerSize / 2 + MIN_VISIBLE_FRACTION * contentSize;
+  // When zoomed out (or at 1:1), the content already fits entirely within
+  // the container, so no pan slack is allowed — this keeps it centered
+  // instead of letting it drift off-screen. When zoomed in, panning is
+  // bounded so the content edge never moves past the container edge.
+  const maxTranslate = Math.max(0, (contentSize - containerSize) / 2);
   return Math.min(Math.max(translate, -maxTranslate), maxTranslate);
 }
 
