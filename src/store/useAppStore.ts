@@ -8,7 +8,38 @@ import i18n from "../i18n";
 export type ThemeMode = "auto" | "light" | "dark";
 export type SeasonMode = "summer" | "winter";
 
+// A frozen picture of where every zone sat at one moment, keyed by zone id.
+// The undo/redo stacks are lists of these; restoring one writes each zone
+// back to its recorded geometry.
+type ZoneGeometrySnapshot = Record<string, Zone["geometry"]>;
+
+// Cap the history so a long editing session can't grow it without bound.
+const MAX_HISTORY = 50;
+
 let highlightTimer: ReturnType<typeof setTimeout> | null = null;
+
+function snapshotGeometry(zones: ZoneWithCount[]): ZoneGeometrySnapshot {
+  const snapshot: ZoneGeometrySnapshot = {};
+  for (const zone of zones) snapshot[zone.id] = zone.geometry;
+  return snapshot;
+}
+
+// Write each zone in `snapshot` back to its recorded geometry, skipping zones
+// that already match (avoids needless writes) or that no longer exist.
+async function applyGeometrySnapshot(
+  snapshot: ZoneGeometrySnapshot,
+  zones: ZoneWithCount[]
+) {
+  for (const zone of zones) {
+    const target = snapshot[zone.id];
+    if (!target) continue;
+    const g = zone.geometry;
+    if (g.x === target.x && g.y === target.y && g.w === target.w && g.h === target.h) {
+      continue;
+    }
+    await repo.updateZoneGeometry(zone.id, target);
+  }
+}
 
 type AppState = {
   zones: ZoneWithCount[];
@@ -16,6 +47,16 @@ type AppState = {
   initialized: boolean;
   initError: string | null;
   editMode: boolean;
+  // Layout-edit history: geometry snapshots taken *before* each move/resize.
+  // Only meaningful while editMode is on; cleared whenever the set of zones
+  // changes structurally (add/delete/split) so the snapshots always line up
+  // with the zones that currently exist.
+  undoStack: ZoneGeometrySnapshot[];
+  redoStack: ZoneGeometrySnapshot[];
+  // Geometry as it was the moment edit mode was entered, so "cancel all
+  // changes" has a fixed target to restore to regardless of how many
+  // undo/redo steps happened in between.
+  editSessionSnapshot: ZoneGeometrySnapshot | null;
   themeMode: ThemeMode;
   seasonMode: SeasonMode;
   remindersEnabled: boolean;
@@ -73,6 +114,9 @@ type AppState = {
   splitZone: (zoneId: string) => Promise<string | undefined>;
   toggleEditMode: () => void;
   updateZoneGeometry: (zoneId: string, geometry: Zone["geometry"]) => Promise<void>;
+  undo: () => Promise<void>;
+  redo: () => Promise<void>;
+  cancelEditChanges: () => Promise<void>;
 };
 
 function generateId(): string {
@@ -85,6 +129,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   initialized: false,
   initError: null,
   editMode: false,
+  undoStack: [],
+  redoStack: [],
+  editSessionSnapshot: null,
   themeMode: "auto",
   seasonMode: "summer",
   remindersEnabled: false,
@@ -239,12 +286,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   deleteZone: async (zoneId) => {
     await repo.deleteZone(zoneId);
+    // Structural change: past geometry snapshots no longer match the zone set.
+    set({ undoStack: [], redoStack: [] });
     await get().loadZones();
   },
 
   addZone: async (name, color, geometry, checklist = false) => {
     const id = generateId();
     await repo.insertZone(id, name, color, geometry, checklist);
+    set({ undoStack: [], redoStack: [] });
     await get().loadZones();
   },
 
@@ -276,14 +326,86 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     await repo.splitZoneInDb(zone, id1, id2, geom1, geom2, suffix1, suffix2);
 
+    set({ undoStack: [], redoStack: [] });
     await get().loadZones();
     return id1;
   },
 
-  toggleEditMode: () => set((s) => ({ editMode: !s.editMode })),
+  // Toggling edit mode starts (or ends) a fresh editing session, so any
+  // pending undo/redo history from before is dropped. Entering also records
+  // a snapshot of the current geometry as the "cancel all changes" target.
+  toggleEditMode: () =>
+    set((s) => {
+      const turningOn = !s.editMode;
+      return {
+        editMode: turningOn,
+        undoStack: [],
+        redoStack: [],
+        editSessionSnapshot: turningOn ? snapshotGeometry(s.zones) : null,
+      };
+    }),
 
   updateZoneGeometry: async (zoneId, geometry) => {
+    const zones = get().zones;
+    const prev = zones.find((z) => z.id === zoneId)?.geometry;
+    // A drag/resize that ends exactly where it started (or snapped back) is a
+    // no-op — don't record an empty step the user would have to undo twice.
+    const unchanged =
+      prev &&
+      prev.x === geometry.x &&
+      prev.y === geometry.y &&
+      prev.w === geometry.w &&
+      prev.h === geometry.h;
+    if (unchanged) return;
+    // Record where things stood *before* this move/resize, so it can be undone.
+    const before = snapshotGeometry(zones);
     await repo.updateZoneGeometry(zoneId, geometry);
+    set((s) => ({
+      undoStack: [...s.undoStack, before].slice(-MAX_HISTORY),
+      redoStack: [],
+    }));
+    await get().loadZones();
+  },
+
+  undo: async () => {
+    const { undoStack, zones } = get();
+    if (undoStack.length === 0) return;
+    const target = undoStack[undoStack.length - 1];
+    const current = snapshotGeometry(zones);
+    await applyGeometrySnapshot(target, zones);
+    set((s) => ({
+      undoStack: s.undoStack.slice(0, -1),
+      redoStack: [...s.redoStack, current].slice(-MAX_HISTORY),
+    }));
+    await get().loadZones();
+  },
+
+  redo: async () => {
+    const { redoStack, zones } = get();
+    if (redoStack.length === 0) return;
+    const target = redoStack[redoStack.length - 1];
+    const current = snapshotGeometry(zones);
+    await applyGeometrySnapshot(target, zones);
+    set((s) => ({
+      redoStack: s.redoStack.slice(0, -1),
+      undoStack: [...s.undoStack, current].slice(-MAX_HISTORY),
+    }));
+    await get().loadZones();
+  },
+
+  // Discards every move/resize made this editing session, restoring zones to
+  // how they sat when edit mode was entered, then leaves edit mode.
+  cancelEditChanges: async () => {
+    const { editSessionSnapshot, zones } = get();
+    if (editSessionSnapshot) {
+      await applyGeometrySnapshot(editSessionSnapshot, zones);
+    }
+    set({
+      editMode: false,
+      undoStack: [],
+      redoStack: [],
+      editSessionSnapshot: null,
+    });
     await get().loadZones();
   },
 }));

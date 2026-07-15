@@ -46,6 +46,12 @@ export default function VanMapScreen() {
     });
   }, [initialized, expirationAlertShown]);
 
+  // Entering edit mode hides the FAB; close it too so it doesn't reappear
+  // already-open the next time it's shown.
+  useEffect(() => {
+    if (editMode) setFabOpen(false);
+  }, [editMode]);
+
   if (initError) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: palette.background }]}>
@@ -105,7 +111,7 @@ export default function VanMapScreen() {
 
       <FAB.Group
         open={fabOpen}
-        visible
+        visible={!editMode}
         icon={fabOpen ? "close" : "plus"}
         actions={[
           {

@@ -75,6 +75,11 @@ function HeaderRight() {
   const { palette } = useAppTheme();
   const editMode = useAppStore((s) => s.editMode);
   const toggleEditMode = useAppStore((s) => s.toggleEditMode);
+  const undo = useAppStore((s) => s.undo);
+  const redo = useAppStore((s) => s.redo);
+  const canUndo = useAppStore((s) => s.undoStack.length > 0);
+  const canRedo = useAppStore((s) => s.redoStack.length > 0);
+  const cancelEditChanges = useAppStore((s) => s.cancelEditChanges);
 
   return (
     <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -97,14 +102,39 @@ function HeaderRight() {
         />
       )}
       {editMode && (
-        <Text style={{ color: palette.headerTint, fontWeight: "600", fontSize: 12, marginHorizontal: 4 }}>
-          {t("nav.edit_mode")}
-        </Text>
+        <>
+          <IconButton
+            icon="undo-variant"
+            size={24}
+            iconColor={palette.headerTint}
+            disabled={!canUndo}
+            accessibilityLabel={t("nav.undo")}
+            style={{ margin: 0 }}
+            onPress={undo}
+          />
+          <IconButton
+            icon="redo-variant"
+            size={24}
+            iconColor={palette.headerTint}
+            disabled={!canRedo}
+            accessibilityLabel={t("nav.redo")}
+            style={{ margin: 0 }}
+            onPress={redo}
+          />
+          <IconButton
+            icon="cancel"
+            size={24}
+            iconColor={palette.danger}
+            accessibilityLabel={t("nav.cancel_edit")}
+            style={{ margin: 0 }}
+            onPress={cancelEditChanges}
+          />
+        </>
       )}
       <IconButton
         icon={editMode ? "check" : "cursor-move"}
         size={24}
-        iconColor={editMode ? palette.editModeAccent : palette.headerTint}
+        iconColor={editMode ? palette.success : palette.headerTint}
         style={{ margin: 0 }}
         onPress={toggleEditMode}
       />
@@ -124,6 +154,7 @@ function HeaderRight() {
 export default function RootLayout() {
   const { t } = useTranslation();
   const init = useAppStore((s) => s.init);
+  const editMode = useAppStore((s) => s.editMode);
   const { palette, isDark } = useAppTheme();
 
   useEffect(() => {
@@ -147,7 +178,7 @@ export default function RootLayout() {
           <Stack.Screen
             name="index"
             options={{
-              title: t("nav.my_van"),
+              title: editMode ? t("nav.edit_mode") : t("nav.my_van"),
               headerRight: () => <HeaderRight />,
             }}
           />
