@@ -33,6 +33,7 @@ export function AddItemDialog({ visible, zones, zoneId, zoneLocked = false, onCa
   const [reminderDaysText, setReminderDaysText] = useState("7");
   const nameSelection = useTextSelectionFix();
   const notesSelection = useTextSelectionFix();
+  const reminderDaysSelection = useTextSelectionFix();
 
   useEffect(() => {
     if (visible) {
@@ -44,6 +45,7 @@ export function AddItemDialog({ visible, zones, zoneId, zoneLocked = false, onCa
       setReminderDaysText("7");
       nameSelection.resetSelection();
       notesSelection.resetSelection();
+      reminderDaysSelection.resetSelection();
     }
   }, [visible, zoneId]);
 
@@ -117,6 +119,8 @@ export function AddItemDialog({ visible, zones, zoneId, zoneLocked = false, onCa
               reminderDaysText={reminderDaysText}
               onChangeExpirationDate={setExpirationDate}
               onChangeReminderDaysText={setReminderDaysText}
+              reminderDaysSelection={reminderDaysSelection.selection}
+              onReminderDaysSelectionChange={reminderDaysSelection.onSelectionChange}
             />
           </Dialog.Content>
           <Dialog.Actions>

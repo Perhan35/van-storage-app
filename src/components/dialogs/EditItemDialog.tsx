@@ -27,6 +27,7 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
   const [reminderDaysText, setReminderDaysText] = useState("7");
   const nameSelection = useTextSelectionFix();
   const notesSelection = useTextSelectionFix();
+  const reminderDaysSelection = useTextSelectionFix();
 
   useEffect(() => {
     if (item) {
@@ -37,6 +38,7 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
       setReminderDaysText(String(item.reminder_days));
       nameSelection.resetSelection();
       notesSelection.resetSelection();
+      reminderDaysSelection.resetSelection();
     }
   }, [item]);
 
@@ -86,6 +88,8 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
             reminderDaysText={reminderDaysText}
             onChangeExpirationDate={setExpirationDate}
             onChangeReminderDaysText={setReminderDaysText}
+            reminderDaysSelection={reminderDaysSelection.selection}
+            onReminderDaysSelectionChange={reminderDaysSelection.onSelectionChange}
           />
         </Dialog.Content>
         <Dialog.Actions>

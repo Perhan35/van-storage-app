@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Platform, View, StyleSheet, Pressable } from "react-native";
 import { Button, TextInput, IconButton } from "react-native-paper";
+import type { TextInputSelectionChangeEvent } from "react-native";
 import { useTranslation } from "react-i18next";
 import DateTimePicker, {
   DateTimePickerChangeEvent,
@@ -13,6 +14,8 @@ type Props = {
   reminderDaysText: string;
   onChangeExpirationDate: (iso: string | null) => void;
   onChangeReminderDaysText: (text: string) => void;
+  reminderDaysSelection?: { start: number; end: number };
+  onReminderDaysSelectionChange?: (e: TextInputSelectionChangeEvent) => void;
 };
 
 function toIso(date: Date): string {
@@ -32,6 +35,8 @@ export function ExpirationField({
   reminderDaysText,
   onChangeExpirationDate,
   onChangeReminderDaysText,
+  reminderDaysSelection,
+  onReminderDaysSelectionChange,
 }: Props) {
   const { t } = useTranslation();
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -107,6 +112,8 @@ export function ExpirationField({
           label={t("zone.reminder_days")}
           value={reminderDaysText}
           onChangeText={onChangeReminderDaysText}
+          selection={reminderDaysSelection}
+          onSelectionChange={onReminderDaysSelectionChange}
           keyboardType="numeric"
           style={styles.reminderInput}
         />
