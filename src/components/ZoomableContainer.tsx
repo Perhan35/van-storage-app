@@ -46,6 +46,11 @@ type Props = {
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 4;
 
+// Extra pan slack (screen px) allowed beyond the content edge, so the van
+// layout can be nudged off-center a bit instead of sitting completely flush
+// against the container edge even at rest / min zoom.
+const PAN_MARGIN = 32;
+
 // Durations for the programmatic dive-in / dive-out animations. Callers that
 // coordinate a screen transition around the dive (e.g. overlapping it with a
 // navigation fade) can import DIVE_IN_DURATION to stay in sync.
@@ -80,10 +85,11 @@ function clampTranslate(
   "worklet";
   const contentSize = containerSize * scale;
   // When zoomed out (or at 1:1), the content already fits entirely within
-  // the container, so no pan slack is allowed — this keeps it centered
-  // instead of letting it drift off-screen. When zoomed in, panning is
-  // bounded so the content edge never moves past the container edge.
-  const maxTranslate = Math.max(0, (contentSize - containerSize) / 2);
+  // the container, so panning is bounded by PAN_MARGIN alone, keeping it
+  // roughly centered while still allowing a bit of edge slack. When zoomed
+  // in, that same margin is added on top of the point where the content
+  // edge would otherwise be flush with the container edge.
+  const maxTranslate = Math.max(0, (contentSize - containerSize) / 2) + PAN_MARGIN;
   return Math.min(Math.max(translate, -maxTranslate), maxTranslate);
 }
 
