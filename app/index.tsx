@@ -10,6 +10,7 @@ import { useAppTheme } from "../src/theme/useAppTheme";
 import { CreateZoneDialog } from "../src/components/dialogs/CreateZoneDialog";
 import { AddItemDialog } from "../src/components/dialogs/AddItemDialog";
 import { ExpirationOverviewDialog } from "../src/components/dialogs/ExpirationOverviewDialog";
+import { plusIcon, tagFabStyle, FAB_RADIUS_SMALL } from "../src/components/AddFab";
 import { Season } from "../src/db/database";
 import { listItemsWithExpiration } from "../src/db/repository";
 import { getExpirationStatus } from "../src/utils/expiration";
@@ -115,21 +116,33 @@ export default function VanMapScreen() {
       <FAB.Group
         open={fabOpen}
         visible={!editMode}
-        icon={fabOpen ? "close" : "plus"}
+        icon={fabOpen ? "close" : plusIcon}
+        color={palette.headerTint}
         actions={[
           {
             icon: "package-variant-plus",
             label: t("map.add_item"),
             onPress: () => setAddItemVisible(true),
+            style: { borderRadius: FAB_RADIUS_SMALL },
           },
           {
             icon: "shape-plus",
             label: t("map.add_zone"),
             onPress: () => setAddZoneVisible(true),
+            style: { borderRadius: FAB_RADIUS_SMALL },
           },
         ]}
         onStateChange={({ open }) => setFabOpen(open)}
-        fabStyle={{ backgroundColor: palette.primary }}
+        fabStyle={[
+          tagFabStyle(palette.secondary),
+          {
+            backgroundColor: palette.primary,
+            shadowColor: palette.primary,
+            shadowOpacity: 0.35,
+            shadowOffset: { width: 0, height: 4 },
+            shadowRadius: 8,
+          },
+        ]}
       />
 
       <CreateZoneDialog

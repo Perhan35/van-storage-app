@@ -40,6 +40,7 @@ import { AnimatedCheckbox } from "../../src/components/AnimatedCheckbox";
 import { AnimatedCheckRow } from "../../src/components/AnimatedCheckRow";
 import { AnimatedOutOfVanRow } from "../../src/components/AnimatedOutOfVanRow";
 import { HighlightFlashRow } from "../../src/components/HighlightFlashRow";
+import { plusIcon, tagFabStyle } from "../../src/components/AddFab";
 
 const ACTION_WIDTH = 64;
 
@@ -663,8 +664,20 @@ export default function ZoneDetailScreen() {
       />
 
       <FAB
-        icon="plus"
-        style={[styles.fab, { backgroundColor: palette.primary, bottom: insets.bottom + 16 }]}
+        icon={plusIcon}
+        color={palette.headerTint}
+        style={[
+          styles.fab,
+          tagFabStyle(palette.secondary),
+          {
+            backgroundColor: palette.primary,
+            shadowColor: palette.primary,
+            shadowOpacity: 0.35,
+            shadowOffset: { width: 0, height: 4 },
+            shadowRadius: 8,
+            bottom: insets.bottom + 16,
+          },
+        ]}
         onPress={() => setAddItemVisible(true)}
         accessibilityLabel={t("zone.add_item")}
       />
