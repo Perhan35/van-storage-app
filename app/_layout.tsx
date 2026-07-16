@@ -184,7 +184,14 @@ export default function RootLayout() {
           />
           <Stack.Screen
             name="zone/[id]"
-            options={{ title: t("nav.zone") }}
+            options={{
+              title: t("nav.zone"),
+              animation: "fade",
+              // Default fade duration (500ms, iOS-only) reads as sluggish next
+              // to the map's own dive-in animation — shortened so the two
+              // blend into one continuous motion instead of two visible steps.
+              animationDuration: 320,
+            }}
           />
           <Stack.Screen
             name="search"

@@ -15,8 +15,10 @@ import { SVG_W, SVG_H, ZONE_OVERFLOW_MARGIN } from "./vanLayoutConstants";
 // the default (non-edit) view to them.
 const ZONES_FIT_PADDING = 24;
 
+export type ZoneScreenRect = { left: number; top: number; width: number; height: number };
+
 type Props = {
-  onZonePress: (zoneId: string) => void;
+  onZonePress: (zoneId: string, rect: ZoneScreenRect) => void;
 };
 
 function getZonesBoundingBox(zones: ZoneWithCount[]) {
@@ -146,16 +148,20 @@ export function VanLayoutSVG({ onZonePress }: Props) {
         layout &&
         zones.map((zone) => {
           const { x, y, w, h } = zone.geometry;
+          const left = x * svgScale + svgOffsetX;
+          const top = y * svgScale + svgOffsetY;
+          const width = w * svgScale;
+          const height = h * svgScale;
           return (
             <Pressable
               key={zone.id}
-              onPress={() => onZonePress(zone.id)}
+              onPress={() => onZonePress(zone.id, { left, top, width, height })}
               style={{
                 position: "absolute",
-                left: x * svgScale + svgOffsetX,
-                top: y * svgScale + svgOffsetY,
-                width: w * svgScale,
-                height: h * svgScale,
+                left,
+                top,
+                width,
+                height,
                 borderRadius: 8,
               }}
             />

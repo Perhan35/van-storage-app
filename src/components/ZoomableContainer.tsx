@@ -1,11 +1,38 @@
-import React, { createContext, useContext, useEffect } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
 import { View, StyleSheet, LayoutChangeEvent } from "react-native";
 import { GestureDetector, Gesture } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  withTiming,
+  Easing,
   SharedValue,
 } from "react-native-reanimated";
+
+// Screen-pixel rect (relative to the container) of the content region to zoom
+// into, expressed in content-space (pre-transform) coordinates.
+export type ZoomRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+// Imperative handle exposed to callers that want to drive the transform
+// programmatically (e.g. a "dive into the tapped zone" transition) rather than
+// through gestures.
+export type ZoomableContainerHandle = {
+  // Returns whether the dive animation actually started (false if the
+  // container hasn't measured its layout yet, e.g. called before first paint).
+  zoomToRect: (rect: ZoomRect) => boolean;
+  resetZoom: () => void;
+};
 
 type Props = {
   children: React.ReactNode;
@@ -18,6 +45,15 @@ type Props = {
 
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 4;
+
+// Durations for the programmatic dive-in / dive-out animations. Callers that
+// coordinate a screen transition around the dive (e.g. overlapping it with a
+// navigation fade) can import DIVE_IN_DURATION to stay in sync.
+export const DIVE_IN_DURATION = 340;
+export const DIVE_OUT_DURATION = 300;
+// Eased both in and out so the dive accelerates gently then settles instead
+// of snapping to a stop, which is what made the first pass feel abrupt.
+export const DIVE_EASING = Easing.inOut(Easing.cubic);
 
 // Live pinch-zoom level, so descendants (e.g. zone edit gesture math) can
 // convert screen-pixel deltas to content-space units as the user zooms.
@@ -51,17 +87,22 @@ function clampTranslate(
   return Math.min(Math.max(translate, -maxTranslate), maxTranslate);
 }
 
-export function ZoomableContainer({
-  children,
-  enabled = true,
-  panMinPointers = 1,
-}: Props) {
+export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
+  function ZoomableContainer(
+    { children, enabled = true, panMinPointers = 1 },
+    ref
+  ) {
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
   const gesturesEnabled = useSharedValue(enabled);
   const dragLock = useSharedValue(false);
   const containerWidth = useSharedValue(1);
   const containerHeight = useSharedValue(1);
+  // True while a programmatic zoom animation is running: gestures stand down
+  // and the transform bypasses the pan clamp so it can center an off-center
+  // zone that lies outside the normal pan bounds.
+  const animating = useSharedValue(false);
+  const isProgrammatic = useSharedValue(false);
 
   // Committed translation. Each gesture contributes its own *delta* on top of
   // this base and folds that delta back into the base when it ends, so pinch
@@ -89,7 +130,7 @@ export function ZoomableContainer({
 
   const pinch = Gesture.Pinch()
     .onStart((e) => {
-      if (!gesturesEnabled.value) return;
+      if (!gesturesEnabled.value || animating.value) return;
       savedScale.value = scale.value;
       // Focal anchor relative to the container center at pinch start, and the
       // content point currently under it (accounting for any in-flight pan).
@@ -103,7 +144,7 @@ export function ZoomableContainer({
       pinchY.value = 0;
     })
     .onUpdate((e) => {
-      if (!gesturesEnabled.value) return;
+      if (!gesturesEnabled.value || animating.value) return;
       const next = Math.min(
         Math.max(savedScale.value * e.scale, MIN_SCALE),
         MAX_SCALE
@@ -136,12 +177,12 @@ export function ZoomableContainer({
     .minPointers(panMinPointers)
     .minDistance(10)
     .onStart(() => {
-      if (!gesturesEnabled.value) return;
+      if (!gesturesEnabled.value || animating.value) return;
       panX.value = 0;
       panY.value = 0;
     })
     .onUpdate((e) => {
-      if (!gesturesEnabled.value) return;
+      if (!gesturesEnabled.value || animating.value) return;
       // A descendant is dragging its own content (e.g. a picked-up zone):
       // don't also pan the canvas, and undo any pan applied before the lock.
       if (dragLock.value) {
@@ -170,7 +211,7 @@ export function ZoomableContainer({
   const doubleTap = Gesture.Tap()
     .numberOfTaps(2)
     .onEnd(() => {
-      if (!gesturesEnabled.value) return;
+      if (!gesturesEnabled.value || animating.value) return;
       scale.value = 1;
       baseTranslateX.value = 0;
       baseTranslateY.value = 0;
@@ -182,7 +223,59 @@ export function ZoomableContainer({
 
   const composed = Gesture.Simultaneous(pinch, pan, doubleTap);
 
+  useImperativeHandle(ref, () => ({
+    zoomToRect(rect) {
+      const cw = containerWidth.value;
+      const ch = containerHeight.value;
+      if (cw <= 1 || ch <= 1 || rect.width <= 0 || rect.height <= 0) {
+        return false;
+      }
+      const rawScale = Math.min(cw / rect.width, ch / rect.height);
+      const targetScale = Math.min(Math.max(rawScale, 1), MAX_SCALE);
+      const zoneCenterRelX = rect.left + rect.width / 2 - cw / 2;
+      const zoneCenterRelY = rect.top + rect.height / 2 - ch / 2;
+      const targetTranslateX = -zoneCenterRelX * targetScale;
+      const targetTranslateY = -zoneCenterRelY * targetScale;
+
+      animating.value = true;
+      isProgrammatic.value = true;
+      panX.value = 0;
+      panY.value = 0;
+      pinchX.value = 0;
+      pinchY.value = 0;
+
+      const timingConfig = { duration: DIVE_IN_DURATION, easing: DIVE_EASING };
+      scale.value = withTiming(targetScale, timingConfig);
+      baseTranslateX.value = withTiming(targetTranslateX, timingConfig);
+      baseTranslateY.value = withTiming(targetTranslateY, timingConfig, (finished) => {
+        if (finished) animating.value = false;
+      });
+      return true;
+    },
+    resetZoom() {
+      animating.value = true;
+      const timingConfig = { duration: DIVE_OUT_DURATION, easing: DIVE_EASING };
+      scale.value = withTiming(1, timingConfig);
+      baseTranslateX.value = withTiming(0, timingConfig);
+      baseTranslateY.value = withTiming(0, timingConfig, (finished) => {
+        if (finished) {
+          isProgrammatic.value = false;
+          animating.value = false;
+        }
+      });
+    },
+  }));
+
   const animatedStyle = useAnimatedStyle(() => {
+    if (isProgrammatic.value) {
+      return {
+        transform: [
+          { translateX: baseTranslateX.value },
+          { translateY: baseTranslateY.value },
+          { scale: scale.value },
+        ],
+      };
+    }
     const tx = clampTranslate(
       baseTranslateX.value + panX.value + pinchX.value,
       containerWidth.value,
@@ -215,7 +308,8 @@ export function ZoomableContainer({
       </GestureDetector>
     </View>
   );
-}
+  }
+);
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
