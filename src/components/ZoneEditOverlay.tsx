@@ -236,11 +236,15 @@ export function ZoneEditOverlay({
     });
 
   // --- Resize gesture (bottom-right handle) ---
+  // Same press-and-hold gate as the move gesture, so a single-finger touch
+  // meant for panning/zooming the canvas doesn't start a resize by accident.
   const resizeGesture = Gesture.Pan()
-    .minDistance(2)
+    .activateAfterLongPress(250)
     .onStart(() => {
       startW.value = svgW.value;
       startH.value = svgH.value;
+      dragActive.value = withTiming(1, { duration: 120 });
+      if (panLock) panLock.value = true;
     })
     .onUpdate((e) => {
       const scale = fitScale * zoomScale.value;
@@ -283,16 +287,22 @@ export function ZoneEditOverlay({
         svgW.value,
         svgH.value
       );
+    })
+    .onFinalize(() => {
+      dragActive.value = withTiming(0, { duration: 150 });
+      if (panLock) panLock.value = false;
     });
 
   // --- Resize gesture (top-left handle) ---
   const resizeTLGesture = Gesture.Pan()
-    .minDistance(2)
+    .activateAfterLongPress(250)
     .onStart(() => {
       startX.value = svgX.value;
       startY.value = svgY.value;
       startW.value = svgW.value;
       startH.value = svgH.value;
+      dragActive.value = withTiming(1, { duration: 120 });
+      if (panLock) panLock.value = true;
     })
     .onUpdate((e) => {
       const scale = fitScale * zoomScale.value;
@@ -351,6 +361,10 @@ export function ZoneEditOverlay({
         svgW.value,
         svgH.value
       );
+    })
+    .onFinalize(() => {
+      dragActive.value = withTiming(0, { duration: 150 });
+      if (panLock) panLock.value = false;
     });
 
   // Animated style for the zone body (moves + resizes in real time).
