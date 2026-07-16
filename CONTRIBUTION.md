@@ -7,9 +7,10 @@ This document lists every command you need to install, run, test and deploy **My
 3. [Run locally — no Android SDK needed](#run-locally--no-android-sdk-needed)
 4. [Run locally — with the Android SDK / emulator](#run-locally--with-the-android-sdk--emulator)
 5. [Run on a physical Android phone](#run-on-a-physical-android-phone)
-6. [Type-checking and linting](#type-checking-and-linting)
-7. [Building and deploying](#building-and-deploying)
-8. [Troubleshooting](#troubleshooting)
+6. [Run on a physical iPhone — without the App Store](#run-on-a-physical-iphone--without-the-app-store)
+7. [Type-checking and linting](#type-checking-and-linting)
+8. [Building and deploying](#building-and-deploying)
+9. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -184,6 +185,92 @@ adb install -r path/to/van-storage.apk
 
 # Or transfer the APK file to the phone (email, USB, cloud drive) and tap it
 ```
+
+---
+
+## Run on a physical iPhone — without the App Store
+
+iOS is much stricter than Android: there is no "download an `.ipa` and tap to install".
+Every app must be **signed with a provisioning profile tied to your device**. What that
+costs you depends on your Apple account:
+
+| | Free Apple ID | Apple Developer Program |
+| --- | --- | --- |
+| Price | €0 | $99 / year |
+| App expiry before it stops opening | **7 days** (re-sign to renew) | 1 year |
+| Sideloaded apps at once | 3 max | unlimited |
+| Over-the-air install (`.ipa` via a link) | ❌ | ✅ (Ad Hoc) |
+| Build & sign in GitHub Actions | ❌ (see note below) | ✅ |
+
+You do **not** need to pay to run the app on your own iPhone — a free Apple ID is enough,
+you just re-sign every 7 days. The two options below both produce your real standalone app
+(its own "My Van Inventory" icon), **not** Expo Go.
+
+Both require a Mac with **Xcode** and **CocoaPods** (one-time install):
+
+```bash
+brew install cocoapods
+```
+
+### Option 1 — Direct cable install (`expo run:ios`)
+
+Simplest path. Plug the iPhone into the Mac with a USB cable, then:
+
+```bash
+npx expo run:ios --device --configuration Release
+```
+
+Xcode compiles the app and installs it straight onto the connected phone. On the **first**
+run:
+
+1. When prompted for signing, pick your **Personal Team** (your free Apple ID) in Xcode, or
+   let the CLI open Xcode so you can select it under *Signing & Capabilities*.
+2. On the phone, trust the developer certificate: **Settings → General → VPN & Device
+   Management → (your Apple ID) → Trust**.
+
+The app then works for **7 days**; re-run the same command to reinstall and reset the timer.
+SQLite data is preserved across reinstalls (as long as you don't delete the app).
+
+### Option 2 — Standalone `.ipa` + SideStore (auto-refresh, no weekly cable)
+
+To avoid plugging in every 7 days, build an unsigned `.ipa` and let **SideStore** sign it
+with your free Apple ID and **renew it automatically over Wi-Fi**. Build the file with the
+helper script:
+
+```bash
+./scripts/build-ios-ipa.sh
+# → dist/MyVanInventory-vX.Y.Z.ipa
+```
+
+The script runs `expo prebuild`, `pod install`, an unsigned Release build, and packages the
+result into an `.ipa`. It does **not** sign anything — SideStore does that on the device.
+Then:
+
+1. Install **SideStore** on the iPhone following the official bootstrap at
+   [sidestore.io](https://sidestore.io) (pairing file + anisette server — the exact steps
+   depend on your iOS version, hence the link to the always-current source). This is the only
+   step that needs a computer, once.
+2. In SideStore: **My Apps → +** → pick your `MyVanInventory-vX.Y.Z.ipa` → SideStore signs
+   and installs it.
+3. SideStore renews the 7-day certificate on its own before it expires, as long as the phone
+   can reach its anisette server over Wi-Fi.
+
+> **Simpler alternative: [AltStore](https://altstore.io).** Same idea and easier to set up,
+> but its background refresh needs your **Mac to stay awake on the same Wi-Fi**. SideStore
+> refreshes without the Mac, which is why it's the better fit for a set-and-forget install.
+
+Rebuild the `.ipa` and re-import it in SideStore only when you ship a new app version — the
+weekly renewal is handled for you.
+
+### Note — why there is no iOS GitHub Actions build
+
+Unlike the [Android CI workflow](#github-actions--automated-apk-build--shareable-release),
+iOS can't be built-and-shipped from GitHub Actions on a free account: free certificates last
+only 7 days, can't be exported for a headless runner, and Ad Hoc / over-the-air distribution
+requires the paid Apple Developer Program. A cloud-built `.ipa` therefore couldn't be
+installed on your phone anyway. The paid path (macOS runner + Ad Hoc signing secrets +
+`itms-services://` OTA install) is the equivalent of the Android workflow — see the
+[iOS build section](#ios) for the EAS-based route.
 
 ---
 
