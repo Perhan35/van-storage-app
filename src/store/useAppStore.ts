@@ -16,6 +16,9 @@ type ZoneGeometrySnapshot = Record<string, Zone["geometry"]>;
 // Cap the history so a long editing session can't grow it without bound.
 const MAX_HISTORY = 50;
 
+// Cap recent searches so the list stays a quick glance, not a full log.
+const MAX_RECENT_SEARCHES = 8;
+
 let highlightTimer: ReturnType<typeof setTimeout> | null = null;
 
 function snapshotGeometry(zones: ZoneWithCount[]): ZoneGeometrySnapshot {
@@ -62,6 +65,7 @@ type AppState = {
   remindersEnabled: boolean;
   expirationAlertShown: boolean;
   tutorialVisible: boolean;
+  recentSearches: string[];
 
   init: () => Promise<void>;
   showTutorial: () => void;
@@ -73,6 +77,9 @@ type AppState = {
   setRemindersEnabled: (enabled: boolean) => Promise<boolean>;
   reloadRemindersEnabled: () => Promise<void>;
   setExpirationAlertShown: (shown: boolean) => void;
+  addRecentSearch: (query: string) => Promise<void>;
+  removeRecentSearch: (query: string) => Promise<void>;
+  reloadRecentSearches: () => Promise<void>;
   syncRemindersIfEnabled: () => Promise<void>;
   loadZones: () => Promise<void>;
   addItem: (
@@ -137,6 +144,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   remindersEnabled: false,
   expirationAlertShown: false,
   tutorialVisible: false,
+  recentSearches: [],
 
   init: async () => {
     if (get().initialized) return;
@@ -146,6 +154,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().reloadThemeMode();
       await get().reloadSeasonMode();
       await get().reloadRemindersEnabled();
+      await get().reloadRecentSearches();
       await get().loadZones();
       // First launch: no "tutorialShown" preference yet → surface the guided
       // tour. Dismissing it records the preference so it never auto-opens again.
@@ -214,6 +223,40 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setExpirationAlertShown: (shown) => set({ expirationAlertShown: shown }),
+
+  addRecentSearch: async (query) => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    const withoutDupes = get().recentSearches.filter(
+      (s) => s.toLowerCase() !== trimmed.toLowerCase()
+    );
+    const next = [trimmed, ...withoutDupes].slice(0, MAX_RECENT_SEARCHES);
+    set({ recentSearches: next });
+    await setPreference("recentSearches", JSON.stringify(next));
+  },
+
+  removeRecentSearch: async (query) => {
+    const next = get().recentSearches.filter(
+      (s) => s.toLowerCase() !== query.toLowerCase()
+    );
+    set({ recentSearches: next });
+    await setPreference("recentSearches", JSON.stringify(next));
+  },
+
+  // Mirrors reloadThemeMode: reads the persisted preference into in-memory
+  // state without writing back, for startup. Guards against missing/malformed
+  // stored data since it's free-form JSON rather than a fixed enum.
+  reloadRecentSearches: async () => {
+    const stored = await getPreference("recentSearches");
+    try {
+      const parsed = JSON.parse(stored ?? "[]");
+      if (Array.isArray(parsed)) {
+        set({ recentSearches: parsed.filter((s) => typeof s === "string") });
+      }
+    } catch {
+      // Leave the default [] in place.
+    }
+  },
 
   syncRemindersIfEnabled: async () => {
     if (!get().remindersEnabled) return;

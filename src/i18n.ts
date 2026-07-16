@@ -89,6 +89,8 @@ const resources = {
       "search.no_results": "No item found for \"{{query}}\"",
       "search.empty": "Type the name of an item to locate it in the van",
       "search.error": "Search failed. Please try again.",
+      "search.recent_title": "Recent searches",
+      "search.recent_remove": "Remove \"{{query}}\" from recent searches",
 
       "zone.not_found": "Zone not found",
       "zone.add_item": "Add an item",
@@ -273,6 +275,8 @@ const resources = {
       "search.no_results": "Aucun objet trouvé pour \"{{query}}\"",
       "search.empty": "Tapez le nom d'un objet pour le localiser dans le van",
       "search.error": "La recherche a échoué. Veuillez réessayer.",
+      "search.recent_title": "Recherches récentes",
+      "search.recent_remove": "Supprimer \"{{query}}\" des recherches récentes",
 
       "zone.not_found": "Zone introuvable",
       "zone.add_item": "Ajouter un objet",

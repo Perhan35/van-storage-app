@@ -83,11 +83,15 @@ export default function SearchScreen() {
   const setItemOutOfVan = useAppStore((s) => s.setItemOutOfVan);
   const setItemChecked = useAppStore((s) => s.setItemChecked);
   const updateItem = useAppStore((s) => s.updateItem);
+  const recentSearches = useAppStore((s) => s.recentSearches);
+  const addRecentSearch = useAppStore((s) => s.addRecentSearch);
+  const removeRecentSearch = useAppStore((s) => s.removeRecentSearch);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searched, setSearched] = useState(false);
   const [searchError, setSearchError] = useState(false);
   const [editingItem, setEditingItem] = useState<SearchResult | null>(null);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const swipeableRefs = useRef<Map<string, SwipeableMethods>>(new Map());
 
   // Debouncing collapses fast typing into one query instead of one per
@@ -95,10 +99,15 @@ export default function SearchScreen() {
   // drops any response that's no longer the latest as the user keeps typing.
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchSeq = useRef(0);
+  // Blurring the Searchbar hides the recent-searches list by unmounting it,
+  // which would cancel a tap on one of its rows still in progress. Delaying
+  // the hide gives that tap's onPress a chance to fire first.
+  const blurTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
+      if (blurTimeout.current) clearTimeout(blurTimeout.current);
     };
   }, []);
 
@@ -141,7 +150,19 @@ export default function SearchScreen() {
     [runSearch]
   );
 
+  // Bypasses the debounce entirely so tapping a recent search feels
+  // instant. Clearing any pending timer first prevents an in-flight
+  // debounced call from an earlier keystroke overwriting these results a
+  // moment later with a stale query's results.
+  const selectRecentSearch = async (text: string) => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    setQuery(text);
+    await runSearch(text);
+    await addRecentSearch(text);
+  };
+
   const handleItemPress = (item: SearchResult) => {
+    addRecentSearch(query.trim());
     setHighlightedZoneId(item.zone_id);
     router.dismissTo("/");
   };
@@ -179,6 +200,8 @@ export default function SearchScreen() {
   };
 
   const emptyTextStyle = { color: palette.onSurfaceVariant, textAlign: "center" as const };
+  const showRecentSearches =
+    isSearchFocused && query.trim().length === 0 && recentSearches.length > 0;
 
   return (
     <View style={[styles.container, { backgroundColor: palette.surface }]}>
@@ -186,137 +209,180 @@ export default function SearchScreen() {
         placeholder={t("search.placeholder")}
         value={query}
         onChangeText={handleSearch}
+        onSubmitEditing={() => {
+          if (results.length > 0) addRecentSearch(query.trim());
+        }}
+        onFocus={() => {
+          if (blurTimeout.current) clearTimeout(blurTimeout.current);
+          setIsSearchFocused(true);
+        }}
+        onBlur={() => {
+          blurTimeout.current = setTimeout(() => setIsSearchFocused(false), 150);
+        }}
         autoFocus
         style={styles.searchbar}
       />
-      <FlatList
-        data={results}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => (
-          <ReanimatedSwipeable
-            ref={(ref) => {
-              if (ref) swipeableRefs.current.set(item.id, ref);
-              else swipeableRefs.current.delete(item.id);
-            }}
-            overshootRight={false}
-            onSwipeableOpen={(direction) => {
-              // ReanimatedSwipeable's SwipeDirection is inverted relative to
-              // the legacy Swipeable: LEFT means the row moved left,
-              // revealing the *right* actions panel (out-of-van), and
-              // RIGHT reveals the left actions panel (checked).
-              if (direction === SwipeDirection.LEFT) handleToggleOutOfVan(item);
-              else if (direction === SwipeDirection.RIGHT) handleToggleChecked(item);
-            }}
-            renderLeftActions={
-              item.zone_checklist
-                ? (_progress, translation) => (
-                    <SwipeActionButton
-                      translation={translation}
-                      side="left"
-                      backgroundColor={palette.primary}
-                      icon={item.checked ? "checkbox-blank-outline" : "check-bold"}
-                      onPress={() => handleToggleChecked(item)}
-                    />
-                  )
-                : undefined
-            }
-            renderRightActions={(_progress, translation) => (
-              <SwipeActionButton
-                translation={translation}
-                side="right"
-                backgroundColor={item.out_of_van ? palette.success : palette.danger}
-                icon={item.out_of_van ? "van-utility" : "exit-to-app"}
-                onPress={() => handleToggleOutOfVan(item)}
-              />
-            )}
-          >
-            <AnimatedOutOfVanRow
-              outOfVan={!!item.out_of_van}
-              outColor={palette.danger}
-              inColor={palette.success}
-              outIcon="exit-to-app"
-              inIcon="van-utility"
+      {showRecentSearches ? (
+        <FlatList
+          data={recentSearches}
+          keyExtractor={(item) => item}
+          keyboardShouldPersistTaps="always"
+          ListHeaderComponent={
+            <Text
+              variant="labelLarge"
+              style={[styles.recentTitle, { color: palette.onSurfaceVariant }]}
             >
-            <AnimatedCheckRow checked={!!item.checked}>
+              {t("search.recent_title")}
+            </Text>
+          }
+          renderItem={({ item }) => (
             <List.Item
-              title={item.name}
-              description={(props) => {
-                const zoneLine = item.out_of_van
-                  ? `📍 ${item.zone_name} • ${t("search.out_of_van")}`
-                  : `📍 ${item.zone_name}`;
-                return (
-                  <View>
-                    <Text style={{ color: props.color, fontSize: props.fontSize }}>
-                      {zoneLine}
-                    </Text>
-                    {!!item.expiration_date && (
-                      <Text
-                        style={{
-                          color: expirationIconColor(
-                            getExpirationStatus(item.expiration_date, item.reminder_days),
-                            palette
-                          ),
-                          fontSize: props.fontSize,
-                        }}
-                      >
-                        {t("zone.expires_on", {
-                          date: formatExpiration(item.expiration_date, i18n.language),
-                        })}
-                      </Text>
-                    )}
-                  </View>
-                );
+              title={item}
+              left={(props) => <List.Icon {...props} icon="history" />}
+              right={(props) => (
+                <IconButton
+                  {...props}
+                  icon="close"
+                  size={18}
+                  onPress={() => removeRecentSearch(item)}
+                  accessibilityLabel={t("search.recent_remove", { query: item })}
+                />
+              )}
+              onPress={() => selectRecentSearch(item)}
+            />
+          )}
+          ItemSeparatorComponent={Divider}
+        />
+      ) : (
+        <FlatList
+          data={results}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <ReanimatedSwipeable
+              ref={(ref) => {
+                if (ref) swipeableRefs.current.set(item.id, ref);
+                else swipeableRefs.current.delete(item.id);
               }}
-              onPress={() => handleItemPress(item)}
-              onLongPress={() => setEditingItem(item)}
-              titleStyle={
-                item.checked
-                  ? { color: palette.onSurfaceVariant, textDecorationLine: "line-through" }
+              overshootRight={false}
+              onSwipeableOpen={(direction) => {
+                // ReanimatedSwipeable's SwipeDirection is inverted relative to
+                // the legacy Swipeable: LEFT means the row moved left,
+                // revealing the *right* actions panel (out-of-van), and
+                // RIGHT reveals the left actions panel (checked).
+                if (direction === SwipeDirection.LEFT) handleToggleOutOfVan(item);
+                else if (direction === SwipeDirection.RIGHT) handleToggleChecked(item);
+              }}
+              renderLeftActions={
+                item.zone_checklist
+                  ? (_progress, translation) => (
+                      <SwipeActionButton
+                        translation={translation}
+                        side="left"
+                        backgroundColor={palette.primary}
+                        icon={item.checked ? "checkbox-blank-outline" : "check-bold"}
+                        onPress={() => handleToggleChecked(item)}
+                      />
+                    )
                   : undefined
               }
-              left={(props) => {
-                const seasonIcon = seasonIconName(item.season);
-                return (
-                  <View style={styles.itemIcons}>
-                    <List.Icon
-                      {...props}
-                      icon={item.out_of_van ? "exit-to-app" : "van-utility"}
-                      color={item.out_of_van ? palette.danger : undefined}
-                    />
-                    {seasonIcon && (
-                      <List.Icon {...props} icon={seasonIcon} color={seasonIconColor(item.season)} />
-                    )}
-                  </View>
-                );
-              }}
-            />
-            </AnimatedCheckRow>
-            </AnimatedOutOfVanRow>
-          </ReanimatedSwipeable>
-        )}
-        ItemSeparatorComponent={Divider}
-        ListEmptyComponent={
-          searchError ? (
-            <View style={styles.emptyContainer}>
-              <Text variant="bodyMedium" style={[emptyTextStyle, { color: palette.danger }]}>
-                {t("search.error")}
-              </Text>
-            </View>
-          ) : searched ? (
-            <View style={styles.emptyContainer}>
-              <Text variant="bodyMedium" style={emptyTextStyle}>
-                {t("search.no_results", { query })}
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.emptyContainer}>
-              <Text variant="bodyMedium" style={emptyTextStyle}>
-                {t("search.empty")}
-              </Text>
-            </View>
-          )
-        }
-      />
+              renderRightActions={(_progress, translation) => (
+                <SwipeActionButton
+                  translation={translation}
+                  side="right"
+                  backgroundColor={item.out_of_van ? palette.success : palette.danger}
+                  icon={item.out_of_van ? "van-utility" : "exit-to-app"}
+                  onPress={() => handleToggleOutOfVan(item)}
+                />
+              )}
+            >
+              <AnimatedOutOfVanRow
+                outOfVan={!!item.out_of_van}
+                outColor={palette.danger}
+                inColor={palette.success}
+                outIcon="exit-to-app"
+                inIcon="van-utility"
+              >
+              <AnimatedCheckRow checked={!!item.checked}>
+              <List.Item
+                title={item.name}
+                description={(props) => {
+                  const zoneLine = item.out_of_van
+                    ? `📍 ${item.zone_name} • ${t("search.out_of_van")}`
+                    : `📍 ${item.zone_name}`;
+                  return (
+                    <View>
+                      <Text style={{ color: props.color, fontSize: props.fontSize }}>
+                        {zoneLine}
+                      </Text>
+                      {!!item.expiration_date && (
+                        <Text
+                          style={{
+                            color: expirationIconColor(
+                              getExpirationStatus(item.expiration_date, item.reminder_days),
+                              palette
+                            ),
+                            fontSize: props.fontSize,
+                          }}
+                        >
+                          {t("zone.expires_on", {
+                            date: formatExpiration(item.expiration_date, i18n.language),
+                          })}
+                        </Text>
+                      )}
+                    </View>
+                  );
+                }}
+                onPress={() => handleItemPress(item)}
+                onLongPress={() => setEditingItem(item)}
+                titleStyle={
+                  item.checked
+                    ? { color: palette.onSurfaceVariant, textDecorationLine: "line-through" }
+                    : undefined
+                }
+                left={(props) => {
+                  const seasonIcon = seasonIconName(item.season);
+                  return (
+                    <View style={styles.itemIcons}>
+                      <List.Icon
+                        {...props}
+                        icon={item.out_of_van ? "exit-to-app" : "van-utility"}
+                        color={item.out_of_van ? palette.danger : undefined}
+                      />
+                      {seasonIcon && (
+                        <List.Icon {...props} icon={seasonIcon} color={seasonIconColor(item.season)} />
+                      )}
+                    </View>
+                  );
+                }}
+              />
+              </AnimatedCheckRow>
+              </AnimatedOutOfVanRow>
+            </ReanimatedSwipeable>
+          )}
+          ItemSeparatorComponent={Divider}
+          ListEmptyComponent={
+            searchError ? (
+              <View style={styles.emptyContainer}>
+                <Text variant="bodyMedium" style={[emptyTextStyle, { color: palette.danger }]}>
+                  {t("search.error")}
+                </Text>
+              </View>
+            ) : searched ? (
+              <View style={styles.emptyContainer}>
+                <Text variant="bodyMedium" style={emptyTextStyle}>
+                  {t("search.no_results", { query })}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.emptyContainer}>
+                <Text variant="bodyMedium" style={emptyTextStyle}>
+                  {t("search.empty")}
+                </Text>
+              </View>
+            )
+          }
+        />
+      )}
 
       <EditItemDialog
         item={editingItem}
@@ -332,6 +398,7 @@ const styles = StyleSheet.create({
   searchbar: { margin: 12 },
   itemIcons: { flexDirection: "row" },
   emptyContainer: { padding: 32, alignItems: "center" },
+  recentTitle: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
   swipeAction: {
     width: ACTION_WIDTH,
     justifyContent: "center",
