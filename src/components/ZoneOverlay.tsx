@@ -12,7 +12,7 @@ import { ZoneWithCount } from "../db/database";
 import { DEFAULT_FILL_OPACITY } from "../db/repository";
 import { getReadableTextColor } from "../utils/color";
 import { useAppTheme } from "../theme/useAppTheme";
-import { lightPalette } from "../theme/palette";
+import { lightPalette, darkPalette } from "../theme/palette";
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
@@ -253,7 +253,11 @@ export function ZoneOverlay({ zone, highlighted, dimmed }: Props) {
         x={textCx}
         y={firstBaselineY}
         textAnchor="middle"
-        fill={isDark ? "#FFFFFF" : getReadableTextColor(zoneColor, zone.fill_opacity ?? DEFAULT_FILL_OPACITY, lightPalette.background)}
+        fill={getReadableTextColor(
+          zoneColor,
+          zone.fill_opacity ?? DEFAULT_FILL_OPACITY,
+          isDark ? darkPalette.background : lightPalette.background
+        )}
         fontSize={fontSize}
         fontWeight="600"
         transform={

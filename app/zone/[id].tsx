@@ -28,6 +28,7 @@ import { listItemsForZone } from "../../src/db/repository";
 import { Item } from "../../src/db/database";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../../src/theme/useAppTheme";
+import { getReadableTextColor } from "../../src/utils/color";
 import { EditItemDialog } from "../../src/components/dialogs/EditItemDialog";
 import { EditZoneDialog } from "../../src/components/dialogs/EditZoneDialog";
 import { AddItemDialog } from "../../src/components/dialogs/AddItemDialog";
@@ -144,6 +145,11 @@ export default function ZoneDetailScreen() {
   );
 
   const zone = zones.find((z) => z.id === id);
+  // The header background is the zone's own color (solid, no blending), so
+  // its tint must be derived from that color rather than the fixed app
+  // palette.headerTint (always white) — otherwise text/icons disappear on
+  // light zone colors.
+  const zoneHeaderTint = zone ? getReadableTextColor(zone.color, 1) : palette.headerTint;
 
   const loadItems = useCallback(async () => {
     if (id) {
@@ -205,16 +211,17 @@ export default function ZoneDetailScreen() {
     navigation.setOptions({
       title: zone.name,
       headerStyle: { backgroundColor: zone.color },
+      headerTintColor: zoneHeaderTint,
       headerTitle: () => (
         <View style={styles.headerTitleContainer}>
           <Text
             variant="titleMedium"
-            style={{ color: palette.headerTint, fontWeight: "bold" }}
+            style={{ color: zoneHeaderTint, fontWeight: "bold" }}
             numberOfLines={1}
           >
             {zone.name}
           </Text>
-          <Text variant="bodySmall" style={{ color: palette.headerTint }}>
+          <Text variant="bodySmall" style={{ color: zoneHeaderTint }}>
             {t(
               items.length === 1
                 ? "map.objects_count_one"
@@ -231,7 +238,7 @@ export default function ZoneDetailScreen() {
             {hasChecked && (
               <IconButton
                 icon="checkbox-multiple-blank-outline"
-                iconColor={palette.headerTint}
+                iconColor={zoneHeaderTint}
                 accessibilityLabel={t("zone.reset_checklist")}
                 onPress={handleResetChecklist}
               />
@@ -239,14 +246,14 @@ export default function ZoneDetailScreen() {
             <IconButton
               icon="call-split"
               size={20}
-              iconColor={palette.headerTint}
+              iconColor={zoneHeaderTint}
               accessibilityLabel={t("zone.split_zone_alert_title")}
               onPress={handleSplitZone}
             />
             <IconButton
               icon="pencil"
               size={20}
-              iconColor={palette.headerTint}
+              iconColor={zoneHeaderTint}
               accessibilityLabel={t("zone.edit_zone")}
               onPress={() => setZoneEditVisible(true)}
             />
