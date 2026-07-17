@@ -4,7 +4,8 @@ import { Text, Button, Divider, SegmentedButtons, Switch } from "react-native-pa
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { exportAllData, importAllData, isValidGeometry } from "../src/db/repository";
+import { exportAllData, importAllData, isValidGeometry, isValidOutline } from "../src/db/repository";
+import { getTemplate } from "../src/db/templates";
 import { useAppStore, ThemeMode, SeasonMode } from "../src/store/useAppStore";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
@@ -52,6 +53,8 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const lastVersionTapRef = useRef(0);
   const loadZones = useAppStore((s) => s.loadZones);
+  const reloadLocations = useAppStore((s) => s.reloadLocations);
+  const setActiveLocation = useAppStore((s) => s.setActiveLocation);
   const showTutorial = useAppStore((s) => s.showTutorial);
   const themeMode = useAppStore((s) => s.themeMode);
   const setThemeMode = useAppStore((s) => s.setThemeMode);
@@ -120,7 +123,7 @@ export default function SettingsScreen() {
   };
 
   const importData = async (content: string) => {
-    let data: { zones?: unknown[]; items?: unknown[]; preferences?: unknown[] };
+    let data: { locations?: unknown[]; zones?: unknown[]; items?: unknown[]; preferences?: unknown[] };
     try {
       data = JSON.parse(content);
     } catch {
@@ -171,11 +174,49 @@ export default function SettingsScreen() {
     const isValidPreference = (p: Record<string, unknown>) =>
       typeof p.key === "string" && typeof p.value === "string";
 
+    const isValidLocation = (l: Record<string, unknown>) => {
+      if (typeof l.id !== "string" || typeof l.name !== "string" || typeof l.outline !== "string") {
+        return false;
+      }
+      try {
+        return isValidOutline(JSON.parse(l.outline));
+      } catch {
+        return false;
+      }
+    };
+
     if (
       !rawZones.every(isValidZone) ||
       !rawItems.every(isValidItem) ||
       !rawPreferences.every(isValidPreference)
     ) {
+      Alert.alert(t("settings.error"), t("settings.import_invalid_format"));
+      return;
+    }
+
+    // Backups predating multi-location support have no `locations` array and
+    // no per-zone location_id: fall back to a single generated "Van" location
+    // owning every zone in the file, so an old backup still imports cleanly.
+    let rawLocations: Record<string, unknown>[];
+    if (Array.isArray(data.locations)) {
+      rawLocations = data.locations as Record<string, unknown>[];
+      if (!rawLocations.every(isValidLocation)) {
+        Alert.alert(t("settings.error"), t("settings.import_invalid_format"));
+        return;
+      }
+    } else {
+      const template = getTemplate("van");
+      const fallbackLocationId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      rawLocations = [
+        { id: fallbackLocationId, name: t(template.nameKey), outline: JSON.stringify(template.outline), sort_order: 0 },
+      ];
+      for (const zone of rawZones) {
+        if (!zone.location_id) zone.location_id = fallbackLocationId;
+      }
+    }
+
+    const locationIds = new Set(rawLocations.map((l) => l.id as string));
+    if (rawZones.some((z) => !locationIds.has(z.location_id as string))) {
       Alert.alert(t("settings.error"), t("settings.import_invalid_format"));
       return;
     }
@@ -189,9 +230,22 @@ export default function SettingsScreen() {
     const doImport = async () => {
       setImporting(true);
       try {
-        await importAllData(rawZones, rawItems, rawPreferences);
+        await importAllData(rawLocations, rawZones, rawItems, rawPreferences);
 
-        await loadZones();
+        await reloadLocations();
+        // The previously active location may not exist in the imported data
+        // (it was replaced wholesale) — fall back to the first location so
+        // the map isn't left pointed at a location_id that no longer exists.
+        const currentActiveId = useAppStore.getState().activeLocationId;
+        const stillExists = useAppStore
+          .getState()
+          .locations.some((l) => l.id === currentActiveId);
+        if (stillExists) {
+          await loadZones();
+        } else {
+          const first = useAppStore.getState().locations[0];
+          if (first) await setActiveLocation(first.id);
+        }
         await reloadThemeMode();
         await reloadSeasonMode();
         await reloadRemindersEnabled();

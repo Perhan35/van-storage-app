@@ -13,8 +13,7 @@ import Animated, {
 import { useRouter } from "expo-router";
 import { Searchbar, List, Divider, Text, IconButton } from "react-native-paper";
 import { useAppStore } from "../src/store/useAppStore";
-import { searchItems } from "../src/db/repository";
-import { Item } from "../src/db/database";
+import { searchItems, searchAllItems, SearchResultItem } from "../src/db/repository";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
 import { seasonIconName, seasonIconColor } from "../src/components/seasonIcon";
@@ -26,7 +25,7 @@ import { AnimatedOutOfVanRow } from "../src/components/AnimatedOutOfVanRow";
 import { EditItemDialog } from "../src/components/dialogs/EditItemDialog";
 import { Season } from "../src/db/database";
 
-type SearchResult = Item & { zone_name: string; zone_checklist: number };
+type SearchResult = SearchResultItem;
 
 const SEARCH_DEBOUNCE_MS = 250;
 const ACTION_WIDTH = 64;
@@ -79,13 +78,19 @@ export default function SearchScreen() {
   const router = useRouter();
   const { t, i18n } = useTranslation();
   const { palette } = useAppTheme();
+  const activeLocationId = useAppStore((s) => s.activeLocationId);
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
+  const setActiveLocation = useAppStore((s) => s.setActiveLocation);
   const setItemOutOfVan = useAppStore((s) => s.setItemOutOfVan);
   const setItemChecked = useAppStore((s) => s.setItemChecked);
   const updateItem = useAppStore((s) => s.updateItem);
   const recentSearches = useAppStore((s) => s.recentSearches);
   const addRecentSearch = useAppStore((s) => s.addRecentSearch);
   const removeRecentSearch = useAppStore((s) => s.removeRecentSearch);
+  // Frozen at mount, same reasoning as the out-of-van screen: search either
+  // scopes to the location it was opened from, or — opened from the
+  // all-locations overview — searches every location.
+  const [isGlobalView] = useState(() => useAppStore.getState().overviewMode);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searched, setSearched] = useState(false);
@@ -112,10 +117,11 @@ export default function SearchScreen() {
   }, []);
 
   const runSearch = useCallback(async (text: string) => {
+    if (!isGlobalView && !activeLocationId) return;
     const seq = ++searchSeq.current;
     let r: SearchResult[];
     try {
-      r = await searchItems(text);
+      r = isGlobalView ? await searchAllItems(text) : await searchItems(text, activeLocationId!);
     } catch (err) {
       if (seq !== searchSeq.current) return;
       console.warn("Search query failed:", err);
@@ -128,7 +134,7 @@ export default function SearchScreen() {
     setResults(r);
     setSearched(true);
     setSearchError(false);
-  }, []);
+  }, [isGlobalView, activeLocationId]);
 
   const handleSearch = useCallback(
     (text: string) => {
@@ -161,8 +167,11 @@ export default function SearchScreen() {
     await addRecentSearch(text);
   };
 
-  const handleItemPress = (item: SearchResult) => {
+  const handleItemPress = async (item: SearchResult) => {
     addRecentSearch(query.trim());
+    if (item.location_id !== activeLocationId) {
+      await setActiveLocation(item.location_id);
+    }
     setHighlightedZoneId(item.zone_id);
     router.dismissTo("/");
   };
@@ -290,7 +299,7 @@ export default function SearchScreen() {
                   translation={translation}
                   side="right"
                   backgroundColor={item.out_of_van ? palette.success : palette.danger}
-                  icon={item.out_of_van ? "van-utility" : "exit-to-app"}
+                  icon={item.out_of_van ? item.location_icon : "exit-to-app"}
                   onPress={() => handleToggleOutOfVan(item)}
                 />
               )}
@@ -300,15 +309,16 @@ export default function SearchScreen() {
                 outColor={palette.danger}
                 inColor={palette.success}
                 outIcon="exit-to-app"
-                inIcon="van-utility"
+                inIcon={item.location_icon}
               >
               <AnimatedCheckRow checked={!!item.checked}>
               <List.Item
                 title={item.name}
                 description={(props) => {
+                  const location = isGlobalView ? `${item.location_name} • ` : "";
                   const zoneLine = item.out_of_van
-                    ? `📍 ${item.zone_name} • ${t("search.out_of_van")}`
-                    : `📍 ${item.zone_name}`;
+                    ? `📍 ${location}${item.zone_name} • ${t("search.out_of_van")}`
+                    : `📍 ${location}${item.zone_name}`;
                   return (
                     <View>
                       <Text style={{ color: props.color, fontSize: props.fontSize }}>
@@ -345,7 +355,7 @@ export default function SearchScreen() {
                     <View style={styles.itemIcons}>
                       <List.Icon
                         {...props}
-                        icon={item.out_of_van ? "exit-to-app" : "van-utility"}
+                        icon={item.out_of_van ? "exit-to-app" : item.location_icon}
                         color={item.out_of_van ? palette.danger : undefined}
                       />
                       {seasonIcon && (

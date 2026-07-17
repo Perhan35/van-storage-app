@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { View, StyleSheet } from "react-native";
+import { View, StyleSheet, Pressable } from "react-native";
 import { useRouter, useNavigation } from "expo-router";
 import { FAB, Text, Button } from "react-native-paper";
-import Animated, { useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+} from "react-native-reanimated";
 import { VanLayoutSVG, ZoneScreenRect } from "../src/components/VanLayoutSVG";
 import {
   ZoomableContainer,
@@ -11,16 +15,19 @@ import {
   DIVE_OUT_DURATION,
   DIVE_EASING,
 } from "../src/components/ZoomableContainer";
+import { LocationsOverview } from "../src/components/LocationsOverview";
 import { useAppStore } from "../src/store/useAppStore";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
 import { CreateZoneDialog } from "../src/components/dialogs/CreateZoneDialog";
 import { AddItemDialog } from "../src/components/dialogs/AddItemDialog";
+import { CreateLocationDialog } from "../src/components/dialogs/CreateLocationDialog";
 import { ExpirationOverviewDialog } from "../src/components/dialogs/ExpirationOverviewDialog";
 import { plusIcon, tagFabStyle, FAB_RADIUS_SMALL } from "../src/components/AddFab";
 import { Season } from "../src/db/database";
 import { listItemsWithExpiration } from "../src/db/repository";
 import { getExpirationStatus } from "../src/utils/expiration";
+import { DEFAULT_CANVAS_H } from "../src/components/layoutConstants";
 
 const DIVE_FADE_PEAK = 0.5;
 // Fires the navigation near the end of the dive, so only its last moment
@@ -42,10 +49,22 @@ export default function VanMapScreen() {
   const editMode = useAppStore((s) => s.editMode);
   const expirationAlertShown = useAppStore((s) => s.expirationAlertShown);
   const setExpirationAlertShown = useAppStore((s) => s.setExpirationAlertShown);
+  const activeLocation = useAppStore((s) =>
+    s.locations.find((l) => l.id === s.activeLocationId)
+  );
+  const setActiveLocation = useAppStore((s) => s.setActiveLocation);
+  const addLocation = useAppStore((s) => s.addLocation);
+  // Overview vs. single-location map lives in the store (the header, defined in
+  // the Stack config, reads it too). `overview` shows every location at once,
+  // entered by tapping the header title — mirrors, one level up, the map->zone
+  // dive; the start view is chosen in the store's init() (#3).
+  const overviewMode = useAppStore((s) => s.overviewMode);
+  const setOverviewMode = useAppStore((s) => s.setOverviewMode);
 
   const [fabOpen, setFabOpen] = useState(false);
   const [addZoneVisible, setAddZoneVisible] = useState(false);
   const [addItemVisible, setAddItemVisible] = useState(false);
+  const [addLocationVisible, setAddLocationVisible] = useState(false);
   const [startupOverviewVisible, setStartupOverviewVisible] = useState(false);
 
   const zoomRef = useRef<ZoomableContainerHandle>(null);
@@ -72,6 +91,61 @@ export default function VanMapScreen() {
     );
     return unsubscribe;
   }, [navigation]);
+
+  const handleTitlePress = () => {
+    if (editMode || overviewMode) return;
+    setOverviewMode(true);
+  };
+
+  // Header title is screen-controlled (rather than a static Stack.Screen
+  // option) so it can show the active location's name and react to it —
+  // expo-router lets a focused screen override its own header via
+  // navigation.setOptions.
+  useEffect(() => {
+    navigation.setOptions({
+      headerTitle: () => (
+        <Pressable onPress={handleTitlePress} disabled={editMode || overviewMode}>
+          {!editMode && overviewMode ? (
+            // All-locations overview: app name as the title, "Locations" as a
+            // subtitle beneath it.
+            <View>
+              <Text
+                style={{ color: palette.headerTint, fontWeight: "bold", fontSize: 18 }}
+                numberOfLines={1}
+              >
+                {t("nav.app_title")}
+              </Text>
+              <Text
+                style={{ color: palette.headerTint, opacity: 0.8, fontSize: 12 }}
+                numberOfLines={1}
+              >
+                {t("nav.locations")}
+              </Text>
+            </View>
+          ) : (
+            <Text
+              style={{ color: palette.headerTint, fontWeight: "bold", fontSize: 18 }}
+              numberOfLines={1}
+            >
+              {editMode
+                ? t("nav.edit_mode")
+                : t("nav.app_title_named", { name: activeLocation?.name ?? "" })}
+            </Text>
+          )}
+        </Pressable>
+      ),
+    });
+  }, [navigation, editMode, overviewMode, activeLocation?.name, palette.headerTint, t]);
+
+  const handleSelectLocation = (locationId: string) => {
+    // setActiveLocation also clears overviewMode in the store.
+    setActiveLocation(locationId);
+  };
+
+  const handleCreateLocation = async (name: string, templateId: string, icon: string) => {
+    await addLocation(name, templateId, icon);
+    setAddLocationVisible(false);
+  };
 
   const handleZonePress = (zoneId: string, rect: ZoneScreenRect) => {
     const zone = zones.find((z) => z.id === zoneId);
@@ -128,12 +202,13 @@ export default function VanMapScreen() {
   }
 
   const handleCreateZone = async (name: string, color: string, checklist: boolean) => {
+    const canvasH = activeLocation?.outline.h ?? DEFAULT_CANVAS_H;
     let maxBottom = 70;
     for (const z of zones) {
       const bottom = z.geometry.y + z.geometry.h;
       if (bottom > maxBottom) maxBottom = bottom;
     }
-    const y = Math.min(maxBottom + 10, 520);
+    const y = Math.min(maxBottom + 10, canvasH - 80);
     const geometry = {
       type: "rect" as const,
       x: 50,
@@ -161,12 +236,28 @@ export default function VanMapScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: palette.background }]}>
-      {/* One-finger pan works in edit mode too now that moving a zone requires
-          a press-and-hold to pick it up first (the canvas stands down while a
-          zone is grabbed). */}
-      <ZoomableContainer ref={zoomRef} panMinPointers={1}>
-        <VanLayoutSVG onZonePress={handleZonePress} />
-      </ZoomableContainer>
+      {!overviewMode ? (
+        // Plain instant swap — no entering/exiting layout animation. The fade
+        // animation occasionally failed to settle, leaving the map stuck dim
+        // ("greyed-out") and/or the ZoomableContainer measured before it was
+        // laid out; swapping instantly guarantees full opacity and a correct
+        // fit every time a location opens (#B, and keeps #6 fixed).
+        <View style={StyleSheet.absoluteFill}>
+          {/* One-finger pan works in edit mode too now that moving a zone requires
+              a press-and-hold to pick it up first (the canvas stands down while a
+              zone is grabbed). */}
+          <ZoomableContainer ref={zoomRef} panMinPointers={1}>
+            <VanLayoutSVG onZonePress={handleZonePress} />
+          </ZoomableContainer>
+        </View>
+      ) : (
+        <View style={StyleSheet.absoluteFill}>
+          <LocationsOverview
+            onSelectLocation={handleSelectLocation}
+            onCreateNew={() => setAddLocationVisible(true)}
+          />
+        </View>
+      )}
 
       <Animated.View
         pointerEvents="none"
@@ -179,7 +270,7 @@ export default function VanMapScreen() {
 
       <FAB.Group
         open={fabOpen}
-        visible={!editMode}
+        visible={!editMode && !overviewMode}
         icon={fabOpen ? "close" : plusIcon}
         color={palette.headerTint}
         actions={[
@@ -221,6 +312,12 @@ export default function VanMapScreen() {
         zoneId={zones[0]?.id ?? ""}
         onCancel={() => setAddItemVisible(false)}
         onSave={handleCreateItem}
+      />
+
+      <CreateLocationDialog
+        visible={addLocationVisible}
+        onCancel={() => setAddLocationVisible(false)}
+        onCreate={handleCreateLocation}
       />
 
       <ExpirationOverviewDialog

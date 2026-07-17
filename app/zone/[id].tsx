@@ -26,6 +26,7 @@ import {
 import { useAppStore } from "../../src/store/useAppStore";
 import { listItemsForZone } from "../../src/db/repository";
 import { Item } from "../../src/db/database";
+import { DEFAULT_LOCATION_ICON } from "../../src/db/templates";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../../src/theme/useAppTheme";
 import { getReadableTextColor } from "../../src/utils/color";
@@ -106,6 +107,9 @@ export default function ZoneDetailScreen() {
   const { palette } = useAppTheme();
   const insets = useSafeAreaInsets();
   const zones = useAppStore((s) => s.zones);
+  const activeLocationIcon = useAppStore(
+    (s) => s.locations.find((l) => l.id === s.activeLocationId)?.icon ?? DEFAULT_LOCATION_ICON
+  );
   const addItem = useAppStore((s) => s.addItem);
   const deleteItem = useAppStore((s) => s.deleteItem);
   const updateItem = useAppStore((s) => s.updateItem);
@@ -513,7 +517,7 @@ export default function ZoneDetailScreen() {
                 translation={translation}
                 side="right"
                 backgroundColor={item.out_of_van ? palette.success : palette.danger}
-                icon={item.out_of_van ? "van-utility" : "exit-to-app"}
+                icon={item.out_of_van ? activeLocationIcon : "exit-to-app"}
                 onPress={() => handleToggleOutOfVan(item)}
               />
             )}
@@ -523,7 +527,7 @@ export default function ZoneDetailScreen() {
             outColor={palette.danger}
             inColor={palette.success}
             outIcon="exit-to-app"
-            inIcon="van-utility"
+            inIcon={activeLocationIcon}
           >
           <AnimatedCheckRow checked={!!item.checked}>
           <HighlightFlashRow

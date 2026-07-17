@@ -23,6 +23,14 @@ export const MIGRATIONS = [
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );`,
+  `CREATE TABLE IF NOT EXISTS locations (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    outline TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );`,
 ];
 
 // Column additions handled separately via PRAGMA table_info checks, since
@@ -51,6 +59,16 @@ export const ITEM_COLUMNS_TO_ADD: { name: string; ddl: string }[] = [
   },
 ];
 
+export const LOCATION_COLUMNS_TO_ADD: { name: string; ddl: string }[] = [
+  {
+    // Pre-existing installs only ever hold the migrated default "Van" location,
+    // so defaulting to the van icon keeps their look unchanged; new locations
+    // always pass an explicit icon.
+    name: "icon",
+    ddl: "ALTER TABLE locations ADD COLUMN icon TEXT NOT NULL DEFAULT 'van-utility'",
+  },
+];
+
 export const ZONE_COLUMNS_TO_ADD: { name: string; ddl: string }[] = [
   {
     name: "fill_opacity",
@@ -59,5 +77,11 @@ export const ZONE_COLUMNS_TO_ADD: { name: string; ddl: string }[] = [
   {
     name: "checklist",
     ddl: "ALTER TABLE zones ADD COLUMN checklist INTEGER NOT NULL DEFAULT 0",
+  },
+  {
+    // Nullable: SQLite can't ADD COLUMN with a NOT NULL FK, and the value is
+    // backfilled separately (see openAndMigrate) for zones that predate locations.
+    name: "location_id",
+    ddl: "ALTER TABLE zones ADD COLUMN location_id TEXT REFERENCES locations(id) ON DELETE CASCADE",
   },
 ];

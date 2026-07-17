@@ -3,13 +3,10 @@ import { View, StyleSheet, ScrollView, useWindowDimensions } from "react-native"
 import { Dialog, Portal, Text, List, Button, IconButton, Divider } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "expo-router";
-import { listSeasonalItems } from "../../db/repository";
-import { Item } from "../../db/database";
+import { listSeasonalItems, SeasonalItem } from "../../db/repository";
 import { SeasonMode, useAppStore } from "../../store/useAppStore";
 import { useAppTheme } from "../../theme/useAppTheme";
 import { seasonIconName, seasonIconColor } from "../seasonIcon";
-
-type SeasonalItem = Item & { zone_name: string };
 
 type Props = {
   visible: boolean;
@@ -63,7 +60,7 @@ export function SeasonChangeoverDialog({ visible, season, onDismiss }: Props) {
       <List.Item
         key={item.id}
         title={item.name}
-        description={`📍 ${item.zone_name}`}
+        description={`📍 ${item.location_name} • ${item.zone_name}`}
         left={(props) =>
           seasonIcon ? (
             <List.Icon {...props} icon={seasonIcon} color={seasonIconColor(item.season)} />
@@ -73,7 +70,7 @@ export function SeasonChangeoverDialog({ visible, season, onDismiss }: Props) {
         right={(props) => (
           <IconButton
             {...props}
-            icon={action === "remove" ? "exit-to-app" : "van-utility"}
+            icon={action === "remove" ? "exit-to-app" : item.location_icon}
             iconColor={action === "remove" ? undefined : "#2e7d32"}
             accessibilityLabel={action === "remove" ? t("zone.take_out") : t("zone.put_back")}
             onPress={() => handleApply(item, action === "remove")}
