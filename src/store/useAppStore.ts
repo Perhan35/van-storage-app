@@ -1,8 +1,9 @@
 import { create } from "zustand";
-import { getDb, Zone, ZoneWithCount, Season } from "../db/database";
+import { getDb, Zone, ZoneWithCount, Season, Location } from "../db/database";
 import { getPreference, setPreference } from "../db/preferences";
 import * as repo from "../db/repository";
 import { cancelAllReminders, requestNotificationPermissions, syncReminders } from "../notifications/reminders";
+import { getTemplate, Outline } from "../db/templates";
 import i18n from "../i18n";
 
 export type ThemeMode = "auto" | "light" | "dark";
@@ -66,8 +67,25 @@ type AppState = {
   expirationAlertShown: boolean;
   tutorialVisible: boolean;
   recentSearches: string[];
+  locations: Location[];
+  activeLocationId: string | null;
+  // Whether the map screen is showing the all-locations overview (true) or a
+  // single location's map (false). Lives in the store so the header (a separate
+  // component in the Stack config) can hide location-only actions while it's up.
+  overviewMode: boolean;
+  // Sub-mode of editMode: swaps the canvas from moving/resizing zones to
+  // editing the location's outline polygon (add/move/delete a vertex).
+  outlineEditMode: boolean;
 
   init: () => Promise<void>;
+  reloadLocations: () => Promise<void>;
+  setOverviewMode: (overview: boolean) => void;
+  setActiveLocation: (locationId: string) => Promise<void>;
+  addLocation: (name: string, templateId: string, icon: string) => Promise<string>;
+  renameLocation: (locationId: string, name: string, icon: string) => Promise<void>;
+  deleteLocation: (locationId: string) => Promise<void>;
+  updateLocationOutline: (locationId: string, outline: Outline) => Promise<void>;
+  toggleOutlineEditMode: () => void;
   showTutorial: () => void;
   dismissTutorial: () => Promise<void>;
   setThemeMode: (mode: ThemeMode) => Promise<void>;
@@ -145,6 +163,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   expirationAlertShown: false,
   tutorialVisible: false,
   recentSearches: [],
+  locations: [],
+  activeLocationId: null,
+  overviewMode: false,
+  outlineEditMode: false,
 
   init: async () => {
     if (get().initialized) return;
@@ -155,6 +177,27 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().reloadSeasonMode();
       await get().reloadRemindersEnabled();
       await get().reloadRecentSearches();
+      await get().reloadLocations();
+
+      // Resolve which location is active: the persisted preference if it
+      // still exists, otherwise the first location (e.g. right after the
+      // one-time migration created the default "Van" location).
+      const locations = get().locations;
+      const storedId = await getPreference("activeLocationId");
+      const resolvedId =
+        (storedId && locations.some((l) => l.id === storedId) ? storedId : null) ??
+        locations[0]?.id ??
+        null;
+      set({ activeLocationId: resolvedId });
+      if (resolvedId && resolvedId !== storedId) {
+        await setPreference("activeLocationId", resolvedId);
+      }
+
+      // Start on the all-locations overview, unless there's exactly one
+      // location — then land directly inside it (no reason to show a one-tile
+      // overview). Migrated single-"Van" installs therefore behave as before.
+      set({ overviewMode: locations.length !== 1 });
+
       await get().loadZones();
       // First launch: no "tutorialShown" preference yet → surface the guided
       // tour. Dismissing it records the preference so it never auto-opens again.
@@ -163,6 +206,53 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (err) {
       set({ initError: err instanceof Error ? err.message : String(err) });
     }
+  },
+
+  reloadLocations: async () => {
+    const locations = await repo.listLocations();
+    set({ locations });
+  },
+
+  setOverviewMode: (overview) => set({ overviewMode: overview }),
+
+  setActiveLocation: async (locationId) => {
+    // Choosing a location always means entering it, so leave the overview.
+    set({ activeLocationId: locationId, overviewMode: false });
+    await setPreference("activeLocationId", locationId);
+    await get().loadZones();
+  },
+
+  addLocation: async (name, templateId, icon) => {
+    const template = getTemplate(templateId);
+    const id = generateId();
+    await repo.insertLocation(id, name, template.outline, icon);
+    await repo.instantiateTemplate(id, template);
+    await get().reloadLocations();
+    await get().setActiveLocation(id);
+    return id;
+  },
+
+  renameLocation: async (locationId, name, icon) => {
+    await repo.updateLocation(locationId, name, icon);
+    await get().reloadLocations();
+  },
+
+  deleteLocation: async (locationId) => {
+    const { locations, activeLocationId } = get();
+    // Never delete the last remaining location — there must always be
+    // somewhere for zones/items to live.
+    if (locations.length <= 1) return;
+    await repo.deleteLocation(locationId);
+    await get().reloadLocations();
+    if (activeLocationId === locationId) {
+      const next = get().locations[0];
+      if (next) await get().setActiveLocation(next.id);
+    }
+  },
+
+  updateLocationOutline: async (locationId, outline) => {
+    await repo.updateLocationOutline(locationId, outline);
+    await get().reloadLocations();
   },
 
   showTutorial: () => set({ tutorialVisible: true }),
@@ -265,7 +355,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   loadZones: async () => {
-    const zones = await repo.listZonesWithCounts();
+    const locationId = get().activeLocationId;
+    if (!locationId) {
+      set({ zones: [] });
+      return;
+    }
+    const zones = await repo.listZonesWithCounts(locationId);
     set({ zones });
   },
 
@@ -335,8 +430,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addZone: async (name, color, geometry, checklist = false) => {
+    const locationId = get().activeLocationId;
+    if (!locationId) return;
     const id = generateId();
-    await repo.insertZone(id, name, color, geometry, checklist);
+    await repo.insertZone(id, name, color, geometry, locationId, checklist);
     set({ undoStack: [], redoStack: [] });
     await get().loadZones();
   },
@@ -382,11 +479,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       const turningOn = !s.editMode;
       return {
         editMode: turningOn,
+        outlineEditMode: false,
         undoStack: [],
         redoStack: [],
         editSessionSnapshot: turningOn ? snapshotGeometry(s.zones) : null,
       };
     }),
+
+  toggleOutlineEditMode: () => set((s) => ({ outlineEditMode: !s.outlineEditMode })),
 
   updateZoneGeometry: async (zoneId, geometry) => {
     const zones = get().zones;
@@ -445,6 +545,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({
       editMode: false,
+      outlineEditMode: false,
       undoStack: [],
       redoStack: [],
       editSessionSnapshot: null,

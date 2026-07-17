@@ -1,6 +1,11 @@
 import * as SQLite from "expo-sqlite";
-import { ITEM_COLUMNS_TO_ADD, MIGRATIONS, ZONE_COLUMNS_TO_ADD } from "./schema";
-import { SEED_ZONES } from "./seed";
+import { ITEM_COLUMNS_TO_ADD, LOCATION_COLUMNS_TO_ADD, MIGRATIONS, ZONE_COLUMNS_TO_ADD } from "./schema";
+import { getTemplate, Outline } from "./templates";
+import i18n from "../i18n";
+
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -62,19 +67,105 @@ async function openAndMigrate(): Promise<SQLite.SQLiteDatabase> {
       await db.execAsync(col.ddl);
     }
   }
-  // Seed default zones if empty
-  const count = await db.getFirstAsync<{ c: number }>(
-    "SELECT COUNT(*) as c FROM zones"
+  const locationColumns = await db.getAllAsync<{ name: string }>(
+    "PRAGMA table_info(locations)"
   );
-  if (count && count.c === 0) {
-    for (const zone of SEED_ZONES) {
+  const existingLocationCols = new Set(locationColumns.map((c) => c.name));
+  for (const col of LOCATION_COLUMNS_TO_ADD) {
+    if (!existingLocationCols.has(col.name)) {
+      await db.execAsync(col.ddl);
+    }
+  }
+
+  // One-time setup, guarded by "locations is empty" so it runs exactly once
+  // and is a no-op on every later launch. Two cases share this path:
+  //  - Fresh install (zones also empty): create the default Van location and
+  //    seed it from the Van template.
+  //  - Pre-feature DB (zones already has rows, no location_id set): create
+  //    the same default Van location and adopt every existing zone into it,
+  //    so no pre-existing data is lost.
+  const locationCount = await db.getFirstAsync<{ c: number }>(
+    "SELECT COUNT(*) as c FROM locations"
+  );
+  if (locationCount && locationCount.c === 0) {
+    const template = getTemplate("van");
+    const locationId = generateId();
+    await db.runAsync(
+      "INSERT INTO locations (id, name, outline, icon, sort_order) VALUES (?, ?, ?, ?, ?)",
+      [locationId, i18n.t(template.nameKey), JSON.stringify(template.outline), template.icon, 0]
+    );
+
+    const zoneCount = await db.getFirstAsync<{ c: number }>(
+      "SELECT COUNT(*) as c FROM zones"
+    );
+    if (zoneCount && zoneCount.c === 0) {
+      for (const zone of template.zones) {
+        await db.runAsync(
+          "INSERT INTO zones (id, name, color, geometry, sort_order, location_id) VALUES (?, ?, ?, ?, ?, ?)",
+          [zone.id, zone.name, zone.color, JSON.stringify(zone.geometry), zone.sort_order, locationId]
+        );
+      }
+    } else {
       await db.runAsync(
-        "INSERT INTO zones (id, name, color, geometry, sort_order) VALUES (?, ?, ?, ?, ?)",
-        [zone.id, zone.name, zone.color, JSON.stringify(zone.geometry), zone.sort_order]
+        "UPDATE zones SET location_id = ? WHERE location_id IS NULL",
+        [locationId]
       );
     }
   }
+
+  await upgradeLegacyVanOutline(db);
+
   return db;
+}
+
+// The first multi-location build stored the van as a chamfered octagon (an
+// approximation of its rounded silhouette). The outline now supports curves,
+// so any location still holding that exact octagon is upgraded in place to the
+// corrected, original rounded van outline. Matching the exact octagon means we
+// only touch untouched auto-generated outlines and never a user-edited one.
+const LEGACY_VAN_OCTAGON: { x: number; y: number }[] = [
+  { x: 30, y: 0 },
+  { x: 270, y: 0 },
+  { x: 300, y: 30 },
+  { x: 300, y: 570 },
+  { x: 270, y: 600 },
+  { x: 30, y: 600 },
+  { x: 0, y: 570 },
+  { x: 0, y: 30 },
+];
+
+function isLegacyVanOctagon(outline: unknown): boolean {
+  if (typeof outline !== "object" || outline === null) return false;
+  const o = outline as { w?: number; h?: number; points?: unknown };
+  if (o.w !== 300 || o.h !== 600) return false;
+  if (!Array.isArray(o.points) || o.points.length !== LEGACY_VAN_OCTAGON.length) return false;
+  return o.points.every((p, i) => {
+    const pt = p as { x?: number; y?: number; control?: unknown };
+    return (
+      pt.control === undefined &&
+      pt.x === LEGACY_VAN_OCTAGON[i].x &&
+      pt.y === LEGACY_VAN_OCTAGON[i].y
+    );
+  });
+}
+
+async function upgradeLegacyVanOutline(db: SQLite.SQLiteDatabase): Promise<void> {
+  const rows = await db.getAllAsync<{ id: string; outline: string }>(
+    "SELECT id, outline FROM locations"
+  );
+  const vanOutline = JSON.stringify(getTemplate("van").outline);
+  for (const row of rows) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(row.outline);
+    } catch {
+      continue;
+    }
+    if (isLegacyVanOctagon(parsed)) {
+      // Idempotent: once replaced, the outline no longer matches the octagon.
+      await db.runAsync("UPDATE locations SET outline = ? WHERE id = ?", [vanOutline, row.id]);
+    }
+  }
 }
 
 export type Zone = {
@@ -85,6 +176,15 @@ export type Zone = {
   sort_order: number;
   fill_opacity: number;
   checklist: number;
+  location_id: string;
+};
+
+export type Location = {
+  id: string;
+  name: string;
+  outline: Outline;
+  icon: string;
+  sort_order: number;
 };
 
 export type Season = "summer" | "winter" | "none";

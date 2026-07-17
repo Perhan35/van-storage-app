@@ -10,14 +10,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { ZoneWithCount, Zone } from "../db/database";
 import { usePanLock } from "./ZoomableContainer";
-import {
-  ZONE_MIN_X,
-  ZONE_MAX_X,
-  ZONE_MIN_Y,
-  ZONE_MAX_Y,
-  ZONE_SNAP_THRESHOLD_PX,
-  ZONE_SNAP_GAP_SVG,
-} from "./vanLayoutConstants";
+import { ZONE_SNAP_THRESHOLD_PX, ZONE_SNAP_GAP_SVG } from "./layoutConstants";
 
 const HANDLE_SIZE = 24;
 const MIN_ZONE_SIZE_SVG = 30;
@@ -98,6 +91,11 @@ type Props = {
   zoomScale: SharedValue<number>;
   offsetX: number;
   offsetY: number;
+  // Allowed geometry range for this location's canvas (size + overflow margin).
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
   otherZones: Zone["geometry"][];
   onGeometryChange: (zoneId: string, geometry: Zone["geometry"]) => void;
 };
@@ -108,6 +106,10 @@ export function ZoneEditOverlay({
   zoomScale,
   offsetX,
   offsetY,
+  minX,
+  maxX,
+  minY,
+  maxY,
   otherZones,
   onGeometryChange,
 }: Props) {
@@ -147,10 +149,10 @@ export function ZoneEditOverlay({
   }, [zone.geometry.x, zone.geometry.y, zone.geometry.w, zone.geometry.h]);
 
   const commitGeometry = (nx: number, ny: number, nw: number, nh: number) => {
-    const w = Math.min(Math.max(MIN_ZONE_SIZE_SVG, nw), ZONE_MAX_X - ZONE_MIN_X);
-    const h = Math.min(Math.max(MIN_ZONE_SIZE_SVG, nh), ZONE_MAX_Y - ZONE_MIN_Y);
-    const x = Math.min(Math.max(ZONE_MIN_X, nx), ZONE_MAX_X - w);
-    const y = Math.min(Math.max(ZONE_MIN_Y, ny), ZONE_MAX_Y - h);
+    const w = Math.min(Math.max(MIN_ZONE_SIZE_SVG, nw), maxX - minX);
+    const h = Math.min(Math.max(MIN_ZONE_SIZE_SVG, nh), maxY - minY);
+    const x = Math.min(Math.max(minX, nx), maxX - w);
+    const y = Math.min(Math.max(minY, ny), maxY - h);
     onGeometryChange(zone.id, {
       type: "rect",
       x: Math.round(x),
@@ -217,8 +219,8 @@ export function ZoneEditOverlay({
       );
       newY = snapToNearest(newY, yCandidates, threshold);
 
-      svgX.value = Math.min(Math.max(ZONE_MIN_X, newX), ZONE_MAX_X - w);
-      svgY.value = Math.min(Math.max(ZONE_MIN_Y, newY), ZONE_MAX_Y - h);
+      svgX.value = Math.min(Math.max(minX, newX), maxX - w);
+      svgY.value = Math.min(Math.max(minY, newY), maxY - h);
     })
     .onEnd(() => {
       runOnJS(commitGeometry)(
@@ -252,8 +254,8 @@ export function ZoneEditOverlay({
       const dh = e.translationY / scale;
       const x = svgX.value;
       const y = svgY.value;
-      const maxW = ZONE_MAX_X - x;
-      const maxH = ZONE_MAX_Y - y;
+      const maxW = maxX - x;
+      const maxH = maxY - y;
       const threshold = ZONE_SNAP_THRESHOLD_PX / scale;
 
       const rawW = Math.min(Math.max(MIN_ZONE_SIZE_SVG, startW.value + dw), maxW);
@@ -314,11 +316,11 @@ export function ZoneEditOverlay({
 
       const rawW = Math.min(
         Math.max(MIN_ZONE_SIZE_SVG, startW.value - dx),
-        anchorX - ZONE_MIN_X
+        anchorX - minX
       );
       const rawH = Math.min(
         Math.max(MIN_ZONE_SIZE_SVG, startH.value - dy),
-        anchorY - ZONE_MIN_Y
+        anchorY - minY
       );
       const rawX = anchorX - rawW;
       const rawY = anchorY - rawH;
@@ -343,11 +345,11 @@ export function ZoneEditOverlay({
 
       const newW = Math.min(
         Math.max(MIN_ZONE_SIZE_SVG, anchorX - newX),
-        anchorX - ZONE_MIN_X
+        anchorX - minX
       );
       const newH = Math.min(
         Math.max(MIN_ZONE_SIZE_SVG, anchorY - newY),
-        anchorY - ZONE_MIN_Y
+        anchorY - minY
       );
       svgX.value = anchorX - newW;
       svgY.value = anchorY - newH;

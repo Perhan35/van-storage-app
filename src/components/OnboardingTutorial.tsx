@@ -77,6 +77,9 @@ type GestureRow = { icon: string; title: string; desc: string };
 type Slide = {
   key: string;
   icon: string;
+  // When set, a cluster of icons is shown in the circle instead of the single
+  // `icon` — used to convey that the app spans several kinds of location.
+  icons?: string[];
   title: string;
   desc?: string;
   gestures?: GestureRow[];
@@ -113,6 +116,13 @@ export function OnboardingTutorial() {
       icon: "van-utility",
       title: t("tutorial.welcome_title"),
       desc: t("tutorial.welcome_desc"),
+    },
+    {
+      key: "locations",
+      icon: "home-group",
+      icons: ["van-utility", "home-city-outline", "silverware-fork-knife"],
+      title: t("tutorial.locations_title"),
+      desc: t("tutorial.locations_desc"),
     },
     {
       key: "zones",
@@ -206,7 +216,20 @@ export function OnboardingTutorial() {
       ) : (
         <>
           <View style={[styles.iconCircle, { backgroundColor: palette.surfaceVariant }]}>
-            <Icon source={item.icon} size={72} color={palette.primary} />
+            {item.icons ? (
+              <View style={styles.iconCluster}>
+                {item.icons.map((ic, i) => (
+                  <Icon
+                    key={ic}
+                    source={ic}
+                    size={i === 1 ? 48 : 36}
+                    color={i === 1 ? palette.primary : palette.onSurfaceVariant}
+                  />
+                ))}
+              </View>
+            ) : (
+              <Icon source={item.icon} size={72} color={palette.primary} />
+            )}
           </View>
           <Text variant="headlineSmall" style={[styles.title, { color: palette.onSurface }]}>
             {item.title}
@@ -296,6 +319,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 32,
+  },
+  iconCluster: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
   },
   title: { textAlign: "center", fontWeight: "bold", marginBottom: 12 },
   desc: { textAlign: "center", lineHeight: 24 },

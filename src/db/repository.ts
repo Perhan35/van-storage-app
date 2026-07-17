@@ -1,6 +1,22 @@
-import { withDb, Zone, Item, ZoneWithCount, Season } from "./database";
+import { withDb, Zone, Item, ZoneWithCount, Season, Location } from "./database";
+import { DEFAULT_LOCATION_ICON, LayoutTemplate, Outline } from "./templates";
 
 export const DEFAULT_FILL_OPACITY = 0.4;
+
+export function isValidOutline(o: unknown): o is Outline {
+  if (typeof o !== "object" || o === null) return false;
+  const { w, h, points } = o as Record<string, unknown>;
+  if (typeof w !== "number" || !Number.isFinite(w)) return false;
+  if (typeof h !== "number" || !Number.isFinite(h)) return false;
+  if (!Array.isArray(points) || points.length < 3) return false;
+  return points.every(
+    (p) =>
+      typeof p === "object" &&
+      p !== null &&
+      typeof (p as Record<string, unknown>).x === "number" &&
+      typeof (p as Record<string, unknown>).y === "number"
+  );
+}
 
 export function sanitizeFillOpacity(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1
@@ -24,14 +40,16 @@ export function isValidGeometry(g: unknown): g is Zone["geometry"] {
   );
 }
 
-export function listZonesWithCounts(): Promise<ZoneWithCount[]> {
+export function listZonesWithCounts(locationId: string): Promise<ZoneWithCount[]> {
   return withDb(async (db) => {
     const rows = await db.getAllAsync<ZoneWithCount & { geometry: string }>(
       `SELECT z.*, COALESCE(c.cnt, 0) as item_count
        FROM zones z
        LEFT JOIN (SELECT zone_id, COUNT(*) as cnt FROM items GROUP BY zone_id) c
        ON z.id = c.zone_id
-       ORDER BY z.sort_order`
+       WHERE z.location_id = ?
+       ORDER BY z.sort_order`,
+      [locationId]
     );
     return rows.flatMap((r) => {
       let geometry: unknown;
@@ -107,15 +125,43 @@ export function moveItem(itemId: string, newZoneId: string): Promise<void> {
   });
 }
 
+export type SearchResultItem = Item & {
+  zone_name: string;
+  zone_checklist: number;
+  location_id: string;
+  location_name: string;
+  location_icon: string;
+};
+
+const SEARCH_ITEM_QUERY = `
+  SELECT i.*, z.name as zone_name, z.checklist as zone_checklist, l.id as location_id, l.name as location_name, l.icon as location_icon
+  FROM items i
+  JOIN zones z ON i.zone_id = z.id
+  JOIN locations l ON z.location_id = l.id
+`;
+
 export function searchItems(
-  query: string
-): Promise<(Item & { zone_name: string; zone_checklist: number })[]> {
+  query: string,
+  locationId: string
+): Promise<SearchResultItem[]> {
   return withDb((db) => {
     const escapedQuery = query.replace(/[\\%_]/g, "\\$&");
-    return db.getAllAsync<Item & { zone_name: string; zone_checklist: number }>(
-      `SELECT i.*, z.name as zone_name, z.checklist as zone_checklist
-       FROM items i JOIN zones z ON i.zone_id = z.id
-       WHERE i.name LIKE ?1 ESCAPE '\\' COLLATE NOCASE OR i.notes LIKE ?1 ESCAPE '\\' COLLATE NOCASE
+    return db.getAllAsync<SearchResultItem>(
+      `${SEARCH_ITEM_QUERY}
+       WHERE l.id = ?2
+       AND (i.name LIKE ?1 ESCAPE '\\' COLLATE NOCASE OR i.notes LIKE ?1 ESCAPE '\\' COLLATE NOCASE)
+       ORDER BY i.name COLLATE NOCASE`,
+      [`%${escapedQuery}%`, locationId]
+    );
+  });
+}
+
+export function searchAllItems(query: string): Promise<SearchResultItem[]> {
+  return withDb((db) => {
+    const escapedQuery = query.replace(/[\\%_]/g, "\\$&");
+    return db.getAllAsync<SearchResultItem>(
+      `${SEARCH_ITEM_QUERY}
+       WHERE (i.name LIKE ?1 ESCAPE '\\' COLLATE NOCASE OR i.notes LIKE ?1 ESCAPE '\\' COLLATE NOCASE)
        ORDER BY i.name COLLATE NOCASE`,
       [`%${escapedQuery}%`]
     );
@@ -158,13 +204,34 @@ export function resetChecklistItems(zoneId: string): Promise<void> {
   });
 }
 
-export function getOutOfVanItems(): Promise<(Item & { zone_name: string })[]> {
+export type OutOfVanItem = Item & {
+  zone_name: string;
+  zone_color: string;
+  location_id: string;
+  location_name: string;
+  location_icon: string;
+};
+
+const OUT_OF_VAN_ITEM_QUERY = `
+  SELECT i.*, z.name as zone_name, z.color as zone_color, l.id as location_id, l.name as location_name, l.icon as location_icon
+  FROM items i
+  JOIN zones z ON i.zone_id = z.id
+  JOIN locations l ON z.location_id = l.id
+`;
+
+export function getOutOfVanItems(locationId: string): Promise<OutOfVanItem[]> {
   return withDb((db) =>
-    db.getAllAsync<Item & { zone_name: string }>(
-      `SELECT i.*, z.name as zone_name
-       FROM items i JOIN zones z ON i.zone_id = z.id
-       WHERE i.out_of_van = 1
-       ORDER BY i.name COLLATE NOCASE`
+    db.getAllAsync<OutOfVanItem>(
+      `${OUT_OF_VAN_ITEM_QUERY} WHERE i.out_of_van = 1 AND l.id = ? ORDER BY i.name COLLATE NOCASE`,
+      [locationId]
+    )
+  );
+}
+
+export function getAllOutOfVanItems(): Promise<OutOfVanItem[]> {
+  return withDb((db) =>
+    db.getAllAsync<OutOfVanItem>(
+      `${OUT_OF_VAN_ITEM_QUERY} WHERE i.out_of_van = 1 ORDER BY i.name COLLATE NOCASE`
     )
   );
 }
@@ -173,22 +240,34 @@ export function sanitizeSeason(v: unknown): Season {
   return v === "summer" || v === "winter" ? v : "none";
 }
 
-export function listSeasonalItems(): Promise<(Item & { zone_name: string })[]> {
+export type SeasonalItem = Item & {
+  zone_name: string;
+  location_name: string;
+  location_icon: string;
+};
+
+export function listSeasonalItems(): Promise<SeasonalItem[]> {
   return withDb((db) =>
-    db.getAllAsync<Item & { zone_name: string }>(
-      `SELECT i.*, z.name as zone_name
-       FROM items i JOIN zones z ON i.zone_id = z.id
+    db.getAllAsync<SeasonalItem>(
+      `SELECT i.*, z.name as zone_name, l.name as location_name, l.icon as location_icon
+       FROM items i
+       JOIN zones z ON i.zone_id = z.id
+       JOIN locations l ON z.location_id = l.id
        WHERE i.season != 'none'
        ORDER BY i.name COLLATE NOCASE`
     )
   );
 }
 
-export function listItemsWithExpiration(): Promise<(Item & { zone_name: string })[]> {
+export type ItemWithExpiration = Item & { zone_name: string; location_name: string };
+
+export function listItemsWithExpiration(): Promise<ItemWithExpiration[]> {
   return withDb((db) =>
-    db.getAllAsync<Item & { zone_name: string }>(
-      `SELECT i.*, z.name as zone_name
-       FROM items i JOIN zones z ON i.zone_id = z.id
+    db.getAllAsync<ItemWithExpiration>(
+      `SELECT i.*, z.name as zone_name, l.name as location_name
+       FROM items i
+       JOIN zones z ON i.zone_id = z.id
+       JOIN locations l ON z.location_id = l.id
        WHERE i.expiration_date IS NOT NULL
        ORDER BY i.expiration_date ASC`
     )
@@ -231,17 +310,19 @@ export function insertZone(
   name: string,
   color: string,
   geometry: Zone["geometry"],
+  locationId: string,
   checklist: boolean = false
 ): Promise<void> {
   return withDb(async (db) => {
     await db.withTransactionAsync(async () => {
       const maxOrder = await db.getFirstAsync<{ m: number }>(
-        "SELECT COALESCE(MAX(sort_order), 0) as m FROM zones"
+        "SELECT COALESCE(MAX(sort_order), 0) as m FROM zones WHERE location_id = ?",
+        [locationId]
       );
       const order = (maxOrder?.m ?? 0) + 1;
       await db.runAsync(
-        "INSERT INTO zones (id, name, color, geometry, sort_order, checklist) VALUES (?, ?, ?, ?, ?, ?)",
-        [id, name, color, JSON.stringify(geometry), order, checklist ? 1 : 0]
+        "INSERT INTO zones (id, name, color, geometry, sort_order, checklist, location_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [id, name, color, JSON.stringify(geometry), order, checklist ? 1 : 0, locationId]
       );
     });
   });
@@ -259,17 +340,18 @@ export function splitZoneInDb(
   return withDb(async (db) => {
     await db.withTransactionAsync(async () => {
       const maxOrder = await db.getFirstAsync<{ m: number }>(
-        "SELECT COALESCE(MAX(sort_order), 0) as m FROM zones"
+        "SELECT COALESCE(MAX(sort_order), 0) as m FROM zones WHERE location_id = ?",
+        [zone.location_id]
       );
       const order = (maxOrder?.m ?? 0) + 1;
 
       await db.runAsync(
-        "INSERT INTO zones (id, name, color, geometry, sort_order, fill_opacity, checklist) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [id1, zone.name + suffix1, zone.color, JSON.stringify(geom1), order, zone.fill_opacity, zone.checklist]
+        "INSERT INTO zones (id, name, color, geometry, sort_order, fill_opacity, checklist, location_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [id1, zone.name + suffix1, zone.color, JSON.stringify(geom1), order, zone.fill_opacity, zone.checklist, zone.location_id]
       );
       await db.runAsync(
-        "INSERT INTO zones (id, name, color, geometry, sort_order, fill_opacity, checklist) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [id2, zone.name + suffix2, zone.color, JSON.stringify(geom2), order + 1, zone.fill_opacity, zone.checklist]
+        "INSERT INTO zones (id, name, color, geometry, sort_order, fill_opacity, checklist, location_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [id2, zone.name + suffix2, zone.color, JSON.stringify(geom2), order + 1, zone.fill_opacity, zone.checklist, zone.location_id]
       );
 
       // Move all items to the first new zone
@@ -296,8 +378,90 @@ export function updateZoneGeometry(
   });
 }
 
+export function listLocations(): Promise<Location[]> {
+  return withDb(async (db) => {
+    const rows = await db.getAllAsync<Location & { outline: string }>(
+      "SELECT * FROM locations ORDER BY sort_order"
+    );
+    return rows.flatMap((r) => {
+      let outline: unknown;
+      try {
+        outline = JSON.parse(r.outline as unknown as string);
+      } catch {
+        console.warn(`Skipping location ${r.id}: invalid outline JSON`);
+        return [];
+      }
+      if (!isValidOutline(outline)) {
+        console.warn(`Skipping location ${r.id}: invalid outline shape`);
+        return [];
+      }
+      return [{ ...r, outline }];
+    });
+  });
+}
+
+export function insertLocation(
+  id: string,
+  name: string,
+  outline: Outline,
+  icon: string
+): Promise<void> {
+  return withDb(async (db) => {
+    const maxOrder = await db.getFirstAsync<{ m: number }>(
+      "SELECT COALESCE(MAX(sort_order), 0) as m FROM locations"
+    );
+    const order = (maxOrder?.m ?? 0) + 1;
+    await db.runAsync(
+      "INSERT INTO locations (id, name, outline, icon, sort_order) VALUES (?, ?, ?, ?, ?)",
+      [id, name, JSON.stringify(outline), icon, order]
+    );
+  });
+}
+
+export function updateLocation(id: string, name: string, icon: string): Promise<void> {
+  return withDb(async (db) => {
+    await db.runAsync(
+      "UPDATE locations SET name = ?, icon = ?, updated_at = datetime('now') WHERE id = ?",
+      [name, icon, id]
+    );
+  });
+}
+
+export function updateLocationOutline(id: string, outline: Outline): Promise<void> {
+  return withDb(async (db) => {
+    await db.runAsync(
+      "UPDATE locations SET outline = ?, updated_at = datetime('now') WHERE id = ?",
+      [JSON.stringify(outline), id]
+    );
+  });
+}
+
+export function deleteLocation(id: string): Promise<void> {
+  return withDb(async (db) => {
+    await db.runAsync("DELETE FROM locations WHERE id = ?", [id]);
+  });
+}
+
+export function instantiateTemplate(
+  locationId: string,
+  template: LayoutTemplate
+): Promise<void> {
+  return withDb(async (db) => {
+    await db.withTransactionAsync(async () => {
+      for (const zone of template.zones) {
+        const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        await db.runAsync(
+          "INSERT INTO zones (id, name, color, geometry, sort_order, location_id) VALUES (?, ?, ?, ?, ?, ?)",
+          [id, zone.name, zone.color, JSON.stringify(zone.geometry), zone.sort_order, locationId]
+        );
+      }
+    });
+  });
+}
+
 export type ExportedData = {
   appVersion: string;
+  locations: unknown[];
   zones: unknown[];
   items: unknown[];
   preferences: unknown[];
@@ -305,14 +469,16 @@ export type ExportedData = {
 
 export function exportAllData(appVersion: string): Promise<ExportedData> {
   return withDb(async (db) => {
+    const locations = await db.getAllAsync("SELECT * FROM locations ORDER BY sort_order");
     const zones = await db.getAllAsync("SELECT * FROM zones ORDER BY sort_order");
     const items = await db.getAllAsync("SELECT * FROM items ORDER BY name");
     const preferences = await db.getAllAsync("SELECT * FROM preferences");
-    return { appVersion, zones, items, preferences };
+    return { appVersion, locations, zones, items, preferences };
   });
 }
 
 export function importAllData(
+  rawLocations: Record<string, unknown>[],
   rawZones: Record<string, unknown>[],
   rawItems: Record<string, unknown>[],
   rawPreferences: Record<string, unknown>[]
@@ -321,10 +487,26 @@ export function importAllData(
     await db.withTransactionAsync(async () => {
       await db.runAsync("DELETE FROM items");
       await db.runAsync("DELETE FROM zones");
+      await db.runAsync("DELETE FROM locations");
+
+      for (const location of rawLocations) {
+        await db.runAsync(
+          "INSERT INTO locations (id, name, outline, icon, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [
+            location.id as string,
+            location.name as string,
+            location.outline as string,
+            (location.icon as string) ?? DEFAULT_LOCATION_ICON,
+            (location.sort_order as number) ?? 0,
+            (location.created_at as string) ?? new Date().toISOString(),
+            (location.updated_at as string) ?? new Date().toISOString(),
+          ]
+        );
+      }
 
       for (const zone of rawZones) {
         await db.runAsync(
-          "INSERT INTO zones (id, name, color, geometry, fill_opacity, checklist, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO zones (id, name, color, geometry, fill_opacity, checklist, sort_order, location_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           [
             zone.id as string,
             zone.name as string,
@@ -333,6 +515,7 @@ export function importAllData(
             sanitizeFillOpacity(zone.fill_opacity),
             zone.checklist ? 1 : 0,
             (zone.sort_order as number) ?? 0,
+            zone.location_id as string,
             (zone.created_at as string) ?? new Date().toISOString(),
             (zone.updated_at as string) ?? new Date().toISOString(),
           ]

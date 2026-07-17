@@ -75,6 +75,11 @@ function HeaderRight() {
   const { palette } = useAppTheme();
   const editMode = useAppStore((s) => s.editMode);
   const toggleEditMode = useAppStore((s) => s.toggleEditMode);
+  const outlineEditMode = useAppStore((s) => s.outlineEditMode);
+  const toggleOutlineEditMode = useAppStore((s) => s.toggleOutlineEditMode);
+  // Editing zones/outline is meaningless in the all-locations overview, so the
+  // edit toggle is hidden there (#4).
+  const overviewMode = useAppStore((s) => s.overviewMode);
   const undo = useAppStore((s) => s.undo);
   const redo = useAppStore((s) => s.redo);
   const canUndo = useAppStore((s) => s.undoStack.length > 0);
@@ -104,23 +109,35 @@ function HeaderRight() {
       {editMode && (
         <>
           <IconButton
-            icon="undo-variant"
+            icon="vector-polygon"
             size={24}
-            iconColor={palette.headerTint}
-            disabled={!canUndo}
-            accessibilityLabel={t("nav.undo")}
+            iconColor={outlineEditMode ? palette.success : palette.headerTint}
+            accessibilityLabel={t("nav.edit_outline")}
             style={{ margin: 0 }}
-            onPress={undo}
+            onPress={toggleOutlineEditMode}
           />
-          <IconButton
-            icon="redo-variant"
-            size={24}
-            iconColor={palette.headerTint}
-            disabled={!canRedo}
-            accessibilityLabel={t("nav.redo")}
-            style={{ margin: 0 }}
-            onPress={redo}
-          />
+          {!outlineEditMode && (
+            <>
+              <IconButton
+                icon="undo-variant"
+                size={24}
+                iconColor={palette.headerTint}
+                disabled={!canUndo}
+                accessibilityLabel={t("nav.undo")}
+                style={{ margin: 0 }}
+                onPress={undo}
+              />
+              <IconButton
+                icon="redo-variant"
+                size={24}
+                iconColor={palette.headerTint}
+                disabled={!canRedo}
+                accessibilityLabel={t("nav.redo")}
+                style={{ margin: 0 }}
+                onPress={redo}
+              />
+            </>
+          )}
           <IconButton
             icon="cancel"
             size={24}
@@ -131,13 +148,15 @@ function HeaderRight() {
           />
         </>
       )}
-      <IconButton
-        icon={editMode ? "check" : "cursor-move"}
-        size={24}
-        iconColor={editMode ? palette.success : palette.headerTint}
-        style={{ margin: 0 }}
-        onPress={toggleEditMode}
-      />
+      {!overviewMode && (
+        <IconButton
+          icon={editMode ? "check" : "cursor-move"}
+          size={24}
+          iconColor={editMode ? palette.success : palette.headerTint}
+          style={{ margin: 0 }}
+          onPress={toggleEditMode}
+        />
+      )}
       {!editMode && (
         <IconButton
           icon="cog"
@@ -178,7 +197,9 @@ export default function RootLayout() {
           <Stack.Screen
             name="index"
             options={{
-              title: editMode ? t("nav.edit_mode") : t("nav.my_van"),
+              // Fallback shown only before the screen sets its own dynamic
+              // headerTitle (active location name / overview / edit mode).
+              title: editMode ? t("nav.edit_mode") : t("nav.app_title"),
               headerRight: () => <HeaderRight />,
             }}
           />
@@ -199,6 +220,8 @@ export default function RootLayout() {
           />
           <Stack.Screen
             name="out-of-van"
+            // Fallback shown only before the screen sets its own dynamic
+            // title (location name vs. the all-locations overview label).
             options={{ title: t("nav.out_of_van") }}
           />
           <Stack.Screen

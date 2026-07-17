@@ -3,14 +3,11 @@ import { View, StyleSheet, ScrollView } from "react-native";
 import { Dialog, Portal, List, Text, Button, IconButton } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "expo-router";
-import { listItemsWithExpiration, clearItemExpiration } from "../../db/repository";
-import { Item } from "../../db/database";
+import { listItemsWithExpiration, clearItemExpiration, ItemWithExpiration } from "../../db/repository";
 import { ExpirationStatus, getExpirationStatus } from "../../utils/expiration";
 import { formatExpiration } from "../../utils/date";
 import { expirationIconName, expirationIconColor } from "../expirationIcon";
 import { useAppTheme } from "../../theme/useAppTheme";
-
-type ItemWithZone = Item & { zone_name: string };
 
 type Props = {
   visible: boolean;
@@ -25,7 +22,7 @@ export function ExpirationOverviewDialog({ visible, categories, title, onDismiss
   const { t, i18n } = useTranslation();
   const { palette } = useAppTheme();
   const router = useRouter();
-  const [items, setItems] = useState<ItemWithZone[]>([]);
+  const [items, setItems] = useState<ItemWithExpiration[]>([]);
 
   useEffect(() => {
     if (visible) {
@@ -33,7 +30,7 @@ export function ExpirationOverviewDialog({ visible, categories, title, onDismiss
     }
   }, [visible]);
 
-  const handleAcknowledge = async (item: ItemWithZone) => {
+  const handleAcknowledge = async (item: ItemWithExpiration) => {
     await clearItemExpiration(item.id);
     setItems((prev) => prev.filter((i) => i.id !== item.id));
   };
@@ -78,7 +75,7 @@ export function ExpirationOverviewDialog({ visible, categories, title, onDismiss
                     <List.Item
                       key={item.id}
                       title={item.name}
-                      description={`${item.zone_name} • ${formatExpiration(
+                      description={`${item.location_name} • ${item.zone_name} • ${formatExpiration(
                         item.expiration_date as string,
                         i18n.language
                       )}`}
