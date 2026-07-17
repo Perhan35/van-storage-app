@@ -37,6 +37,7 @@
       ],
       "expo-font",
       "@react-native-community/datetimepicker",
+      "./plugins/withoutPushEntitlement.js",
       "expo-notifications"
     ],
     "scheme": "van-storage",
