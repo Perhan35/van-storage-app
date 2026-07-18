@@ -21,6 +21,14 @@ function downloadJsonWeb(data: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+function getBackupFilename() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `van-storage-backup-${y}${m}${d}.json`;
+}
+
 function pickFileWeb(): Promise<string | null> {
   return new Promise((resolve) => {
     const input = document.createElement("input");
@@ -86,13 +94,14 @@ export default function SettingsScreen() {
     setExporting(true);
     try {
       const data = JSON.stringify(await exportAllData(), null, 2);
+      const filename = getBackupFilename();
 
       if (Platform.OS === "web") {
-        downloadJsonWeb(data, "van-storage-backup.json");
+        downloadJsonWeb(data, filename);
       } else {
         const { File, Paths } = await import("expo-file-system");
         const Sharing = await import("expo-sharing");
-        const file = new File(Paths.cache, "van-storage-backup.json");
+        const file = new File(Paths.cache, filename);
         file.write(data);
         if (await Sharing.isAvailableAsync()) {
           await Sharing.shareAsync(file.uri, {
