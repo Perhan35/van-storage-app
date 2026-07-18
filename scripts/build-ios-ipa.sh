@@ -12,7 +12,7 @@
 #   - jq
 #
 # Usage : ./scripts/build-ios-ipa.sh
-# Résultat : dist/MyVanInventory-vX.Y.Z.ipa
+# Résultat : dist/MyInventory-vX.Y.Z.ipa
 #
 set -euo pipefail
 
@@ -51,7 +51,7 @@ mkdir -p dist
 WORK="$(mktemp -d)"
 mkdir -p "$WORK/Payload"
 cp -R "$APP_PATH" "$WORK/Payload/"
-IPA="dist/MyVanInventory-v${APP_VERSION}.ipa"
+IPA="dist/MyInventory-v${APP_VERSION}.ipa"
 rm -f "$IPA"
 ( cd "$WORK" && zip -qry "$ROOT/$IPA" Payload )
 rm -rf "$WORK"
