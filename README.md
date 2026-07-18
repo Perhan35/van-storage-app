@@ -1,6 +1,6 @@
 [![Build Android APK](https://github.com/Perhan35/van-storage-app/actions/workflows/build-android.yml/badge.svg?branch=main)](https://github.com/Perhan35/van-storage-app/actions/workflows/build-android.yml)
 
-# My Van Inventory
+# My Inventory
 
 A mobile-first inventory app for camper vans. It lets you draw a top-down map of your van, split it into colored zones (cupboards, drawers, garage, roof box…), and keep track of every item stored inside — so you never have to dig through three cabinets to find the headlamp again.
 
@@ -125,7 +125,7 @@ Double-tap the version number at the bottom of the **Settings** screen to open a
 
 ## Platforms
 
-- **Android** — primary target, packaged as `com.perhan35.vanstorage`; APKs are built and signed via a GitHub Actions workflow using EAS
+- **Android** — primary target, packaged as `com.perhan35.myinventory`; APKs are built and signed via a GitHub Actions workflow using EAS
 - **iOS** — supported by the Expo toolchain (the code is platform-agnostic) but no signed build is currently produced
 - **Web** — works as a PWA-style app via `react-native-web`, useful for development without a device (push notifications are disabled on this platform)
 

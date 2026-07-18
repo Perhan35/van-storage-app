@@ -41,7 +41,7 @@ export function withDb<T>(fn: (db: SQLite.SQLiteDatabase) => Promise<T>): Promis
 }
 
 async function openAndMigrate(): Promise<SQLite.SQLiteDatabase> {
-  const db = await SQLite.openDatabaseAsync("van-storage.db");
+  const db = await SQLite.openDatabaseAsync("my-inventory.db");
   await db.execAsync("PRAGMA journal_mode = WAL;");
   await db.execAsync("PRAGMA foreign_keys = ON;");
   for (const migration of MIGRATIONS) {

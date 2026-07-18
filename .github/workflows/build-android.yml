@@ -76,7 +76,7 @@ jobs:
             "$APK_PATH"
           "$BUILD_TOOLS_DIR/apksigner" verify "$APK_PATH"
           mkdir -p dist
-          cp "$APK_PATH" "dist/my-van-inventory-v${APP_VERSION}.apk"
+          cp "$APK_PATH" "dist/my-inventory-v${APP_VERSION}.apk"
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -86,8 +86,8 @@ jobs:
         if: "!startsWith(github.ref, 'refs/tags/v')"
         uses: actions/upload-artifact@v7
         with:
-          name: my-van-inventory-v${{ env.APP_VERSION }}
-          path: dist/my-van-inventory-v${{ env.APP_VERSION }}.apk
+          name: my-inventory-v${{ env.APP_VERSION }}
+          path: dist/my-inventory-v${{ env.APP_VERSION }}.apk
 
       - name: Generate changelog
         if: startsWith(github.ref, 'refs/tags/v')
@@ -110,12 +110,12 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/my-van-inventory-v${{ env.APP_VERSION }}.apk
-          name: My Van Inventory v${{ env.APP_VERSION }}
+          files: dist/my-inventory-v${{ env.APP_VERSION }}.apk
+          name: My Inventory v${{ env.APP_VERSION }}
           body: |
             ## Installation sur Android
 
-            1. Téléchargez le fichier `my-van-inventory-v${{ env.APP_VERSION }}.apk` ci-dessous sur votre téléphone.
+            1. Téléchargez le fichier `my-inventory-v${{ env.APP_VERSION }}.apk` ci-dessous sur votre téléphone.
             2. Ouvrez le fichier téléchargé.
             3. Si Android affiche un avertissement, autorisez « Installer des applications inconnues » pour l'application utilisée (navigateur ou fichiers).
             4. Appuyez sur « Installer ».
@@ -124,7 +124,7 @@ jobs:
 
             ## Install on Android
 
-            1. Download the `my-van-inventory-v${{ env.APP_VERSION }}.apk` file below to your phone.
+            1. Download the `my-inventory-v${{ env.APP_VERSION }}.apk` file below to your phone.
             2. Open the downloaded file.
             3. If Android shows a warning, allow "Install unknown apps" for the app you used (browser or file manager).
             4. Tap "Install".
