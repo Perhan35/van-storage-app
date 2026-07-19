@@ -129,6 +129,9 @@ const resources = {
       "zone.reset_checklist_confirm": "Uncheck all checked items in this zone?",
       "zone.completed": "Completed · {{count}}",
       "zone.add_expiration": "Add an expiration date",
+      "zone.pick_expiration": "Choose expiration date",
+      "zone.expiration_confirm": "Done",
+      "zone.expiration_cancel": "Cancel",
       "zone.reminder_days": "Remind me N days before",
       "zone.expires_on": "Expires on {{date}}",
 
@@ -315,6 +318,9 @@ const resources = {
       "zone.reset_checklist_confirm": "Décocher tous les objets cochés de cette zone ?",
       "zone.completed": "Terminés · {{count}}",
       "zone.add_expiration": "Ajouter une date de péremption",
+      "zone.pick_expiration": "Choisir la date de péremption",
+      "zone.expiration_confirm": "Valider",
+      "zone.expiration_cancel": "Annuler",
       "zone.reminder_days": "Me prévenir N jours avant",
       "zone.expires_on": "Périme le {{date}}",
 

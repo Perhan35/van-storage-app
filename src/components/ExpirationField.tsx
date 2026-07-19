@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Platform, View, StyleSheet, Pressable } from "react-native";
-import { Button, TextInput, IconButton } from "react-native-paper";
+import { Button, TextInput, IconButton, Dialog, Portal } from "react-native-paper";
 import type { TextInputSelectionChangeEvent } from "react-native";
 import { useTranslation } from "react-i18next";
 import DateTimePicker, {
@@ -40,13 +40,35 @@ export function ExpirationField({
 }: Props) {
   const { t } = useTranslation();
   const [pickerVisible, setPickerVisible] = useState(false);
+  // On iOS the picker lives inside a modal dialog, so the selection is held
+  // here until the user confirms with "Done" rather than committed on every
+  // spin of the wheel.
+  const [draftDate, setDraftDate] = useState<Date | null>(null);
 
-  const handleValueChange = (_event: DateTimePickerChangeEvent, date: Date) => {
+  const openPicker = () => {
+    setDraftDate(expirationDate ? parseIso(expirationDate) : new Date());
+    setPickerVisible(true);
+  };
+
+  // Android renders a native dialog and fires this once the user confirms.
+  const handleAndroidChange = (
+    _event: DateTimePickerChangeEvent,
+    date: Date,
+  ) => {
     setPickerVisible(false);
     onChangeExpirationDate(toIso(date));
   };
 
-  const handleDismiss = () => {
+  const handleIosChange = (_event: DateTimePickerChangeEvent, date: Date) => {
+    setDraftDate(date);
+  };
+
+  const confirmIos = () => {
+    if (draftDate) onChangeExpirationDate(toIso(draftDate));
+    setPickerVisible(false);
+  };
+
+  const dismissPicker = () => {
     setPickerVisible(false);
   };
 
@@ -87,7 +109,7 @@ export function ExpirationField({
             <Pressable
               style={StyleSheet.absoluteFill}
               android_ripple={{ color: "rgba(0,0,0,0.12)" }}
-              onPress={() => setPickerVisible(true)}
+              onPress={openPicker}
             />
           )}
         </View>
@@ -98,14 +120,44 @@ export function ExpirationField({
           />
         )}
       </View>
-      {Platform.OS !== "web" && pickerVisible && (
+
+      {/* Android shows the OS date dialog directly; iOS would render inline
+          (pushing the layout down), so it's wrapped in a Paper Dialog to
+          present as a proper modal overlay instead. */}
+      {Platform.OS === "android" && pickerVisible && (
         <DateTimePicker
           value={expirationDate ? parseIso(expirationDate) : new Date()}
           mode="date"
-          onValueChange={handleValueChange}
-          onDismiss={handleDismiss}
+          onValueChange={handleAndroidChange}
+          onDismiss={dismissPicker}
         />
       )}
+      {Platform.OS === "ios" && (
+        <Portal>
+          <Dialog visible={pickerVisible} onDismiss={dismissPicker}>
+            <Dialog.Title>{t("zone.pick_expiration")}</Dialog.Title>
+            <Dialog.Content>
+              <View style={styles.iosPicker}>
+                <DateTimePicker
+                  value={draftDate ?? new Date()}
+                  mode="date"
+                  display="inline"
+                  onValueChange={handleIosChange}
+                />
+              </View>
+            </Dialog.Content>
+            <Dialog.Actions>
+              <Button onPress={dismissPicker}>
+                {t("zone.expiration_cancel")}
+              </Button>
+              <Button onPress={confirmIos}>
+                {t("zone.expiration_confirm")}
+              </Button>
+            </Dialog.Actions>
+          </Dialog>
+        </Portal>
+      )}
+
       {!!expirationDate && (
         <TextInput
           mode="outlined"
@@ -127,5 +179,6 @@ const styles = StyleSheet.create({
   dateRow: { flexDirection: "row", alignItems: "center" },
   dateButtonWrapper: { flex: 1, position: "relative" },
   dateButton: { width: "100%" },
+  iosPicker: { alignItems: "center" },
   reminderInput: { marginTop: 12 },
 });
