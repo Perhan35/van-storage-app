@@ -6,7 +6,9 @@ const resources = {
   en: {
     translation: {
       "nav.app_title": "My Inventory",
-      "nav.app_title_named": "My {{name}} Inventory",
+      "nav.app_title_named": "{{name}}",
+      "nav.zone_count_one": "{{count}} zone",
+      "nav.zone_count_other": "{{count}} zones",
       "nav.zone": "Zone",
       "nav.search": "Search Item",
       "nav.out_of_van": "Items Out",
@@ -222,7 +224,9 @@ const resources = {
   fr: {
     translation: {
       "nav.app_title": "Mon Inventaire",
-      "nav.app_title_named": "Mon Inventaire {{name}}",
+      "nav.app_title_named": "{{name}}",
+      "nav.zone_count_one": "{{count}} zone",
+      "nav.zone_count_other": "{{count}} zones",
       "nav.zone": "Zone",
       "nav.search": "Rechercher un objet",
       "nav.out_of_van": "Objets sortis",
