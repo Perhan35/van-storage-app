@@ -28,6 +28,14 @@ function snapshotGeometry(zones: ZoneWithCount[]): ZoneGeometrySnapshot {
   return snapshot;
 }
 
+// True when two outlines describe the same polygon (same canvas size and the
+// same points, curve control points included). Used to skip no-op outline
+// writes so a drag that ends where it started doesn't record an empty
+// undo step.
+function outlinesEqual(a: Outline, b: Outline): boolean {
+  return a.w === b.w && a.h === b.h && JSON.stringify(a.points) === JSON.stringify(b.points);
+}
+
 // Write each zone in `snapshot` back to its recorded geometry, skipping zones
 // that already match (avoids needless writes) or that no longer exist.
 async function applyGeometrySnapshot(
@@ -76,6 +84,15 @@ type AppState = {
   // Sub-mode of editMode: swaps the canvas from moving/resizing zones to
   // editing the location's outline polygon (add/move/delete a vertex).
   outlineEditMode: boolean;
+  // Outline-edit history, kept separate from the zone undo/redo stacks so the
+  // two sub-modes each have their own undo. Each entry is a full outline
+  // snapshot taken *before* a change; meaningful only while outlineEditMode is
+  // on for the active location.
+  outlineUndoStack: Outline[];
+  outlineRedoStack: Outline[];
+  // The active location's outline the moment outline-edit was entered, so
+  // "cancel" can restore it regardless of how many edits happened in between.
+  outlineEditSessionSnapshot: Outline | null;
 
   init: () => Promise<void>;
   reloadLocations: () => Promise<void>;
@@ -86,6 +103,10 @@ type AppState = {
   deleteLocation: (locationId: string) => Promise<void>;
   updateLocationOutline: (locationId: string, outline: Outline) => Promise<void>;
   toggleOutlineEditMode: () => void;
+  enterOutlineEditMode: () => void;
+  undoOutline: () => Promise<void>;
+  redoOutline: () => Promise<void>;
+  cancelOutlineEdit: () => Promise<void>;
   showTutorial: () => void;
   dismissTutorial: () => Promise<void>;
   setThemeMode: (mode: ThemeMode) => Promise<void>;
@@ -167,6 +188,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   activeLocationId: null,
   overviewMode: false,
   outlineEditMode: false,
+  outlineUndoStack: [],
+  outlineRedoStack: [],
+  outlineEditSessionSnapshot: null,
 
   init: async () => {
     if (get().initialized) return;
@@ -251,7 +275,22 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   updateLocationOutline: async (locationId, outline) => {
+    const prev = get().locations.find((l) => l.id === locationId)?.outline;
+    // A drag that ends where it started (or a discrete edit that changes
+    // nothing) is a no-op — don't write it or push an empty undo step.
+    if (prev && outlinesEqual(prev, outline)) return;
     await repo.updateLocationOutline(locationId, outline);
+    // While editing the outline, record where it stood *before* this change so
+    // it can be undone (mirrors updateZoneGeometry for zones). Edits made
+    // outside outline-edit mode don't feed the history.
+    set((s) =>
+      s.outlineEditMode && prev
+        ? {
+            outlineUndoStack: [...s.outlineUndoStack, prev].slice(-MAX_HISTORY),
+            outlineRedoStack: [],
+          }
+        : {}
+    );
     await get().reloadLocations();
   },
 
@@ -483,10 +522,91 @@ export const useAppStore = create<AppState>((set, get) => ({
         undoStack: [],
         redoStack: [],
         editSessionSnapshot: turningOn ? snapshotGeometry(s.zones) : null,
+        outlineUndoStack: [],
+        outlineRedoStack: [],
+        outlineEditSessionSnapshot: null,
       };
     }),
 
-  toggleOutlineEditMode: () => set((s) => ({ outlineEditMode: !s.outlineEditMode })),
+  // Entering outline-edit records the current outline as the "cancel" target
+  // and starts a fresh history; leaving it (the "ok" path) keeps whatever edits
+  // were committed and just clears the session state, returning to zone editing.
+  toggleOutlineEditMode: () =>
+    set((s) => {
+      const turningOn = !s.outlineEditMode;
+      const active = s.locations.find((l) => l.id === s.activeLocationId);
+      return {
+        outlineEditMode: turningOn,
+        outlineUndoStack: [],
+        outlineRedoStack: [],
+        outlineEditSessionSnapshot: turningOn ? active?.outline ?? null : null,
+      };
+    }),
+
+  // Enter outline editing directly from the map (long-press on a location),
+  // spinning up a zone-edit session around it too so the usual "ok/cancel"
+  // controls are present and zones stay safe while the outline is reshaped.
+  enterOutlineEditMode: () =>
+    set((s) => {
+      const active = s.locations.find((l) => l.id === s.activeLocationId);
+      return {
+        editMode: true,
+        editSessionSnapshot: snapshotGeometry(s.zones),
+        undoStack: [],
+        redoStack: [],
+        outlineEditMode: true,
+        outlineUndoStack: [],
+        outlineRedoStack: [],
+        outlineEditSessionSnapshot: active?.outline ?? null,
+      };
+    }),
+
+  undoOutline: async () => {
+    const { outlineUndoStack, activeLocationId, locations } = get();
+    if (outlineUndoStack.length === 0 || !activeLocationId) return;
+    const current = locations.find((l) => l.id === activeLocationId)?.outline;
+    const target = outlineUndoStack[outlineUndoStack.length - 1];
+    await repo.updateLocationOutline(activeLocationId, target);
+    set((s) => ({
+      outlineUndoStack: s.outlineUndoStack.slice(0, -1),
+      outlineRedoStack: current
+        ? [...s.outlineRedoStack, current].slice(-MAX_HISTORY)
+        : s.outlineRedoStack,
+    }));
+    await get().reloadLocations();
+  },
+
+  redoOutline: async () => {
+    const { outlineRedoStack, activeLocationId, locations } = get();
+    if (outlineRedoStack.length === 0 || !activeLocationId) return;
+    const current = locations.find((l) => l.id === activeLocationId)?.outline;
+    const target = outlineRedoStack[outlineRedoStack.length - 1];
+    await repo.updateLocationOutline(activeLocationId, target);
+    set((s) => ({
+      outlineRedoStack: s.outlineRedoStack.slice(0, -1),
+      outlineUndoStack: current
+        ? [...s.outlineUndoStack, current].slice(-MAX_HISTORY)
+        : s.outlineUndoStack,
+    }));
+    await get().reloadLocations();
+  },
+
+  // Discards every outline change made this session, restoring the outline to
+  // how it looked when outline-edit was entered, then returns to zone editing
+  // (editMode itself, and the zones, are left untouched).
+  cancelOutlineEdit: async () => {
+    const { outlineEditSessionSnapshot, activeLocationId } = get();
+    if (outlineEditSessionSnapshot && activeLocationId) {
+      await repo.updateLocationOutline(activeLocationId, outlineEditSessionSnapshot);
+      await get().reloadLocations();
+    }
+    set({
+      outlineEditMode: false,
+      outlineUndoStack: [],
+      outlineRedoStack: [],
+      outlineEditSessionSnapshot: null,
+    });
+  },
 
   updateZoneGeometry: async (zoneId, geometry) => {
     const zones = get().zones;
@@ -549,6 +669,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       undoStack: [],
       redoStack: [],
       editSessionSnapshot: null,
+      outlineUndoStack: [],
+      outlineRedoStack: [],
+      outlineEditSessionSnapshot: null,
     });
     await get().loadZones();
   },

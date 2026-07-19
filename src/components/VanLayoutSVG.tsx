@@ -1,7 +1,8 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { View, LayoutChangeEvent, StyleSheet, Pressable } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Svg, { Text as SvgText } from "react-native-svg";
-import { useSharedValue } from "react-native-reanimated";
+import { useSharedValue, runOnJS } from "react-native-reanimated";
 import { LocationOutline } from "./LocationOutline";
 import { ZoneOverlay } from "./ZoneOverlay";
 import { ZoneEditOverlay } from "./ZoneEditOverlay";
@@ -9,7 +10,7 @@ import { OutlineEditOverlay } from "./OutlineEditOverlay";
 import { useZoomScale } from "./ZoomableContainer";
 import { useAppStore } from "../store/useAppStore";
 import { Zone, ZoneWithCount } from "../db/database";
-import { Outline } from "../db/templates";
+import { Outline, OutlinePoint } from "../db/templates";
 import { useTranslation } from "react-i18next";
 import { DEFAULT_CANVAS_W, DEFAULT_CANVAS_H, ZONE_OVERFLOW_MARGIN, getZoneBounds } from "./layoutConstants";
 
@@ -85,6 +86,7 @@ export function VanLayoutSVG({ onZonePress }: Props) {
   const outlineEditMode = useAppStore((s) => s.outlineEditMode);
   const updateZoneGeometry = useAppStore((s) => s.updateZoneGeometry);
   const updateLocationOutline = useAppStore((s) => s.updateLocationOutline);
+  const toggleEditMode = useAppStore((s) => s.toggleEditMode);
 
   const outline: Outline = activeLocation?.outline ?? {
     w: DEFAULT_CANVAS_W,
@@ -104,6 +106,12 @@ export function VanLayoutSVG({ onZonePress }: Props) {
     width: number;
     height: number;
   } | null>(null);
+
+  // In-progress outline points while a vertex/edge handle is being dragged.
+  // Only the drawn line reads this, so it follows the finger live; the viewBox,
+  // zones and the edit handles keep using the committed outline (which stays
+  // put during the drag), so the memoised overlay isn't recreated mid-gesture.
+  const [outlineDraft, setOutlineDraft] = useState<OutlinePoint[] | null>(null);
 
   // Live pinch-zoom level from the ancestor ZoomableContainer, used to
   // convert screen-pixel drag deltas to SVG units as the user zooms in.
@@ -162,13 +170,61 @@ export function VanLayoutSVG({ onZonePress }: Props) {
     [updateZoneGeometry]
   );
 
+  // Live outline points show through the drawn line while a handle is dragged;
+  // the committed outline drives everything else.
+  const renderOutline: Outline = outlineDraft
+    ? { ...outline, points: outlineDraft }
+    : outline;
+
+  const handleOutlinePreview = useCallback((points: OutlinePoint[]) => {
+    setOutlineDraft(points);
+  }, []);
+
+  // On release, commit to the store (records an undo step), then drop the draft
+  // — the awaited store update has already refreshed the committed outline, so
+  // clearing it here doesn't flash the pre-drag shape.
+  const handleOutlineChange = useCallback(
+    async (points: OutlinePoint[]) => {
+      if (!activeLocation) return;
+      await updateLocationOutline(activeLocation.id, { ...outline, points });
+      setOutlineDraft(null);
+    },
+    [activeLocation?.id, outline, updateLocationOutline]
+  );
+
+  // Drop any stale in-progress draft when outline editing ends (e.g. ok/cancel
+  // or a gesture interrupted before it committed).
+  useEffect(() => {
+    if (!outlineEditMode) setOutlineDraft(null);
+  }, [outlineEditMode]);
+
+  // Long-press anywhere on a location's map drops into edit mode to move/resize
+  // its zones (editing the outline itself is reached from the locations
+  // overview menu). Only armed in the normal view — once editing, the canvas'
+  // own drag handles own the touch.
+  //
+  // Constrained so it can't be mistaken for the canvas' own navigation:
+  //   - numberOfPointers(1): a two-finger pinch-to-zoom never counts as a hold.
+  //   - maxDistance(10): matches the pan's minDistance, so the moment a drag
+  //     travels far enough to pan, the hold fails instead of firing.
+  // What's left is a deliberate one-finger, stationary press.
+  const longPressEdit = Gesture.LongPress()
+    .minDuration(450)
+    .numberOfPointers(1)
+    .maxDistance(10)
+    .enabled(!editMode)
+    .onStart(() => {
+      runOnJS(toggleEditMode)();
+    });
+
   return (
+    <GestureDetector gesture={longPressEdit}>
     <View style={styles.container} onLayout={onLayout}>
       <Svg
         viewBox={`${viewBoxMinX} ${viewBoxMinY} ${viewBoxW} ${viewBoxH}`}
         style={{ flex: 1 }}
       >
-        <LocationOutline outline={outline} />
+        <LocationOutline outline={renderOutline} />
         <SvgText
           x={canvasW / 2}
           y={15}
@@ -258,12 +314,12 @@ export function VanLayoutSVG({ onZonePress }: Props) {
           offsetX={svgOffsetX}
           offsetY={svgOffsetY}
           color="#546E7A"
-          onChange={(points) =>
-            updateLocationOutline(activeLocation.id, { ...outline, points })
-          }
+          onPreview={handleOutlinePreview}
+          onChange={handleOutlineChange}
         />
       )}
     </View>
+    </GestureDetector>
   );
 }
 

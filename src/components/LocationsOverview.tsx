@@ -21,6 +21,8 @@ export function LocationsOverview({ onSelectLocation, onCreateNew }: Props) {
   const locations = useAppStore((s) => s.locations);
   const renameLocation = useAppStore((s) => s.renameLocation);
   const deleteLocation = useAppStore((s) => s.deleteLocation);
+  const setActiveLocation = useAppStore((s) => s.setActiveLocation);
+  const enterOutlineEditMode = useAppStore((s) => s.enterOutlineEditMode);
   const [zonesByLocation, setZonesByLocation] = useState<Record<string, ZoneWithCount[]>>({});
   // Long-press context menu, anchored at the touch point (#7).
   const [menu, setMenu] = useState<{ location: Location; x: number; y: number } | null>(null);
@@ -54,6 +56,15 @@ export function LocationsOverview({ onSelectLocation, onCreateNew }: Props) {
   const handleRename = (locationId: string, name: string, icon: string) => {
     renameLocation(locationId, name, icon);
     setRenaming(null);
+  };
+
+  // Open the location and drop straight into reshaping its outline. Activating
+  // it first (awaited) makes it the active location and loads its zones, so the
+  // outline-edit session snapshots the right location's outline and zones.
+  const handleEditOutline = async (location: Location) => {
+    setMenu(null);
+    await setActiveLocation(location.id);
+    enterOutlineEditMode();
   };
 
   const confirmDelete = (location: Location) => {
@@ -142,6 +153,11 @@ export function LocationsOverview({ onSelectLocation, onCreateNew }: Props) {
             setMenu(null);
             setRenaming(loc);
           }}
+        />
+        <Menu.Item
+          leadingIcon="vector-polygon"
+          title={t("location.edit_outline")}
+          onPress={() => menu && handleEditOutline(menu.location)}
         />
         <Menu.Item
           leadingIcon="delete"

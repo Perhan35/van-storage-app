@@ -37,10 +37,15 @@ type Props = {
   offsetX: number;
   offsetY: number;
   color: string;
+  // Committed change (drag released / discrete edit): writes to the store and
+  // records an undo step.
   onChange: (points: OutlinePoint[]) => void;
+  // Live, uncommitted change during a drag: lets the drawn outline follow the
+  // finger so the result is visible before release. Never touches history.
+  onPreview: (points: OutlinePoint[]) => void;
 };
 
-export function OutlineEditOverlay({
+function OutlineEditOverlayInner({
   outline,
   fitScale,
   zoomScale,
@@ -48,14 +53,23 @@ export function OutlineEditOverlay({
   offsetY,
   color,
   onChange,
+  onPreview,
 }: Props) {
   const { points } = outline;
 
-  const handleVertexMove = (index: number, nx: number, ny: number) => {
-    const next = points.map((p, i) =>
+  // Build the point list for a vertex dragged to (nx, ny); shared by the live
+  // preview (every frame) and the commit (on release).
+  const buildVertexMove = (index: number, nx: number, ny: number) =>
+    points.map((p, i) =>
       i === index ? { ...p, x: Math.round(nx), y: Math.round(ny) } : p
     );
-    onChange(next);
+
+  const handleVertexPreview = (index: number, nx: number, ny: number) => {
+    onPreview(buildVertexMove(index, nx, ny));
+  };
+
+  const handleVertexMove = (index: number, nx: number, ny: number) => {
+    onChange(buildVertexMove(index, nx, ny));
   };
 
   const handleVertexDelete = (index: number) => {
@@ -76,8 +90,8 @@ export function OutlineEditOverlay({
   };
 
   // Dragging an edge's mid handle bends it: set the end point's control so the
-  // curve's t=0.5 point lands under the finger.
-  const handleCurve = (edgeIndex: number, dragX: number, dragY: number) => {
+  // curve's t=0.5 point lands under the finger. Shared by preview and commit.
+  const buildCurve = (edgeIndex: number, dragX: number, dragY: number) => {
     const a = points[edgeIndex];
     const endIndex = (edgeIndex + 1) % points.length;
     const b = points[endIndex];
@@ -85,7 +99,15 @@ export function OutlineEditOverlay({
       x: Math.round(2 * dragX - (a.x + b.x) / 2),
       y: Math.round(2 * dragY - (a.y + b.y) / 2),
     };
-    onChange(points.map((p, i) => (i === endIndex ? { ...p, control } : p)));
+    return points.map((p, i) => (i === endIndex ? { ...p, control } : p));
+  };
+
+  const handleCurvePreview = (edgeIndex: number, dragX: number, dragY: number) => {
+    onPreview(buildCurve(edgeIndex, dragX, dragY));
+  };
+
+  const handleCurve = (edgeIndex: number, dragX: number, dragY: number) => {
+    onChange(buildCurve(edgeIndex, dragX, dragY));
   };
 
   const handleStraighten = (edgeIndex: number) => {
@@ -111,6 +133,7 @@ export function OutlineEditOverlay({
             offsetY={offsetY}
             color={color}
             curved={!!b.control}
+            onCurvePreview={handleCurvePreview}
             onCurve={handleCurve}
             onInsert={handleInsertOnEdge}
             onStraighten={handleStraighten}
@@ -128,6 +151,7 @@ export function OutlineEditOverlay({
           offsetY={offsetY}
           color={color}
           canDelete={points.length > MIN_POINTS}
+          onPreview={handleVertexPreview}
           onMove={handleVertexMove}
           onDelete={handleVertexDelete}
         />
@@ -135,6 +159,12 @@ export function OutlineEditOverlay({
     </>
   );
 }
+
+// Memoised so a live preview (which re-renders the *parent* every frame while a
+// handle is dragged) doesn't recreate this component's gestures mid-drag and
+// interrupt the drag. It only re-renders when the committed outline or the
+// layout actually change — never during a drag, since those props hold steady.
+export const OutlineEditOverlay = React.memo(OutlineEditOverlayInner);
 
 type VertexProps = {
   point: OutlinePoint;
@@ -145,6 +175,7 @@ type VertexProps = {
   offsetY: number;
   color: string;
   canDelete: boolean;
+  onPreview: (index: number, x: number, y: number) => void;
   onMove: (index: number, x: number, y: number) => void;
   onDelete: (index: number) => void;
 };
@@ -158,6 +189,7 @@ function VertexHandle({
   offsetY,
   color,
   canDelete,
+  onPreview,
   onMove,
   onDelete,
 }: VertexProps) {
@@ -193,6 +225,8 @@ function VertexHandle({
       const scale = fitScale * zoomScale.value;
       svgX.value = startX.value + e.translationX / scale;
       svgY.value = startY.value + e.translationY / scale;
+      // Drive the live outline preview so the line follows the finger.
+      runOnJS(onPreview)(index, svgX.value, svgY.value);
     })
     .onEnd(() => {
       runOnJS(commitMove)(svgX.value, svgY.value);
@@ -237,6 +271,7 @@ type EdgeProps = {
   offsetY: number;
   color: string;
   curved: boolean;
+  onCurvePreview: (edgeIndex: number, x: number, y: number) => void;
   onCurve: (edgeIndex: number, x: number, y: number) => void;
   onInsert: (edgeIndex: number) => void;
   onStraighten: (edgeIndex: number) => void;
@@ -251,6 +286,7 @@ function EdgeHandle({
   offsetY,
   color,
   curved,
+  onCurvePreview,
   onCurve,
   onInsert,
   onStraighten,
@@ -267,7 +303,9 @@ function EdgeHandle({
     svgY.value = pos.y;
   }, [pos.x, pos.y]);
 
-  // Drag = bend the edge into a curve.
+  // Drag = bend the edge into a curve. The curve follows the finger live via
+  // the preview, but is only committed to history on release, so one bend is a
+  // single undo step rather than dozens of per-frame ones.
   const dragGesture = Gesture.Pan()
     .minDistance(6)
     .onStart(() => {
@@ -280,6 +318,9 @@ function EdgeHandle({
       const scale = fitScale * zoomScale.value;
       svgX.value = startX.value + e.translationX / scale;
       svgY.value = startY.value + e.translationY / scale;
+      runOnJS(onCurvePreview)(index, svgX.value, svgY.value);
+    })
+    .onEnd(() => {
       runOnJS(onCurve)(index, svgX.value, svgY.value);
     })
     .onFinalize(() => {
