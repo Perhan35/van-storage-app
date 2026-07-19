@@ -179,12 +179,27 @@ export type Zone = {
   location_id: string;
 };
 
+// The four sides on which a location's plan can carry an orientation
+// inscription. front/rear have built-in defaults (map.front / map.rear);
+// left/right have none and appear only once given text.
+export type LabelSide = "front" | "rear" | "left" | "right";
+
+// A single side's inscription. Absent text means "fall back to the default"
+// (front/rear) or "not drawn" (left/right); hidden suppresses it entirely.
+// x/y are an optional custom position in canvas (outline) coordinates; when
+// absent the inscription sits at its side's default anchor.
+export type LabelDef = { text?: string; hidden?: boolean; x?: number; y?: number };
+
+export type LocationLabels = Partial<Record<LabelSide, LabelDef>>;
+
 export type Location = {
   id: string;
   name: string;
   outline: Outline;
   icon: string;
   sort_order: number;
+  // Null/undefined on older rows -> the plan uses the built-in defaults.
+  labels?: LocationLabels;
 };
 
 export type Season = "summer" | "winter" | "none";

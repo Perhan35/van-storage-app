@@ -1,18 +1,38 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { View, LayoutChangeEvent, StyleSheet, Pressable } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
-import Svg, { Text as SvgText } from "react-native-svg";
+import Svg, { Text as SvgText, G } from "react-native-svg";
 import { useSharedValue, runOnJS } from "react-native-reanimated";
 import { LocationOutline } from "./LocationOutline";
 import { ZoneOverlay } from "./ZoneOverlay";
 import { ZoneEditOverlay } from "./ZoneEditOverlay";
 import { OutlineEditOverlay } from "./OutlineEditOverlay";
+import { InscriptionEditOverlay } from "./InscriptionEditOverlay";
 import { useZoomScale } from "./ZoomableContainer";
 import { useAppStore } from "../store/useAppStore";
-import { Zone, ZoneWithCount } from "../db/database";
+import { useAppTheme } from "../theme/useAppTheme";
+import { Zone, ZoneWithCount, LabelSide } from "../db/database";
 import { Outline, OutlinePoint } from "../db/templates";
 import { useTranslation } from "react-i18next";
 import { DEFAULT_CANVAS_W, DEFAULT_CANVAS_H, ZONE_OVERFLOW_MARGIN, getZoneBounds } from "./layoutConstants";
+
+const INSCRIPTION_SIDES: LabelSide[] = ["front", "rear", "left", "right"];
+// Read-mode inscription color (unchanged from the original hard-coded labels).
+const INSCRIPTION_COLOR = "#78909C";
+
+// SVG anchor + rotation for each side's inscription. left/right read vertically.
+function sideAnchor(side: LabelSide, canvasW: number, canvasH: number) {
+  switch (side) {
+    case "front":
+      return { x: canvasW / 2, y: 15, rotate: 0 };
+    case "rear":
+      return { x: canvasW / 2, y: canvasH - 5, rotate: 0 };
+    case "left":
+      return { x: 12, y: canvasH / 2, rotate: -90 };
+    case "right":
+      return { x: canvasW - 12, y: canvasH / 2, rotate: 90 };
+  }
+}
 
 // Padding (in SVG units) kept around the zones' bounding box when fitting
 // the default (non-edit) view to them.
@@ -22,6 +42,11 @@ export type ZoneScreenRect = { left: number; top: number; width: number; height:
 
 type Props = {
   onZonePress: (zoneId: string, rect: ZoneScreenRect) => void;
+  // Tapping an inscription (or its "+" placeholder) asks the parent to open the
+  // rename/hide dialog for that side — the dialog lives in the screen so the
+  // "+" FAB can open it too. Optional: screens that never enter layout-edit
+  // (e.g. the game) don't need it.
+  onEditInscription?: (side: LabelSide) => void;
 };
 
 type BBox = { minX: number; minY: number; maxX: number; maxY: number };
@@ -75,7 +100,7 @@ function getOutlineBoundingBox(outline: Outline): BBox {
   return { minX, minY, maxX, maxY };
 }
 
-export function VanLayoutSVG({ onZonePress }: Props) {
+export function VanLayoutSVG({ onZonePress, onEditInscription }: Props) {
   const { t } = useTranslation();
   const zones = useAppStore((s) => s.zones);
   const activeLocation = useAppStore((s) =>
@@ -86,7 +111,13 @@ export function VanLayoutSVG({ onZonePress }: Props) {
   const outlineEditMode = useAppStore((s) => s.outlineEditMode);
   const updateZoneGeometry = useAppStore((s) => s.updateZoneGeometry);
   const updateLocationOutline = useAppStore((s) => s.updateLocationOutline);
+  const updateLocationLabel = useAppStore((s) => s.updateLocationLabel);
   const toggleEditMode = useAppStore((s) => s.toggleEditMode);
+  const { palette } = useAppTheme();
+
+  // Inscriptions are edited while reshaping the layout (outline-edit), not while
+  // moving zones — so the labels stay out of the way during zone work.
+  const labelsEditable = editMode && outlineEditMode;
 
   const outline: Outline = activeLocation?.outline ?? {
     w: DEFAULT_CANVAS_W,
@@ -101,6 +132,28 @@ export function VanLayoutSVG({ onZonePress }: Props) {
   const canvasW = outline.w;
   const canvasH = outline.h;
   const zoneBounds = getZoneBounds(canvasW, canvasH);
+
+  // Per-side inscription resolution. front/rear fall back to a built-in default;
+  // left/right have none, so they show only once given text. Hidden -> "".
+  const labels = activeLocation?.labels ?? {};
+  const defaultFor = (side: LabelSide): string | null =>
+    side === "front" ? t("map.front") : side === "rear" ? t("map.rear") : null;
+  const resolveDisplay = (side: LabelSide): string => {
+    const def = labels[side];
+    if (def?.hidden) return "";
+    return (def?.text?.trim() || defaultFor(side)) ?? "";
+  };
+  // Same text, but ignoring the hidden flag — used while editing, where a
+  // hidden-but-named side still shows its name (faded) rather than vanishing.
+  const resolveEditText = (side: LabelSide): string =>
+    (labels[side]?.text?.trim() || defaultFor(side)) ?? "";
+  // Anchor with any custom drag position applied (canvas coordinates).
+  const resolvePos = (side: LabelSide) => {
+    const base = sideAnchor(side, canvasW, canvasH);
+    const def = labels[side];
+    return { x: def?.x ?? base.x, y: def?.y ?? base.y, rotate: base.rotate };
+  };
+
 
   const [layout, setLayout] = useState<{
     width: number;
@@ -225,26 +278,29 @@ export function VanLayoutSVG({ onZonePress }: Props) {
         style={{ flex: 1 }}
       >
         <LocationOutline outline={renderOutline} />
-        <SvgText
-          x={canvasW / 2}
-          y={15}
-          textAnchor="middle"
-          fill="#78909C"
-          fontSize={13}
-          fontWeight="bold"
-        >
-          {t("map.front")}
-        </SvgText>
-        <SvgText
-          x={canvasW / 2}
-          y={canvasH - 5}
-          textAnchor="middle"
-          fill="#78909C"
-          fontSize={13}
-          fontWeight="bold"
-        >
-          {t("map.rear")}
-        </SvgText>
+        {/* Read mode draws the inscriptions in SVG (at their default or custom
+            position). While editing, the draggable overlays below draw them
+            instead, so the SVG copy is suppressed to avoid a doubled label. */}
+        {!labelsEditable &&
+          INSCRIPTION_SIDES.map((side) => {
+            const text = resolveDisplay(side);
+            if (!text) return null;
+            const { x, y, rotate } = resolvePos(side);
+            return (
+              <G key={side} transform={`rotate(${rotate}, ${x}, ${y})`}>
+                <SvgText
+                  x={x}
+                  y={y}
+                  textAnchor="middle"
+                  fill={INSCRIPTION_COLOR}
+                  fontSize={13}
+                  fontWeight="bold"
+                >
+                  {text}
+                </SvgText>
+              </G>
+            );
+          })}
         {zones.map((zone) => (
           <ZoneOverlay
             key={zone.id}
@@ -318,6 +374,38 @@ export function VanLayoutSVG({ onZonePress }: Props) {
           onChange={handleOutlineChange}
         />
       )}
+
+      {/* Editable inscriptions: tap to rename/hide, press-and-hold to drag.
+          Only while editing zones — outline-edit keeps the canvas to itself. */}
+      {labelsEditable &&
+        layout &&
+        INSCRIPTION_SIDES.map((side) => {
+          const { x, y, rotate } = resolvePos(side);
+          return (
+            <InscriptionEditOverlay
+              key={side}
+              side={side}
+              text={resolveEditText(side)}
+              hidden={!!labels[side]?.hidden}
+              posX={x}
+              posY={y}
+              rotate={rotate}
+              accentColor={palette.editModeAccent}
+              fitScale={svgScale}
+              zoomScale={zoomScale}
+              offsetX={svgOffsetX}
+              offsetY={svgOffsetY}
+              minX={zoneBounds.minX}
+              maxX={zoneBounds.maxX}
+              minY={zoneBounds.minY}
+              maxY={zoneBounds.maxY}
+              onOpen={(s) => onEditInscription?.(s)}
+              onMove={(s, nx, ny) => {
+                if (activeLocation) updateLocationLabel(activeLocation.id, s, { x: nx, y: ny });
+              }}
+            />
+          );
+        })}
     </View>
     </GestureDetector>
   );

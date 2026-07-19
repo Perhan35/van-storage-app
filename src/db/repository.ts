@@ -1,4 +1,4 @@
-import { withDb, Zone, Item, ZoneWithCount, Season, Location } from "./database";
+import { withDb, Zone, Item, ZoneWithCount, Season, Location, LocationLabels } from "./database";
 import { DEFAULT_LOCATION_ICON, LayoutTemplate, Outline } from "./templates";
 
 export const DEFAULT_FILL_OPACITY = 0.4;
@@ -395,7 +395,18 @@ export function listLocations(): Promise<Location[]> {
         console.warn(`Skipping location ${r.id}: invalid outline shape`);
         return [];
       }
-      return [{ ...r, outline }];
+      let labels: LocationLabels | undefined;
+      const rawLabels = (r as { labels?: string | null }).labels;
+      if (rawLabels) {
+        try {
+          const parsed = JSON.parse(rawLabels);
+          if (parsed && typeof parsed === "object") labels = parsed;
+        } catch {
+          // A corrupt labels blob just falls back to defaults, never a skip.
+          console.warn(`Location ${r.id}: invalid labels JSON, using defaults`);
+        }
+      }
+      return [{ ...r, outline, labels }];
     });
   });
 }
@@ -432,6 +443,15 @@ export function updateLocationOutline(id: string, outline: Outline): Promise<voi
     await db.runAsync(
       "UPDATE locations SET outline = ?, updated_at = datetime('now') WHERE id = ?",
       [JSON.stringify(outline), id]
+    );
+  });
+}
+
+export function updateLocationLabels(id: string, labels: LocationLabels): Promise<void> {
+  return withDb(async (db) => {
+    await db.runAsync(
+      "UPDATE locations SET labels = ?, updated_at = datetime('now') WHERE id = ?",
+      [JSON.stringify(labels), id]
     );
   });
 }
@@ -491,12 +511,15 @@ export function importAllData(
 
       for (const location of rawLocations) {
         await db.runAsync(
-          "INSERT INTO locations (id, name, outline, icon, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO locations (id, name, outline, icon, labels, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
           [
             location.id as string,
             location.name as string,
             location.outline as string,
             (location.icon as string) ?? DEFAULT_LOCATION_ICON,
+            // Orientation inscriptions: exported as a JSON string via SELECT *;
+            // null on older backups leaves the plan on its built-in defaults.
+            (location.labels as string) ?? null,
             (location.sort_order as number) ?? 0,
             (location.created_at as string) ?? new Date().toISOString(),
             (location.updated_at as string) ?? new Date().toISOString(),
