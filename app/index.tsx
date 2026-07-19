@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { View, StyleSheet, Pressable } from "react-native";
 import { useRouter, useNavigation } from "expo-router";
-import { FAB, Text, Button } from "react-native-paper";
+import { FAB, Text, Button, IconButton } from "react-native-paper";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -103,6 +103,19 @@ export default function VanMapScreen() {
   // navigation.setOptions.
   useEffect(() => {
     navigation.setOptions({
+      headerLeft:
+        !editMode && !overviewMode
+          ? () => (
+              <IconButton
+                icon="arrow-left"
+                size={24}
+                iconColor={palette.headerTint}
+                style={{ margin: 0 }}
+                accessibilityLabel={t("nav.back_to_locations")}
+                onPress={() => setOverviewMode(true)}
+              />
+            )
+          : undefined,
       headerTitle: () => (
         <Pressable onPress={handleTitlePress} disabled={editMode || overviewMode}>
           {!editMode && overviewMode ? (
@@ -135,7 +148,7 @@ export default function VanMapScreen() {
         </Pressable>
       ),
     });
-  }, [navigation, editMode, overviewMode, activeLocation?.name, palette.headerTint, t]);
+  }, [navigation, editMode, overviewMode, activeLocation?.name, palette.headerTint, t, setOverviewMode]);
 
   const handleSelectLocation = (locationId: string) => {
     // setActiveLocation also clears overviewMode in the store.
