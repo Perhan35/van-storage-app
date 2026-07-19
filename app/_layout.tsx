@@ -85,6 +85,14 @@ function HeaderRight() {
   const canUndo = useAppStore((s) => s.undoStack.length > 0);
   const canRedo = useAppStore((s) => s.redoStack.length > 0);
   const cancelEditChanges = useAppStore((s) => s.cancelEditChanges);
+  // Outline-edit sub-mode has its own history and its own ok/cancel that act
+  // only on the outline, returning to zone editing rather than leaving edit
+  // mode entirely.
+  const undoOutline = useAppStore((s) => s.undoOutline);
+  const redoOutline = useAppStore((s) => s.redoOutline);
+  const canUndoOutline = useAppStore((s) => s.outlineUndoStack.length > 0);
+  const canRedoOutline = useAppStore((s) => s.outlineRedoStack.length > 0);
+  const cancelOutlineEdit = useAppStore((s) => s.cancelOutlineEdit);
 
   return (
     <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -108,53 +116,73 @@ function HeaderRight() {
       )}
       {editMode && (
         <>
-          <IconButton
-            icon="vector-polygon"
-            size={24}
-            iconColor={outlineEditMode ? palette.success : palette.headerTint}
-            accessibilityLabel={t("nav.edit_outline")}
-            style={{ margin: 0 }}
-            onPress={toggleOutlineEditMode}
-          />
+          {/* Hidden while editing the outline: the polygon toggle is the way
+              *into* outline-edit; you leave it with the ok/cancel below. A
+              divider sets it apart from the undo/redo/cancel/confirm group
+              that follows, since it's a mode switch rather than a session
+              control. */}
           {!outlineEditMode && (
             <>
               <IconButton
-                icon="undo-variant"
+                icon="vector-polygon"
                 size={24}
                 iconColor={palette.headerTint}
-                disabled={!canUndo}
-                accessibilityLabel={t("nav.undo")}
+                accessibilityLabel={t("nav.edit_outline")}
                 style={{ margin: 0 }}
-                onPress={undo}
+                onPress={toggleOutlineEditMode}
               />
-              <IconButton
-                icon="redo-variant"
-                size={24}
-                iconColor={palette.headerTint}
-                disabled={!canRedo}
-                accessibilityLabel={t("nav.redo")}
-                style={{ margin: 0 }}
-                onPress={redo}
+              <View
+                style={{
+                  width: 1.5,
+                  height: 26,
+                  backgroundColor: palette.headerTint,
+                  opacity: 0.6,
+                  marginHorizontal: 2,
+                  borderRadius: 1,
+                }}
               />
             </>
           )}
           <IconButton
+            icon="undo-variant"
+            size={24}
+            iconColor={palette.headerTint}
+            disabled={outlineEditMode ? !canUndoOutline : !canUndo}
+            accessibilityLabel={t("nav.undo")}
+            style={{ margin: 0 }}
+            onPress={outlineEditMode ? undoOutline : undo}
+          />
+          <IconButton
+            icon="redo-variant"
+            size={24}
+            iconColor={palette.headerTint}
+            disabled={outlineEditMode ? !canRedoOutline : !canRedo}
+            accessibilityLabel={t("nav.redo")}
+            style={{ margin: 0 }}
+            onPress={outlineEditMode ? redoOutline : redo}
+          />
+          {/* In outline-edit, cancel discards only the outline changes and drops
+              back to zone editing; otherwise it reverts the whole session. */}
+          <IconButton
             icon="cancel"
             size={24}
             iconColor={palette.danger}
-            accessibilityLabel={t("nav.cancel_edit")}
+            accessibilityLabel={outlineEditMode ? t("nav.cancel_outline") : t("nav.cancel_edit")}
             style={{ margin: 0 }}
-            onPress={cancelEditChanges}
+            onPress={outlineEditMode ? cancelOutlineEdit : cancelEditChanges}
           />
         </>
       )}
       {!overviewMode && (
+        // In outline-edit, the check confirms the outline and returns to zone
+        // editing (stays in edit mode); otherwise it toggles edit mode itself.
         <IconButton
           icon={editMode ? "check" : "cursor-move"}
           size={24}
           iconColor={editMode ? palette.success : palette.headerTint}
+          accessibilityLabel={outlineEditMode ? t("nav.confirm_outline") : undefined}
           style={{ margin: 0 }}
-          onPress={toggleEditMode}
+          onPress={outlineEditMode ? toggleOutlineEditMode : toggleEditMode}
         />
       )}
       {!editMode && (
