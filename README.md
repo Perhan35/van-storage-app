@@ -41,7 +41,7 @@ The app was built specifically for a **Citroën Jumpy / T&T Vans Aventourer** co
 ## Project layout
 
 ```
-van-storage-app/
+my-inventory-app/
 ├── app/                                  # Expo Router screens (file-based routing)
 │   ├── _layout.tsx                       # Root stack + header (edit toggle, search, settings…)
 │   ├── index.tsx                         # Van map home screen + FAB (add item / add zone)

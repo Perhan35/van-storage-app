@@ -36,8 +36,8 @@ Optional, depending on the workflow:
 Clone and install dependencies:
 
 ```bash
-git clone <repo-url> van-storage-app
-cd van-storage-app
+git clone <repo-url> my-inventory-app
+cd my-inventory-app
 npm install
 ```
 
@@ -239,7 +239,7 @@ helper script:
 
 ```bash
 ./scripts/build-ios-ipa.sh
-# → dist/MyVanInventory-vX.Y.Z.ipa
+# → dist/MyInventory-vX.Y.Z.ipa
 ```
 
 The script runs `expo prebuild`, `pod install`, an unsigned Release build, and packages the
@@ -250,7 +250,7 @@ Then:
    [sidestore.io](https://sidestore.io) (pairing file + anisette server — the exact steps
    depend on your iOS version, hence the link to the always-current source). This is the only
    step that needs a computer, once.
-2. In SideStore: **My Apps → +** → pick your `MyVanInventory-vX.Y.Z.ipa` → SideStore signs
+2. In SideStore: **My Apps → +** → pick your `MyInventory-vX.Y.Z.ipa` → SideStore signs
    and installs it.
 3. SideStore renews the 7-day certificate on its own before it expires, as long as the phone
    can reach its anisette server over Wi-Fi.
@@ -450,7 +450,7 @@ git tag v2.1.6
 git push origin v2.1.6
 ```
 
-A few minutes later a GitHub Release `v2.1.6` appears with `my-van-inventory-v2.1.6.apk`
+A few minutes later a GitHub Release `v2.1.6` appears with `my-inventory-v2.1.6.apk`
 attached — share that release page's link. Anyone with the link can download the APK and
 install it directly (allowing "install unknown apps" the first time).
 
