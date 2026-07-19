@@ -52,6 +52,7 @@ export default function VanMapScreen() {
   const activeLocation = useAppStore((s) =>
     s.locations.find((l) => l.id === s.activeLocationId)
   );
+  const locationCount = useAppStore((s) => s.locations.length);
   const setActiveLocation = useAppStore((s) => s.setActiveLocation);
   const addLocation = useAppStore((s) => s.addLocation);
   // Overview vs. single-location map lives in the store (the header, defined in
@@ -132,7 +133,7 @@ export default function VanMapScreen() {
                 style={{ color: palette.headerTint, opacity: 0.8, fontSize: 12 }}
                 numberOfLines={1}
               >
-                {t("nav.locations")}
+                {t("nav.location_count", { count: locationCount })}
               </Text>
             </View>
           ) : editMode ? (
@@ -163,7 +164,17 @@ export default function VanMapScreen() {
         </Pressable>
       ),
     });
-  }, [navigation, editMode, overviewMode, activeLocation?.name, zones.length, palette.headerTint, t, setOverviewMode]);
+  }, [
+    navigation,
+    editMode,
+    overviewMode,
+    activeLocation?.name,
+    zones.length,
+    locationCount,
+    palette.headerTint,
+    t,
+    setOverviewMode,
+  ]);
 
   const handleSelectLocation = (locationId: string) => {
     // setActiveLocation also clears overviewMode in the store.
