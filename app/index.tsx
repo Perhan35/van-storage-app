@@ -135,20 +135,35 @@ export default function VanMapScreen() {
                 {t("nav.locations")}
               </Text>
             </View>
-          ) : (
+          ) : editMode ? (
             <Text
               style={{ color: palette.headerTint, fontWeight: "bold", fontSize: 18 }}
               numberOfLines={1}
             >
-              {editMode
-                ? t("nav.edit_mode")
-                : t("nav.app_title_named", { name: activeLocation?.name ?? "" })}
+              {t("nav.edit_mode")}
             </Text>
+          ) : (
+            // Single location: location name as the title, zone count as a
+            // subtitle beneath it.
+            <View>
+              <Text
+                style={{ color: palette.headerTint, fontWeight: "bold", fontSize: 18 }}
+                numberOfLines={1}
+              >
+                {t("nav.app_title_named", { name: activeLocation?.name ?? "" })}
+              </Text>
+              <Text
+                style={{ color: palette.headerTint, opacity: 0.8, fontSize: 12 }}
+                numberOfLines={1}
+              >
+                {t("nav.zone_count", { count: zones.length })}
+              </Text>
+            </View>
           )}
         </Pressable>
       ),
     });
-  }, [navigation, editMode, overviewMode, activeLocation?.name, palette.headerTint, t, setOverviewMode]);
+  }, [navigation, editMode, overviewMode, activeLocation?.name, zones.length, palette.headerTint, t, setOverviewMode]);
 
   const handleSelectLocation = (locationId: string) => {
     // setActiveLocation also clears overviewMode in the store.
