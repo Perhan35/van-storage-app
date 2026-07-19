@@ -59,6 +59,9 @@ export default function SettingsScreen() {
   const themeMode = useAppStore((s) => s.themeMode);
   const setThemeMode = useAppStore((s) => s.setThemeMode);
   const reloadThemeMode = useAppStore((s) => s.reloadThemeMode);
+  const showMenuHeader = useAppStore((s) => s.showMenuHeader);
+  const setShowMenuHeader = useAppStore((s) => s.setShowMenuHeader);
+  const reloadShowMenuHeader = useAppStore((s) => s.reloadShowMenuHeader);
   const seasonMode = useAppStore((s) => s.seasonMode);
   const setSeasonMode = useAppStore((s) => s.setSeasonMode);
   const reloadSeasonMode = useAppStore((s) => s.reloadSeasonMode);
@@ -247,6 +250,7 @@ export default function SettingsScreen() {
           if (first) await setActiveLocation(first.id);
         }
         await reloadThemeMode();
+        await reloadShowMenuHeader();
         await reloadSeasonMode();
         await reloadRemindersEnabled();
         await syncRemindersIfEnabled();
@@ -342,6 +346,10 @@ export default function SettingsScreen() {
             { value: "dark", label: t("settings.theme_dark"), icon: "weather-night" },
           ]}
         />
+        <View style={[styles.switchRow, styles.switchRowSpaced]}>
+          <Text variant="bodyMedium">{t("settings.menu_header_label")}</Text>
+          <Switch value={showMenuHeader} onValueChange={setShowMenuHeader} />
+        </View>
       </View>
       <Divider />
       <View style={styles.section}>
@@ -451,5 +459,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 12,
+  },
+  switchRowSpaced: {
+    marginTop: 16,
   },
 });

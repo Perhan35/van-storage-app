@@ -20,7 +20,6 @@ import {
   Divider,
   Dialog,
   Portal,
-  Menu,
   FAB,
 } from "react-native-paper";
 import { useAppStore } from "../../src/store/useAppStore";
@@ -43,6 +42,7 @@ import { AnimatedCheckRow } from "../../src/components/AnimatedCheckRow";
 import { AnimatedOutOfVanRow } from "../../src/components/AnimatedOutOfVanRow";
 import { HighlightFlashRow } from "../../src/components/HighlightFlashRow";
 import { plusIcon, tagFabStyle } from "../../src/components/AddFab";
+import { ContextMenu } from "../../src/components/ContextMenu";
 
 const ACTION_WIDTH = 64;
 
@@ -124,7 +124,7 @@ export default function ZoneDetailScreen() {
   const [items, setItems] = useState<Item[]>([]);
   const [addItemVisible, setAddItemVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
-  const [menuVisible, setMenuVisible] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ item: Item; x: number; y: number } | null>(null);
   const [movingItem, setMovingItem] = useState<Item | null>(null);
   const [zoneEditVisible, setZoneEditVisible] = useState(false);
   const swipeableRefs = useRef<Map<string, SwipeableMethods>>(new Map());
@@ -281,7 +281,7 @@ export default function ZoneDetailScreen() {
   };
 
   const handleDeleteItem = (item: Item) => {
-    setMenuVisible(null);
+    setMenu(null);
     Alert.alert(t("zone.delete"), t("zone.delete_alert", { name: item.name }), [
       { text: t("map.cancel"), style: "cancel" },
       {
@@ -315,7 +315,7 @@ export default function ZoneDetailScreen() {
   };
 
   const handleToggleOutOfVan = async (item: Item) => {
-    setMenuVisible(null);
+    setMenu(null);
     swipeableRefs.current.get(item.id)?.close();
     await setItemOutOfVan(item.id, !item.out_of_van);
     await loadItems();
@@ -567,7 +567,14 @@ export default function ZoneDetailScreen() {
                 : item.notes || undefined
             }
             onPress={() => setEditingItem(item)}
-            onLongPress={() => setMenuVisible(item.id)}
+            onLongPress={(e) => {
+              const { pageX, pageY } = e.nativeEvent;
+              setMenu({
+                item,
+                x: typeof pageX === "number" ? pageX : 40,
+                y: typeof pageY === "number" ? pageY : 120,
+              });
+            }}
             titleStyle={
               item.checked
                 ? { color: palette.onSurfaceVariant, textDecorationLine: "line-through" }
@@ -608,54 +615,18 @@ export default function ZoneDetailScreen() {
               );
             }}
             right={() => (
-              <Menu
-                visible={menuVisible === item.id}
-                onDismiss={() => setMenuVisible(null)}
-                anchor={
-                  <IconButton
-                    icon="dots-vertical"
-                    size={24}
-                    onPress={() => setMenuVisible(item.id)}
-                  />
-                }
-              >
-                <Menu.Item
-                  leadingIcon="pencil-outline"
-                  title={t("zone.edit")}
-                  onPress={() => {
-                    setMenuVisible(null);
-                    setEditingItem(item);
-                  }}
-                />
-                {otherZones.length > 0 && (
-                  <Menu.Item
-                    leadingIcon="arrow-right-bold"
-                    title={t("zone.move")}
-                    onPress={() => {
-                      setMenuVisible(null);
-                      setMovingItem(item);
-                    }}
-                  />
-                )}
-                <Menu.Item
-                  leadingIcon={
-                    item.out_of_van ? "tray-arrow-down" : "exit-to-app"
-                  }
-                  title={
-                    item.out_of_van
-                      ? t("zone.put_back")
-                      : t("zone.take_out")
-                  }
-                  onPress={() => handleToggleOutOfVan(item)}
-                />
-                <Divider />
-                <Menu.Item
-                  leadingIcon="delete-outline"
-                  title={t("zone.delete")}
-                  titleStyle={{ color: palette.danger }}
-                  onPress={() => handleDeleteItem(item)}
-                />
-              </Menu>
+              <IconButton
+                icon="dots-vertical"
+                size={24}
+                onPress={(e) => {
+                  const { pageX, pageY } = e.nativeEvent;
+                  setMenu({
+                    item,
+                    x: typeof pageX === "number" ? pageX : 40,
+                    y: typeof pageY === "number" ? pageY : 120,
+                  });
+                }}
+              />
             )}
           />
           </HighlightFlashRow>
@@ -671,6 +642,53 @@ export default function ZoneDetailScreen() {
               {t("zone.empty")}
             </Text>
           </View>
+        }
+      />
+
+      <ContextMenu
+        visible={!!menu}
+        onDismiss={() => setMenu(null)}
+        anchor={menu ? { x: menu.x, y: menu.y } : { x: 0, y: 0 }}
+        header={
+          menu
+            ? {
+                title: menu.item.name,
+                icon: "package-variant",
+                subtitle: t("zone.item_kind_label"),
+              }
+            : undefined
+        }
+        items={
+          menu
+            ? [
+                {
+                  icon: "pencil-outline",
+                  label: t("zone.edit"),
+                  onPress: () => setEditingItem(menu.item),
+                },
+                ...(otherZones.length > 0
+                  ? [
+                      {
+                        icon: "arrow-right-bold",
+                        label: t("zone.move"),
+                        onPress: () => setMovingItem(menu.item),
+                      },
+                    ]
+                  : []),
+                {
+                  icon: menu.item.out_of_van ? "tray-arrow-down" : "exit-to-app",
+                  label: menu.item.out_of_van ? t("zone.put_back") : t("zone.take_out"),
+                  onPress: () => handleToggleOutOfVan(menu.item),
+                },
+                {
+                  icon: "delete-outline",
+                  label: t("zone.delete"),
+                  tone: "danger",
+                  dividerBefore: true,
+                  onPress: () => handleDeleteItem(menu.item),
+                },
+              ]
+            : []
         }
       />
 

@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { View, FlatList, ScrollView, StyleSheet } from "react-native";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { View, FlatList, StyleSheet } from "react-native";
 import Animated, { LinearTransition, SlideOutRight, useReducedMotion } from "react-native-reanimated";
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
-import { Button, Divider, IconButton, List, Menu, SegmentedButtons, Text } from "react-native-paper";
+import { Button, Divider, IconButton, List, SegmentedButtons, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppStore } from "../src/store/useAppStore";
 import { getOutOfVanItems, getAllOutOfVanItems, OutOfVanItem } from "../src/db/repository";
@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
 import { seasonIconName, seasonIconColor } from "../src/components/seasonIcon";
 import { EditItemDialog } from "../src/components/dialogs/EditItemDialog";
+import { ContextMenu } from "../src/components/ContextMenu";
 
 type OutItem = OutOfVanItem;
 type SeasonFilter = Season | "all";
@@ -38,8 +39,23 @@ export default function OutOfVanScreen() {
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [seasonFilter, setSeasonFilter] = useState<SeasonFilter>("all");
-  const [locationMenuVisible, setLocationMenuVisible] = useState(false);
-  const [menuVisible, setMenuVisible] = useState(false);
+  type DropdownAnchor = { x: number; y: number; width: number; height: number };
+  const [locationMenuAnchor, setLocationMenuAnchor] = useState<DropdownAnchor | null>(null);
+  const [zoneMenuAnchor, setZoneMenuAnchor] = useState<DropdownAnchor | null>(null);
+  const locationButtonRef = useRef<View>(null);
+  const zoneButtonRef = useRef<View>(null);
+
+  // Measures the trigger button so the dropdown can open flush beneath it,
+  // matching its width (react-native-web's measureInWindow needs a plain View
+  // ref — Paper's Button ref isn't guaranteed to support it).
+  const openDropdown = (
+    ref: React.RefObject<View | null>,
+    setAnchor: (a: DropdownAnchor) => void
+  ) => {
+    ref.current?.measureInWindow((x, y, width, height) => {
+      setAnchor({ x, y, width, height });
+    });
+  };
   const [editingItem, setEditingItem] = useState<OutItem | null>(null);
 
   const load = useCallback(async () => {
@@ -74,10 +90,14 @@ export default function OutOfVanScreen() {
   }, [navigation, isGlobalView, activeLocationId, locations, t]);
 
   const availableLocations = useMemo(() => {
-    const seen = new Map<string, { id: string; name: string }>();
+    const seen = new Map<string, { id: string; name: string; icon: string }>();
     items.forEach((item) => {
       if (!seen.has(item.location_id)) {
-        seen.set(item.location_id, { id: item.location_id, name: item.location_name });
+        seen.set(item.location_id, {
+          id: item.location_id,
+          name: item.location_name,
+          icon: item.location_icon,
+        });
       }
     });
     return Array.from(seen.values()).sort((a, b) =>
@@ -93,13 +113,17 @@ export default function OutOfVanScreen() {
   );
 
   const availableZones = useMemo(() => {
-    const seen = new Map<string, { id: string; name: string; color: string }>();
+    const seen = new Map<
+      string,
+      { id: string; name: string; color: string; locationIcon: string }
+    >();
     locationFilteredItems.forEach((item) => {
       if (!seen.has(item.zone_id)) {
         seen.set(item.zone_id, {
           id: item.zone_id,
           name: item.zone_name,
           color: item.zone_color ?? palette.primary,
+          locationIcon: item.location_icon,
         });
       }
     });
@@ -173,92 +197,35 @@ export default function OutOfVanScreen() {
       {(availableZones.length > 0 || (isGlobalView && availableLocations.length > 0)) && (
         <View style={[styles.filterRow, styles.filterRowInline]}>
           {isGlobalView && availableLocations.length > 0 && (
-            <Menu
-              visible={locationMenuVisible}
-              onDismiss={() => setLocationMenuVisible(false)}
-              anchor={
-                <Button
-                  mode="outlined"
-                  icon="chevron-down"
-                  contentStyle={styles.filterButtonContent}
-                  style={[styles.filterButton, { backgroundColor: palette.surfaceVariant }]}
-                  onPress={() => setLocationMenuVisible(true)}
-                >
-                  {selectedLocation ? selectedLocation.name : t("out.all_locations")}
-                </Button>
-              }
-            >
-              <ScrollView style={styles.menuScroll}>
-                <Menu.Item
-                  title={t("out.all_locations")}
-                  trailingIcon={selectedLocationId === null ? "check" : undefined}
-                  onPress={() => {
-                    setSelectedLocationId(null);
-                    setLocationMenuVisible(false);
-                  }}
-                />
-                <Divider />
-                {availableLocations.map((location) => (
-                  <Menu.Item
-                    key={location.id}
-                    title={location.name}
-                    trailingIcon={selectedLocationId === location.id ? "check" : undefined}
-                    onPress={() => {
-                      setSelectedLocationId(location.id);
-                      setLocationMenuVisible(false);
-                    }}
-                  />
-                ))}
-              </ScrollView>
-            </Menu>
+            <View ref={locationButtonRef} collapsable={false}>
+              <Button
+                mode="outlined"
+                icon="chevron-down"
+                contentStyle={styles.filterButtonContent}
+                style={[styles.filterButton, { backgroundColor: palette.surfaceVariant }]}
+                onPress={() => openDropdown(locationButtonRef, setLocationMenuAnchor)}
+              >
+                {selectedLocation ? selectedLocation.name : t("out.all_locations")}
+              </Button>
+            </View>
           )}
           {availableZones.length > 0 && (
-            <Menu
-              visible={menuVisible}
-              onDismiss={() => setMenuVisible(false)}
-              anchor={
-                <Button
-                  mode="outlined"
-                  icon="chevron-down"
-                  contentStyle={styles.filterButtonContent}
-                  style={[
-                    styles.filterButton,
-                    {
-                      backgroundColor: selectedZone
-                        ? selectedZone.color + "33"
-                        : palette.surfaceVariant,
-                    },
-                  ]}
-                  onPress={() => setMenuVisible(true)}
-                >
-                  {selectedZone ? selectedZone.name : t("out.all_zones")}
-                </Button>
-              }
-            >
-              <ScrollView style={styles.menuScroll}>
-                <Menu.Item
-                  title={t("out.all_zones")}
-                  trailingIcon={selectedZoneId === null ? "check" : undefined}
-                  onPress={() => {
-                    setSelectedZoneId(null);
-                    setMenuVisible(false);
-                  }}
-                />
-                <Divider />
-                {availableZones.map((zone) => (
-                  <Menu.Item
-                    key={zone.id}
-                    title={zone.name}
-                    style={{ backgroundColor: zone.color + "33" }}
-                    trailingIcon={selectedZoneId === zone.id ? "check" : undefined}
-                    onPress={() => {
-                      setSelectedZoneId(zone.id);
-                      setMenuVisible(false);
-                    }}
-                  />
-                ))}
-              </ScrollView>
-            </Menu>
+            <View ref={zoneButtonRef} collapsable={false}>
+              <Button
+                mode="outlined"
+                icon="chevron-down"
+                contentStyle={styles.filterButtonContent}
+                style={[
+                  styles.filterButton,
+                  {
+                    backgroundColor: selectedZone ? selectedZone.color + "33" : palette.surfaceVariant,
+                  },
+                ]}
+                onPress={() => openDropdown(zoneButtonRef, setZoneMenuAnchor)}
+              >
+                {selectedZone ? selectedZone.name : t("out.all_zones")}
+              </Button>
+            </View>
           )}
         </View>
       )}
@@ -323,6 +290,48 @@ export default function OutOfVanScreen() {
         onCancel={() => setEditingItem(null)}
         onSave={handleSaveEdit}
       />
+
+      <ContextMenu
+        visible={!!locationMenuAnchor}
+        onDismiss={() => setLocationMenuAnchor(null)}
+        anchor={locationMenuAnchor ?? { x: 0, y: 0 }}
+        dropdown
+        items={[
+          {
+            icon: "map-marker",
+            label: t("out.all_locations"),
+            selected: selectedLocationId === null,
+            onPress: () => setSelectedLocationId(null),
+          },
+          ...availableLocations.map((location) => ({
+            icon: location.icon,
+            label: location.name,
+            selected: selectedLocationId === location.id,
+            onPress: () => setSelectedLocationId(location.id),
+          })),
+        ]}
+      />
+
+      <ContextMenu
+        visible={!!zoneMenuAnchor}
+        onDismiss={() => setZoneMenuAnchor(null)}
+        anchor={zoneMenuAnchor ?? { x: 0, y: 0 }}
+        dropdown
+        items={[
+          {
+            icon: "shape-outline",
+            label: t("out.all_zones"),
+            selected: selectedZoneId === null,
+            onPress: () => setSelectedZoneId(null),
+          },
+          ...availableZones.map((zone) => ({
+            icon: zone.locationIcon,
+            label: zone.name,
+            selected: selectedZoneId === zone.id,
+            onPress: () => setSelectedZoneId(zone.id),
+          })),
+        ]}
+      />
     </View>
   );
 }
@@ -336,7 +345,4 @@ const styles = StyleSheet.create({
   filterButton: { borderRadius: 8 },
   filterButtonContent: { flexDirection: "row-reverse" },
   itemIcons: { flexDirection: "row" },
-  // Caps the filter dropdown height so a long list (e.g. every location's zones
-  // in the all-locations view) scrolls instead of running off-screen.
-  menuScroll: { maxHeight: 320 },
 });
