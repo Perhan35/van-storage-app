@@ -93,7 +93,8 @@ export default function SettingsScreen() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const data = JSON.stringify(await exportAllData(), null, 2);
+      const appVersion = Constants.expoConfig?.version ?? "";
+      const data = JSON.stringify(await exportAllData(appVersion), null, 2);
       const filename = getBackupFilename();
 
       if (Platform.OS === "web") {

@@ -297,17 +297,18 @@ export function updateZoneGeometry(
 }
 
 export type ExportedData = {
+  appVersion: string;
   zones: unknown[];
   items: unknown[];
   preferences: unknown[];
 };
 
-export function exportAllData(): Promise<ExportedData> {
+export function exportAllData(appVersion: string): Promise<ExportedData> {
   return withDb(async (db) => {
     const zones = await db.getAllAsync("SELECT * FROM zones ORDER BY sort_order");
     const items = await db.getAllAsync("SELECT * FROM items ORDER BY name");
     const preferences = await db.getAllAsync("SELECT * FROM preferences");
-    return { zones, items, preferences };
+    return { appVersion, zones, items, preferences };
   });
 }
 
