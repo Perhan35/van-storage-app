@@ -67,6 +67,13 @@ export const LOCATION_COLUMNS_TO_ADD: { name: string; ddl: string }[] = [
     name: "icon",
     ddl: "ALTER TABLE locations ADD COLUMN icon TEXT NOT NULL DEFAULT 'van-utility'",
   },
+  {
+    // Nullable JSON of per-side orientation inscriptions (front/rear/left/right).
+    // Null on existing installs means "use the built-in defaults" (see
+    // resolveLabelText in VanLayoutSVG), so the historical look is unchanged.
+    name: "labels",
+    ddl: "ALTER TABLE locations ADD COLUMN labels TEXT",
+  },
 ];
 
 export const ZONE_COLUMNS_TO_ADD: { name: string; ddl: string }[] = [

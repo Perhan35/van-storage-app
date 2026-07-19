@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { getDb, Zone, ZoneWithCount, Season, Location } from "../db/database";
+import { getDb, Zone, ZoneWithCount, Season, Location, LabelSide, LabelDef } from "../db/database";
 import { getPreference, setPreference } from "../db/preferences";
 import * as repo from "../db/repository";
 import { cancelAllReminders, requestNotificationPermissions, syncReminders } from "../notifications/reminders";
@@ -102,6 +102,12 @@ type AppState = {
   renameLocation: (locationId: string, name: string, icon: string) => Promise<void>;
   deleteLocation: (locationId: string) => Promise<void>;
   updateLocationOutline: (locationId: string, outline: Outline) => Promise<void>;
+  updateLocationLabel: (
+    locationId: string,
+    side: LabelSide,
+    patch: Partial<LabelDef>
+  ) => Promise<void>;
+  resetLocationLabel: (locationId: string, side: LabelSide) => Promise<void>;
   toggleOutlineEditMode: () => void;
   enterOutlineEditMode: () => void;
   undoOutline: () => Promise<void>;
@@ -291,6 +297,45 @@ export const useAppStore = create<AppState>((set, get) => ({
           }
         : {}
     );
+    await get().reloadLocations();
+  },
+
+  updateLocationLabel: async (locationId, side, patch) => {
+    const loc = get().locations.find((l) => l.id === locationId);
+    if (!loc) return;
+    // Merge the patch onto the existing side so a drag ({x,y}) keeps the text
+    // and a rename keeps a dragged position.
+    const prev = loc.labels?.[side] ?? {};
+    const merged = { ...prev, ...patch };
+    const text = merged.text?.trim() ?? "";
+    const hasPos = merged.x != null && merged.y != null;
+    const next = { ...(loc.labels ?? {}) };
+    // A side carries information if it has custom text, is hidden, OR sits at a
+    // custom (dragged) position. Only when none of these hold is it dropped so
+    // front/rear fall back to their default and left/right disappear.
+    if (!text && !merged.hidden && !hasPos) {
+      delete next[side];
+    } else {
+      next[side] = {
+        ...(text ? { text } : {}),
+        ...(merged.hidden ? { hidden: true } : {}),
+        ...(hasPos ? { x: Math.round(merged.x!), y: Math.round(merged.y!) } : {}),
+      };
+    }
+    // Immediate commit, independent of the zone/outline undo stacks — the same
+    // semantics as renaming a location (see renameLocation).
+    await repo.updateLocationLabels(locationId, next);
+    await get().reloadLocations();
+  },
+
+  resetLocationLabel: async (locationId, side) => {
+    const loc = get().locations.find((l) => l.id === locationId);
+    if (!loc?.labels?.[side]) return;
+    // Full clear: text, hidden and any custom position all go, returning the
+    // side to its default text at its default anchor.
+    const next = { ...loc.labels };
+    delete next[side];
+    await repo.updateLocationLabels(locationId, next);
     await get().reloadLocations();
   },
 

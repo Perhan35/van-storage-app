@@ -23,8 +23,9 @@ import { CreateZoneDialog } from "../src/components/dialogs/CreateZoneDialog";
 import { AddItemDialog } from "../src/components/dialogs/AddItemDialog";
 import { CreateLocationDialog } from "../src/components/dialogs/CreateLocationDialog";
 import { ExpirationOverviewDialog } from "../src/components/dialogs/ExpirationOverviewDialog";
+import { EditInscriptionDialog } from "../src/components/dialogs/EditInscriptionDialog";
 import { plusIcon, tagFabStyle, FAB_RADIUS_SMALL } from "../src/components/AddFab";
-import { Season } from "../src/db/database";
+import { Season, LabelSide, LabelDef } from "../src/db/database";
 import { listItemsWithExpiration } from "../src/db/repository";
 import { getExpirationStatus } from "../src/utils/expiration";
 import { DEFAULT_CANVAS_H } from "../src/components/layoutConstants";
@@ -61,12 +62,17 @@ export default function VanMapScreen() {
   // dive; the start view is chosen in the store's init() (#3).
   const overviewMode = useAppStore((s) => s.overviewMode);
   const setOverviewMode = useAppStore((s) => s.setOverviewMode);
+  const updateLocationLabel = useAppStore((s) => s.updateLocationLabel);
+  const resetLocationLabel = useAppStore((s) => s.resetLocationLabel);
 
   const [fabOpen, setFabOpen] = useState(false);
   const [addZoneVisible, setAddZoneVisible] = useState(false);
   const [addItemVisible, setAddItemVisible] = useState(false);
   const [addLocationVisible, setAddLocationVisible] = useState(false);
   const [startupOverviewVisible, setStartupOverviewVisible] = useState(false);
+  // Inscription (front/rear/left/right label) currently open in the editor —
+  // opened by tapping a label directly on the plan while editing the layout.
+  const [editingSide, setEditingSide] = useState<LabelSide | null>(null);
 
   const zoomRef = useRef<ZoomableContainerHandle>(null);
   const [diveColor, setDiveColor] = useState<string | null>(null);
@@ -273,6 +279,21 @@ export default function VanMapScreen() {
     router.push(`/zone/${zoneId}`);
   };
 
+  // --- Orientation inscriptions (front/rear/left/right labels on the plan) ---
+  const labels = activeLocation?.labels ?? {};
+  // front/rear have a built-in default; left/right have none.
+  const inscriptionDefault = (side: LabelSide): string | null =>
+    side === "front" ? t("map.front") : side === "rear" ? t("map.rear") : null;
+
+  const handleSaveLabel = (side: LabelSide, def: LabelDef) => {
+    if (activeLocation) updateLocationLabel(activeLocation.id, side, def);
+    setEditingSide(null);
+  };
+  const handleResetLabel = (side: LabelSide) => {
+    if (activeLocation) resetLocationLabel(activeLocation.id, side);
+    setEditingSide(null);
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: palette.background }]}>
       {!overviewMode ? (
@@ -286,7 +307,7 @@ export default function VanMapScreen() {
               a press-and-hold to pick it up first (the canvas stands down while a
               zone is grabbed). */}
           <ZoomableContainer ref={zoomRef} panMinPointers={1}>
-            <VanLayoutSVG onZonePress={handleZonePress} />
+            <VanLayoutSVG onZonePress={handleZonePress} onEditInscription={setEditingSide} />
           </ZoomableContainer>
         </View>
       ) : (
@@ -338,6 +359,18 @@ export default function VanMapScreen() {
           },
         ]}
       />
+
+      {editingSide && (
+        <EditInscriptionDialog
+          side={editingSide}
+          currentText={labels[editingSide]?.text?.trim() ?? ""}
+          defaultText={inscriptionDefault(editingSide)}
+          hidden={!!labels[editingSide]?.hidden}
+          onCancel={() => setEditingSide(null)}
+          onSave={handleSaveLabel}
+          onReset={handleResetLabel}
+        />
+      )}
 
       <CreateZoneDialog
         visible={addZoneVisible}
