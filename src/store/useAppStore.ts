@@ -71,6 +71,7 @@ type AppState = {
   editSessionSnapshot: ZoneGeometrySnapshot | null;
   themeMode: ThemeMode;
   seasonMode: SeasonMode;
+  showMenuHeader: boolean;
   remindersEnabled: boolean;
   expirationAlertShown: boolean;
   tutorialVisible: boolean;
@@ -117,6 +118,8 @@ type AppState = {
   dismissTutorial: () => Promise<void>;
   setThemeMode: (mode: ThemeMode) => Promise<void>;
   reloadThemeMode: () => Promise<void>;
+  setShowMenuHeader: (show: boolean) => Promise<void>;
+  reloadShowMenuHeader: () => Promise<void>;
   setSeasonMode: (mode: SeasonMode) => Promise<void>;
   reloadSeasonMode: () => Promise<void>;
   setRemindersEnabled: (enabled: boolean) => Promise<boolean>;
@@ -186,6 +189,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   editSessionSnapshot: null,
   themeMode: "auto",
   seasonMode: "summer",
+  showMenuHeader: true,
   remindersEnabled: false,
   expirationAlertShown: false,
   tutorialVisible: false,
@@ -204,6 +208,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       await getDb();
       await get().reloadThemeMode();
+      await get().reloadShowMenuHeader();
       await get().reloadSeasonMode();
       await get().reloadRemindersEnabled();
       await get().reloadRecentSearches();
@@ -359,6 +364,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (storedMode === "auto" || storedMode === "light" || storedMode === "dark") {
       set({ themeMode: storedMode });
     }
+  },
+
+  setShowMenuHeader: async (show) => {
+    set({ showMenuHeader: show });
+    await setPreference("showMenuHeader", show ? "on" : "off");
+  },
+
+  // Mirrors reloadThemeMode. Absence of a stored preference means "on" (the
+  // default), so only an explicit "off" flips it.
+  reloadShowMenuHeader: async () => {
+    const stored = await getPreference("showMenuHeader");
+    set({ showMenuHeader: stored !== "off" });
   },
 
   setSeasonMode: async (mode) => {

@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { View, Pressable, StyleSheet, ScrollView, Alert, GestureResponderEvent } from "react-native";
 import Svg, { Rect } from "react-native-svg";
-import { Text, IconButton, Menu, Icon } from "react-native-paper";
+import { Text, IconButton, Icon } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../store/useAppStore";
 import { LocationOutline } from "./LocationOutline";
 import { RenameLocationDialog } from "./dialogs/RenameLocationDialog";
+import { ContextMenu } from "./ContextMenu";
 import { useAppTheme } from "../theme/useAppTheme";
 import * as repo from "../db/repository";
 import { ZoneWithCount, Location } from "../db/database";
@@ -140,33 +141,45 @@ export function LocationsOverview({ onSelectLocation, onCreateNew }: Props) {
         </Text>
       </Pressable>
 
-      <Menu
+      <ContextMenu
         visible={!!menu}
         onDismiss={() => setMenu(null)}
         anchor={menu ? { x: menu.x, y: menu.y } : { x: 0, y: 0 }}
-      >
-        <Menu.Item
-          leadingIcon="pencil"
-          title={t("location.edit")}
-          onPress={() => {
-            const loc = menu?.location ?? null;
-            setMenu(null);
-            setRenaming(loc);
-          }}
-        />
-        <Menu.Item
-          leadingIcon="vector-polygon"
-          title={t("location.edit_outline")}
-          onPress={() => menu && handleEditOutline(menu.location)}
-        />
-        <Menu.Item
-          leadingIcon="delete"
-          title={t("location.delete")}
-          // Never delete the last remaining location.
-          disabled={locations.length <= 1}
-          onPress={() => menu && confirmDelete(menu.location)}
-        />
-      </Menu>
+        header={
+          menu
+            ? {
+                title: menu.location.name,
+                icon: menu.location.icon,
+                subtitle: t("location.kind_label"),
+              }
+            : undefined
+        }
+        items={
+          menu
+            ? [
+                {
+                  icon: "pencil",
+                  label: t("location.edit"),
+                  onPress: () => setRenaming(menu.location),
+                },
+                {
+                  icon: "vector-polygon",
+                  label: t("location.edit_outline"),
+                  onPress: () => handleEditOutline(menu.location),
+                },
+                {
+                  icon: "delete",
+                  label: t("location.delete"),
+                  tone: "danger",
+                  dividerBefore: true,
+                  // Never delete the last remaining location.
+                  disabled: locations.length <= 1,
+                  onPress: () => confirmDelete(menu.location),
+                },
+              ]
+            : []
+        }
+      />
 
       <RenameLocationDialog
         location={renaming}
