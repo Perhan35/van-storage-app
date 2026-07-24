@@ -37,6 +37,7 @@ import { seasonIconName, seasonIconColor } from "../../src/components/seasonIcon
 import { expirationIconName, expirationIconColor } from "../../src/components/expirationIcon";
 import { getExpirationStatus } from "../../src/utils/expiration";
 import { formatExpiration } from "../../src/utils/date";
+import { triggerHaptic } from "../../src/utils/haptics";
 import { AnimatedCheckbox } from "../../src/components/AnimatedCheckbox";
 import { AnimatedCheckRow } from "../../src/components/AnimatedCheckRow";
 import { AnimatedOutOfVanRow } from "../../src/components/AnimatedOutOfVanRow";
@@ -568,6 +569,7 @@ export default function ZoneDetailScreen() {
             }
             onPress={() => setEditingItem(item)}
             onLongPress={(e) => {
+              triggerHaptic();
               const { pageX, pageY } = e.nativeEvent;
               setMenu({
                 item,

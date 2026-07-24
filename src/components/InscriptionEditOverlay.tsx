@@ -11,6 +11,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { LabelSide } from "../db/database";
 import { usePanLock } from "./ZoomableContainer";
+import { triggerHaptic } from "../utils/haptics";
 
 // Fixed-size hit/visual box centered on the inscription's anchor. Horizontal
 // for front/rear, taller for the vertical left/right labels.
@@ -92,6 +93,7 @@ export function InscriptionEditOverlay({
     .enabled(!empty)
     .activateAfterLongPress(250)
     .onStart(() => {
+      runOnJS(triggerHaptic)();
       startX.value = sx.value;
       startY.value = sy.value;
       dragActive.value = withTiming(1, { duration: 120 });

@@ -21,6 +21,7 @@ import {
   ZONES_FIT_PADDING,
   getZoneBounds,
 } from "./layoutConstants";
+import { triggerHaptic } from "../utils/haptics";
 
 const INSCRIPTION_SIDES: LabelSide[] = ["front", "rear", "left", "right"];
 // Read-mode inscription color (unchanged from the original hard-coded labels).
@@ -269,6 +270,7 @@ export function VanLayoutSVG({ onZonePress, onEditInscription }: Props) {
     .maxDistance(10)
     .enabled(!editMode)
     .onStart(() => {
+      runOnJS(triggerHaptic)();
       runOnJS(toggleEditMode)();
     });
 
