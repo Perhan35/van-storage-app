@@ -94,10 +94,15 @@ function HeaderRight() {
   return (
     <View style={{ flexDirection: "row", alignItems: "center" }}>
       {!editMode && (
-        <HeaderIcon icon="exit-to-app" tone="outOfVan" onPress={() => router.push("/out-of-van")} />
+        <HeaderIcon
+          icon="exit-to-app"
+          tone="outOfVan"
+          size={30}
+          onPress={() => router.push("/out-of-van")}
+        />
       )}
       {!editMode && (
-        <HeaderIcon icon="magnify" tone="search" onPress={() => router.push("/search")} />
+        <HeaderIcon icon="magnify" tone="search" size={30} onPress={() => router.push("/search")} />
       )}
       {editMode && (
         <>
@@ -111,13 +116,14 @@ function HeaderRight() {
               <HeaderIcon
                 icon="vector-polygon"
                 tone="accent"
+                size={30}
                 accessibilityLabel={t("nav.edit_outline")}
                 onPress={toggleOutlineEditMode}
               />
               <View
                 style={{
                   width: 1.5,
-                  height: 26,
+                  height: 32,
                   backgroundColor: palette.headerTintMuted,
                   marginHorizontal: 2,
                   borderRadius: 1,
@@ -128,6 +134,7 @@ function HeaderRight() {
           <HeaderIcon
             icon="undo-variant"
             tone="action"
+            size={30}
             disabled={outlineEditMode ? !canUndoOutline : !canUndo}
             accessibilityLabel={t("nav.undo")}
             onPress={outlineEditMode ? undoOutline : undo}
@@ -135,6 +142,7 @@ function HeaderRight() {
           <HeaderIcon
             icon="redo-variant"
             tone="action"
+            size={30}
             disabled={outlineEditMode ? !canRedoOutline : !canRedo}
             accessibilityLabel={t("nav.redo")}
             onPress={outlineEditMode ? redoOutline : redo}
@@ -145,6 +153,7 @@ function HeaderRight() {
           <HeaderIcon
             icon="close"
             tone="danger"
+            size={30}
             accessibilityLabel={outlineEditMode ? t("nav.cancel_outline") : t("nav.cancel_edit")}
             onPress={requestDiscard}
           />
@@ -156,12 +165,13 @@ function HeaderRight() {
         <HeaderIcon
           icon={editMode ? "check" : "cursor-move"}
           tone={editMode ? "success" : "accent"}
+          size={30}
           accessibilityLabel={outlineEditMode ? t("nav.confirm_outline") : undefined}
           onPress={outlineEditMode ? toggleOutlineEditMode : toggleEditMode}
         />
       )}
       {!editMode && (
-        <HeaderIcon icon="cog" tone="utility" onPress={() => router.push("/settings")} />
+        <HeaderIcon icon="cog" tone="utility" size={30} onPress={() => router.push("/settings")} />
       )}
 
       {/* Renders through Paper's portal, so it fills the screen rather than
