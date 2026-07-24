@@ -92,7 +92,7 @@ function HeaderRight() {
   const canRedoOutline = useAppStore((s) => s.outlineRedoStack.length > 0);
 
   return (
-    <View style={{ flexDirection: "row", alignItems: "center" }}>
+    <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "transparent" }}>
       {!editMode && (
         <HeaderIcon
           icon="exit-to-app"
