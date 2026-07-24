@@ -30,6 +30,10 @@ export type ContextMenuItem = {
   dividerBefore?: boolean;
   // Shows a trailing checkmark — used by the selection dropdowns.
   selected?: boolean;
+  // Tints the icon chip with a per-item colour instead of the theme's primary
+  // — used by the zone dropdown so each row carries its zone's colour.
+  // Ignored for `danger` items, which keep the destructive tint.
+  color?: string;
 };
 
 type Props = {
@@ -199,14 +203,15 @@ export function ContextMenu({ visible, onDismiss, anchor, header, items, dropdow
         : danger
           ? palette.danger
           : palette.onSurface;
+      const accent = item.color ?? palette.primary;
       const chipBg = danger
         ? hexToRgba(palette.danger, 0.13)
-        : hexToRgba(palette.primary, 0.12);
+        : hexToRgba(accent, 0.12);
       const chipFg = item.disabled
         ? palette.onSurfaceVariant
         : danger
           ? palette.danger
-          : palette.primary;
+          : accent;
       return (
         <React.Fragment key={idx}>
           {item.dividerBefore && (

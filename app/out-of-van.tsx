@@ -334,6 +334,7 @@ export default function OutOfVanScreen() {
           ...availableZones.map((zone) => ({
             icon: zone.locationIcon,
             label: zone.name,
+            color: zone.color,
             selected: selectedZoneId === zone.id,
             onPress: () => setSelectedZoneId(zone.id),
           })),
