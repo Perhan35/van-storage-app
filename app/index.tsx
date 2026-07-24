@@ -114,10 +114,10 @@ export default function VanMapScreen() {
         !editMode && !overviewMode
           ? () => (
               <IconButton
-                icon="arrow-left"
-                size={24}
+                icon="chevron-left"
+                size={30}
                 iconColor={palette.headerTint}
-                style={{ margin: 0 }}
+                style={{ margin: 0, width: 30, height: 30 }}
                 accessibilityLabel={t("nav.back_to_locations")}
                 onPress={() => setOverviewMode(true)}
               />
