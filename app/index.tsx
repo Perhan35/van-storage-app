@@ -276,9 +276,9 @@ export default function VanMapScreen() {
               <Animated.View style={headerFadeStyle}>
                 <IconButton
                   icon="chevron-left"
-                  size={30}
+                  size={36}
                   iconColor={palette.headerTint}
-                  style={{ margin: 0, width: 30, height: 30 }}
+                  style={{ margin: 0, width: 36, height: 36 }}
                   accessibilityLabel={t("nav.back_to_locations")}
                   onPress={goToOverview}
                 />
@@ -293,13 +293,13 @@ export default function VanMapScreen() {
               // subtitle beneath it.
               <View>
                 <Text
-                  style={{ color: palette.headerTint, fontWeight: "bold", fontSize: 18 }}
+                  style={{ color: palette.headerTint, fontWeight: "bold", fontSize: 22 }}
                   numberOfLines={1}
                 >
                   {t("nav.app_title")}
                 </Text>
                 <Text
-                  style={{ color: palette.headerTint, opacity: 0.8, fontSize: 12 }}
+                  style={{ color: palette.headerTint, opacity: 0.8, fontSize: 14 }}
                   numberOfLines={1}
                 >
                   {t("nav.location_count", { count: locationCount })}
@@ -307,7 +307,7 @@ export default function VanMapScreen() {
               </View>
             ) : editMode ? (
               <Text
-                style={{ color: palette.headerTint, fontWeight: "bold", fontSize: 18 }}
+                style={{ color: palette.headerTint, fontWeight: "bold", fontSize: 22 }}
                 numberOfLines={1}
               >
                 {t("nav.edit_mode")}
@@ -317,13 +317,13 @@ export default function VanMapScreen() {
               // subtitle beneath it.
               <View>
                 <Text
-                  style={{ color: palette.headerTint, fontWeight: "bold", fontSize: 18 }}
+                  style={{ color: palette.headerTint, fontWeight: "bold", fontSize: 22 }}
                   numberOfLines={1}
                 >
                   {t("nav.app_title_named", { name: activeLocation?.name ?? "" })}
                 </Text>
                 <Text
-                  style={{ color: palette.headerTint, opacity: 0.8, fontSize: 12 }}
+                  style={{ color: palette.headerTint, opacity: 0.8, fontSize: 14 }}
                   numberOfLines={1}
                 >
                   {t("nav.zone_count", { count: zones.length })}
