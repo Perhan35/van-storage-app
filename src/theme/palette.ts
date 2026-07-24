@@ -17,6 +17,11 @@ export type Palette = {
   headerTintMuted: string;
   headerDanger: string;
   headerSuccess: string;
+  // The header's other primary actions (out-of-van, search, entering edit
+  // mode) are meant to draw the eye — the opposite intent of headerUtility
+  // below — so these are picked for hue identity, not for receding.
+  headerOutOfVan: string;
+  headerSearch: string;
   // Separate from headerTintMuted: that token means "unavailable right now",
   // this one means "a lower-priority action" (settings) — same icon whether
   // it's usable or not, so it must never look disabled.
@@ -48,6 +53,8 @@ export const lightPalette: Palette = {
   headerTintMuted: "#1F3F63", // 3.22:1
   headerDanger: "#D32F2F", // 1.49:1 — chosen for hue, not contrast
   headerSuccess: "#2E7D32", // 1.53:1 — chosen for hue, not contrast
+  headerOutOfVan: "#DE9509", // 1.34:1 — warm gold, a shade darker than dark mode's
+  headerSearch: "#1898A8", // 1.03:1 — teal, a shade darker than dark mode's
   // Deliberately low-contrast: this icon should recede into the bar rather
   // than compete with the others, so unlike every other header token here it
   // is not pushed toward the 3:1 floor. A darker ink (anthracite, ~3-4:1) reads
@@ -76,6 +83,8 @@ export const darkPalette: Palette = {
   headerTintMuted: "#8CA5BF", // 5.11:1
   headerDanger: "#FF8A80", // 5.69:1
   headerSuccess: "#A5D6A7", // 7.91:1
+  headerOutOfVan: "#F5A623", // 6.41:1 — warm gold
+  headerSearch: "#26C6DA", // 6.30:1 — teal
   headerUtility: "#94A0AB", // 4.88:1 — cool steel-gray, reads as quiet not disabled
   onSurface: "#FFFFFF",
   onSurfaceVariant: "#B0B0B0",
