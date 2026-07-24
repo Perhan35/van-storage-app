@@ -22,6 +22,10 @@ const MAX_RECENT_SEARCHES = 8;
 
 let highlightTimer: ReturnType<typeof setTimeout> | null = null;
 
+// Bumped by every setActiveLocation call so an earlier, slower zone query can't
+// overwrite a later switch's result (see setActiveLocation).
+let activeLocationSeq = 0;
+
 function snapshotGeometry(zones: ZoneWithCount[]): ZoneGeometrySnapshot {
   const snapshot: ZoneGeometrySnapshot = {};
   for (const zone of zones) snapshot[zone.id] = zone.geometry;
@@ -251,10 +255,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   setOverviewMode: (overview) => set({ overviewMode: overview }),
 
   setActiveLocation: async (locationId) => {
-    // Choosing a location always means entering it, so leave the overview.
-    set({ activeLocationId: locationId, overviewMode: false });
+    // Fetch the new location's zones *before* switching. Committing the id
+    // first would render one frame of the new outline against the previous
+    // location's zones (they only arrive when the query resolves) — the map
+    // visibly flashed the old layout before snapping to the right one.
+    const seq = ++activeLocationSeq;
+    const zones = await repo.listZonesWithCounts(locationId);
+    // A newer switch started while this query was in flight (fast taps in the
+    // overview): its result is the one that must win, so drop this one.
+    if (seq !== activeLocationSeq) return;
+    // Location, its zones and leaving the overview land in a single render, so
+    // the first frame of the new map is already the correct one.
+    set({ activeLocationId: locationId, zones, overviewMode: false });
     await setPreference("activeLocationId", locationId);
-    await get().loadZones();
   },
 
   addLocation: async (name, templateId, icon) => {

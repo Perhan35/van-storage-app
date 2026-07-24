@@ -14,7 +14,13 @@ import { useAppTheme } from "../theme/useAppTheme";
 import { Zone, ZoneWithCount, LabelSide } from "../db/database";
 import { Outline, OutlinePoint } from "../db/templates";
 import { useTranslation } from "react-i18next";
-import { DEFAULT_CANVAS_W, DEFAULT_CANVAS_H, ZONE_OVERFLOW_MARGIN, getZoneBounds } from "./layoutConstants";
+import {
+  DEFAULT_CANVAS_W,
+  DEFAULT_CANVAS_H,
+  ZONE_OVERFLOW_MARGIN,
+  ZONES_FIT_PADDING,
+  getZoneBounds,
+} from "./layoutConstants";
 
 const INSCRIPTION_SIDES: LabelSide[] = ["front", "rear", "left", "right"];
 // Read-mode inscription color (unchanged from the original hard-coded labels).
@@ -33,10 +39,6 @@ function sideAnchor(side: LabelSide, canvasW: number, canvasH: number) {
       return { x: canvasW - 12, y: canvasH / 2, rotate: 90 };
   }
 }
-
-// Padding (in SVG units) kept around the zones' bounding box when fitting
-// the default (non-edit) view to them.
-const ZONES_FIT_PADDING = 24;
 
 export type ZoneScreenRect = { left: number; top: number; width: number; height: number };
 
