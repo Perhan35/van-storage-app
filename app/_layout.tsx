@@ -11,6 +11,7 @@ import { paperDarkTheme, paperLightTheme, darkPalette, lightPalette } from "../s
 import { configureNotificationHandler } from "../src/notifications/reminders";
 import { OnboardingTutorial } from "../src/components/OnboardingTutorial";
 import { HeaderIcon } from "../src/components/HeaderIcon";
+import { DiscardEditChangesDialog } from "../src/components/dialogs/DiscardEditChangesDialog";
 import i18n from "../src/i18n";
 
 // expo-notifications warns on import when running in Expo Go (SDK 53+ dropped
@@ -76,7 +77,12 @@ function HeaderRight() {
   const redo = useAppStore((s) => s.redo);
   const canUndo = useAppStore((s) => s.undoStack.length > 0);
   const canRedo = useAppStore((s) => s.redoStack.length > 0);
-  const cancelEditChanges = useAppStore((s) => s.cancelEditChanges);
+  // Leaving an edit session is guarded by a confirmation, and both the ✕ below
+  // and the Android back button (registered on the map screen) go through it.
+  const discardPrompt = useAppStore((s) => s.discardPrompt);
+  const requestDiscard = useAppStore((s) => s.requestDiscard);
+  const dismissDiscard = useAppStore((s) => s.dismissDiscard);
+  const confirmDiscard = useAppStore((s) => s.confirmDiscard);
   // Outline-edit sub-mode has its own history and its own ok/cancel that act
   // only on the outline, returning to zone editing rather than leaving edit
   // mode entirely.
@@ -84,7 +90,6 @@ function HeaderRight() {
   const redoOutline = useAppStore((s) => s.redoOutline);
   const canUndoOutline = useAppStore((s) => s.outlineUndoStack.length > 0);
   const canRedoOutline = useAppStore((s) => s.outlineRedoStack.length > 0);
-  const cancelOutlineEdit = useAppStore((s) => s.cancelOutlineEdit);
 
   return (
     <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -130,13 +135,14 @@ function HeaderRight() {
             accessibilityLabel={t("nav.redo")}
             onPress={outlineEditMode ? redoOutline : redo}
           />
-          {/* In outline-edit, cancel discards only the outline changes and drops
-              back to zone editing; otherwise it reverts the whole session. */}
+          {/* In outline-edit, discard drops only the outline changes and returns
+              to zone editing; otherwise it reverts the whole session. A plain
+              cross, paired with the check that follows: ✕ discards, ✓ keeps. */}
           <HeaderIcon
-            icon="cancel"
+            icon="close"
             tone="danger"
             accessibilityLabel={outlineEditMode ? t("nav.cancel_outline") : t("nav.cancel_edit")}
-            onPress={outlineEditMode ? cancelOutlineEdit : cancelEditChanges}
+            onPress={requestDiscard}
           />
         </>
       )}
@@ -153,6 +159,14 @@ function HeaderRight() {
       {!editMode && (
         <HeaderIcon icon="cog" tone="utility" onPress={() => router.push("/settings")} />
       )}
+
+      {/* Renders through Paper's portal, so it fills the screen rather than
+          being clipped to the header bar it's declared in. */}
+      <DiscardEditChangesDialog
+        prompt={discardPrompt}
+        onDismiss={dismissDiscard}
+        onConfirm={confirmDiscard}
+      />
     </View>
   );
 }
