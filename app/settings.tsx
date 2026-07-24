@@ -371,7 +371,7 @@ export default function SettingsScreen() {
           mode="text"
           icon="clipboard-list-outline"
           onPress={() => setChangeoverVisible(true)}
-          style={styles.button}
+          style={[styles.button, { marginTop: 16 }]}
         >
           {t("settings.season_reopen")}
         </Button>
