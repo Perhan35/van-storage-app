@@ -10,6 +10,11 @@ export const DEFAULT_CANVAS_H = 300;
 // zones can spill over the edges or sit entirely outside (e.g. roof rack).
 export const ZONE_OVERFLOW_MARGIN = 80;
 
+// Padding (in SVG units) kept around the content's bounding box when fitting
+// the default (non-edit) map view to it. Shared so the overview -> location
+// transition can predict how large the plan will be drawn once it lands.
+export const ZONES_FIT_PADDING = 24;
+
 // A zone's allowed x/y/w/h range for a canvas of the given size, including
 // the overflow margin on every side.
 export function getZoneBounds(canvasW: number, canvasH: number) {

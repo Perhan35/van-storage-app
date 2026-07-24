@@ -18,6 +18,21 @@ import {
   DIVE_OUT_EASING,
 } from "../src/components/ZoomableContainer";
 import { LocationsOverview } from "../src/components/LocationsOverview";
+import {
+  Rect,
+  locationFlightStart,
+  LOCATION_ENTER_DURATION,
+  LOCATION_ENTER_EASING,
+  LOCATION_EXIT_DURATION,
+  LOCATION_EXIT_EASING,
+  GRID_RECEDE_SCALE,
+  GRID_RETURN_SCALE,
+  GRID_FADE_DURATION,
+  GRID_FADE_EASING,
+  MAP_EXIT_SCALE,
+  HEADER_FADE_DURATION,
+  HEADER_FADE_EASING,
+} from "../src/components/locationTransition";
 import { useAppStore } from "../src/store/useAppStore";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
@@ -81,6 +96,148 @@ export default function VanMapScreen() {
   const diveOpacity = useSharedValue(0);
   const diveOverlayStyle = useAnimatedStyle(() => ({ opacity: diveOpacity.value }));
 
+  // --- Overview <-> location flight (see locationTransition.ts) ---
+  // Both layers stay mounted while one is running; `transition` says which is
+  // moving, and null means "resting", when only one of them exists.
+  const [transition, setTransition] = useState<"enter" | "exit" | null>(null);
+  const containerRef = useRef<View>(null);
+  const containerRect = useRef<Rect | null>(null);
+  const transitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const mapScale = useSharedValue(1);
+  const mapX = useSharedValue(0);
+  const mapY = useSharedValue(0);
+  const mapOpacity = useSharedValue(1);
+  const gridScale = useSharedValue(1);
+  const gridOpacity = useSharedValue(1);
+  // Vanishing point of the grid's recede, relative to the container center: the
+  // tapped tile. Tiles beside your finger barely move while distant ones sweep
+  // outward, so the grid reads as a plane you fly through, not one that resizes.
+  const gridOriginX = useSharedValue(0);
+  const gridOriginY = useSharedValue(0);
+
+  const mapFlightStyle = useAnimatedStyle(() => ({
+    opacity: mapOpacity.value,
+    transform: [
+      { translateX: mapX.value },
+      { translateY: mapY.value },
+      { scale: mapScale.value },
+    ],
+  }));
+
+  // Scale about the tapped tile rather than the layer's own center: shift the
+  // origin there, scale, shift back.
+  const gridFlightStyle = useAnimatedStyle(() => ({
+    opacity: gridOpacity.value,
+    transform: [
+      { translateX: gridOriginX.value },
+      { translateY: gridOriginY.value },
+      { scale: gridScale.value },
+      { translateX: -gridOriginX.value },
+      { translateY: -gridOriginY.value },
+    ],
+  }));
+
+  // Both layers return to their resting values whenever nothing is running.
+  // An effect (rather than the animation's completion callback) because it
+  // fires after the commit that unmounts the outgoing layer — so resetting the
+  // map's opacity here can't flash it back into view, and the map can never be
+  // left stranded faded out the way the old fade transition sometimes was.
+  useEffect(() => {
+    if (transition !== null) return;
+    mapScale.value = 1;
+    mapX.value = 0;
+    mapY.value = 0;
+    mapOpacity.value = 1;
+    gridScale.value = 1;
+    gridOpacity.value = 1;
+    gridOriginX.value = 0;
+    gridOriginY.value = 0;
+  }, [transition]);
+
+  // Ending on a timer rather than on the animation finishing: a completion
+  // callback that never fires (an interrupted animation) would strand both
+  // layers non-interactive, and this screen has been bitten by that before.
+  const armTransitionEnd = useCallback((duration: number) => {
+    if (transitionTimer.current) clearTimeout(transitionTimer.current);
+    transitionTimer.current = setTimeout(() => {
+      transitionTimer.current = null;
+      setTransition(null);
+    }, duration + 40);
+  }, []);
+
+  // --- Header title handoff ---
+  // The title lags `overviewMode` so its text can change at the bottom of the
+  // dip, while it's invisible, instead of cutting mid-flight. Everything in the
+  // header reads this rather than the store value.
+  const [titleOverview, setTitleOverview] = useState(overviewMode);
+  const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const headerOpacity = useSharedValue(1);
+  const headerFadeStyle = useAnimatedStyle(() => ({ opacity: headerOpacity.value }));
+
+  const beginTitleSwap = useCallback((toOverview: boolean) => {
+    if (titleTimer.current) clearTimeout(titleTimer.current);
+    const config = { duration: HEADER_FADE_DURATION, easing: HEADER_FADE_EASING };
+    headerOpacity.value = withTiming(0, config);
+    titleTimer.current = setTimeout(() => {
+      titleTimer.current = null;
+      setTitleOverview(toOverview);
+    }, HEADER_FADE_DURATION);
+  }, []);
+
+  // Fading back in is driven off the committed title, so it starts once the new
+  // text is actually on screen — never while the old one is still rendered.
+  useEffect(() => {
+    headerOpacity.value = withTiming(1, {
+      duration: HEADER_FADE_DURATION,
+      easing: HEADER_FADE_EASING,
+    });
+  }, [titleOverview]);
+
+  // Locations can also be opened without a flight (the overview's "edit
+  // outline" menu item, creating one, startup). Nothing dips the title there,
+  // so catch up to the store as soon as nothing is moving.
+  useEffect(() => {
+    if (transition === null && titleOverview !== overviewMode) {
+      setTitleOverview(overviewMode);
+    }
+  }, [transition, overviewMode, titleOverview]);
+
+  useEffect(
+    () => () => {
+      if (transitionTimer.current) clearTimeout(transitionTimer.current);
+      if (titleTimer.current) clearTimeout(titleTimer.current);
+    },
+    []
+  );
+
+  const handleContainerLayout = useCallback(() => {
+    containerRef.current?.measureInWindow((x, y, width, height) => {
+      containerRect.current = { x, y, width, height };
+    });
+  }, []);
+
+  // Leaving isn't the entry played backwards: opening a location is a
+  // deliberate act, closing one is a dismissal. The map falls away as the grid
+  // rises to meet it, quickly, with no particular tile to aim at.
+  const goToOverview = useCallback(() => {
+    if (overviewMode || editMode) return;
+    gridScale.value = GRID_RETURN_SCALE;
+    gridOpacity.value = 0;
+    gridOriginX.value = 0;
+    gridOriginY.value = 0;
+    setTransition("exit");
+    setOverviewMode(true);
+    beginTitleSwap(true);
+
+    const config = { duration: LOCATION_EXIT_DURATION, easing: LOCATION_EXIT_EASING };
+    mapScale.value = withTiming(MAP_EXIT_SCALE, config);
+    mapOpacity.value = withTiming(0, config);
+    gridScale.value = withTiming(1, config);
+    gridOpacity.value = withTiming(1, config);
+    armTransitionEnd(LOCATION_EXIT_DURATION);
+  }, [overviewMode, editMode, setOverviewMode, armTransitionEnd, beginTitleSwap]);
+
   // Reverses the "dive into zone" effect when returning to this screen (e.g.
   // navigating back from the zone screen). Executed on screen focus so the
   // color overlay smoothly fades back to transparent and zoom is reset.
@@ -100,91 +257,143 @@ export default function VanMapScreen() {
   );
 
   const handleTitlePress = () => {
-    if (editMode || overviewMode) return;
-    setOverviewMode(true);
+    goToOverview();
   };
 
   // Header title is screen-controlled (rather than a static Stack.Screen
   // option) so it can show the active location's name and react to it —
   // expo-router lets a focused screen override its own header via
   // navigation.setOptions.
+  //
+  // Both pieces read `titleOverview` rather than the store's `overviewMode`, so
+  // they change together at the bottom of the dip while the layers are flying.
   useEffect(() => {
     navigation.setOptions({
       headerLeft:
-        !editMode && !overviewMode
+        !editMode && !titleOverview
           ? () => (
-              <IconButton
-                icon="chevron-left"
-                size={30}
-                iconColor={palette.headerTint}
-                style={{ margin: 0, width: 30, height: 30 }}
-                accessibilityLabel={t("nav.back_to_locations")}
-                onPress={() => setOverviewMode(true)}
-              />
+              <Animated.View style={headerFadeStyle}>
+                <IconButton
+                  icon="chevron-left"
+                  size={30}
+                  iconColor={palette.headerTint}
+                  style={{ margin: 0, width: 30, height: 30 }}
+                  accessibilityLabel={t("nav.back_to_locations")}
+                  onPress={goToOverview}
+                />
+              </Animated.View>
             )
           : undefined,
       headerTitle: () => (
-        <Pressable onPress={handleTitlePress} disabled={editMode || overviewMode}>
-          {!editMode && overviewMode ? (
-            // All-locations overview: app name as the title, "Locations" as a
-            // subtitle beneath it.
-            <View>
+        <Animated.View style={headerFadeStyle}>
+          <Pressable onPress={handleTitlePress} disabled={editMode || titleOverview}>
+            {!editMode && titleOverview ? (
+              // All-locations overview: app name as the title, "Locations" as a
+              // subtitle beneath it.
+              <View>
+                <Text
+                  style={{ color: palette.headerTint, fontWeight: "bold", fontSize: 18 }}
+                  numberOfLines={1}
+                >
+                  {t("nav.app_title")}
+                </Text>
+                <Text
+                  style={{ color: palette.headerTint, opacity: 0.8, fontSize: 12 }}
+                  numberOfLines={1}
+                >
+                  {t("nav.location_count", { count: locationCount })}
+                </Text>
+              </View>
+            ) : editMode ? (
               <Text
                 style={{ color: palette.headerTint, fontWeight: "bold", fontSize: 18 }}
                 numberOfLines={1}
               >
-                {t("nav.app_title")}
+                {t("nav.edit_mode")}
               </Text>
-              <Text
-                style={{ color: palette.headerTint, opacity: 0.8, fontSize: 12 }}
-                numberOfLines={1}
-              >
-                {t("nav.location_count", { count: locationCount })}
-              </Text>
-            </View>
-          ) : editMode ? (
-            <Text
-              style={{ color: palette.headerTint, fontWeight: "bold", fontSize: 18 }}
-              numberOfLines={1}
-            >
-              {t("nav.edit_mode")}
-            </Text>
-          ) : (
-            // Single location: location name as the title, zone count as a
-            // subtitle beneath it.
-            <View>
-              <Text
-                style={{ color: palette.headerTint, fontWeight: "bold", fontSize: 18 }}
-                numberOfLines={1}
-              >
-                {t("nav.app_title_named", { name: activeLocation?.name ?? "" })}
-              </Text>
-              <Text
-                style={{ color: palette.headerTint, opacity: 0.8, fontSize: 12 }}
-                numberOfLines={1}
-              >
-                {t("nav.zone_count", { count: zones.length })}
-              </Text>
-            </View>
-          )}
-        </Pressable>
+            ) : (
+              // Single location: location name as the title, zone count as a
+              // subtitle beneath it.
+              <View>
+                <Text
+                  style={{ color: palette.headerTint, fontWeight: "bold", fontSize: 18 }}
+                  numberOfLines={1}
+                >
+                  {t("nav.app_title_named", { name: activeLocation?.name ?? "" })}
+                </Text>
+                <Text
+                  style={{ color: palette.headerTint, opacity: 0.8, fontSize: 12 }}
+                  numberOfLines={1}
+                >
+                  {t("nav.zone_count", { count: zones.length })}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+        </Animated.View>
       ),
     });
   }, [
     navigation,
     editMode,
-    overviewMode,
+    titleOverview,
     activeLocation?.name,
     zones.length,
     locationCount,
     palette.headerTint,
+    headerFadeStyle,
     t,
-    setOverviewMode,
+    goToOverview,
   ]);
 
-  const handleSelectLocation = (locationId: string) => {
-    // setActiveLocation also clears overviewMode in the store.
-    setActiveLocation(locationId);
+  // Opening a location: the map is placed on the tapped tile at the size the
+  // plan is drawn there, then flown up to full screen — the tile and the map
+  // are the same drawing, so this is a change of distance, not of screen.
+  const handleSelectLocation = async (locationId: string, planRect: Rect | null) => {
+    const outline = useAppStore.getState().locations.find((l) => l.id === locationId)?.outline;
+    const start =
+      planRect && containerRect.current && outline
+        ? locationFlightStart(planRect, containerRect.current, outline)
+        : null;
+
+    if (!start) {
+      // Nothing measured to fly from: open it the plain way.
+      await setActiveLocation(locationId);
+      return;
+    }
+
+    // Seeded before the map layer mounts, so its very first frame already sits
+    // on the tile instead of appearing full-screen for a frame.
+    mapScale.value = start.scale;
+    mapX.value = start.x;
+    mapY.value = start.y;
+    mapOpacity.value = 1;
+    gridScale.value = 1;
+    gridOpacity.value = 1;
+    gridOriginX.value = start.x;
+    gridOriginY.value = start.y;
+    setTransition("enter");
+    beginTitleSwap(false);
+    // Covers the store call below failing outright: the flight would never
+    // start, and the layers must not be left stuck mid-transition.
+    armTransitionEnd(2000);
+
+    // Awaited: the map has to mount with the new location's zones already in
+    // place, or the flight would carry the previous location's layout up.
+    await setActiveLocation(locationId);
+
+    const config = { duration: LOCATION_ENTER_DURATION, easing: LOCATION_ENTER_EASING };
+    mapScale.value = withTiming(1, config);
+    mapX.value = withTiming(0, config);
+    mapY.value = withTiming(0, config);
+    gridScale.value = withTiming(GRID_RECEDE_SCALE, config);
+    // Clears out ahead of the map landing, so the last stretch of the flight is
+    // over an empty background rather than a still-visible grid.
+    gridOpacity.value = withTiming(0, {
+      duration: GRID_FADE_DURATION,
+      easing: GRID_FADE_EASING,
+    });
+    armTransitionEnd(LOCATION_ENTER_DURATION);
   };
 
   const handleCreateLocation = async (name: string, templateId: string, icon: string) => {
@@ -295,28 +504,41 @@ export default function VanMapScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: palette.background }]}>
-      {!overviewMode ? (
-        // Plain instant swap — no entering/exiting layout animation. The fade
-        // animation occasionally failed to settle, leaving the map stuck dim
-        // ("greyed-out") and/or the ZoomableContainer measured before it was
-        // laid out; swapping instantly guarantees full opacity and a correct
-        // fit every time a location opens (#B, and keeps #6 fixed).
-        <View style={StyleSheet.absoluteFill}>
+    <View
+      ref={containerRef}
+      onLayout={handleContainerLayout}
+      style={[styles.container, { backgroundColor: palette.background }]}
+    >
+      {/* Both layers are mounted together only while a flight is running. The
+          grid is rendered first so the map sits above it: on the way in the map
+          grows out of the tile it's covering, on the way out it dissolves off
+          the top. Only transforms are animated on the map layer, so it stays
+          laid out at full size — the ZoomableContainer measures itself
+          correctly whatever the flight is doing (keeps #6 and #B fixed). */}
+      {(overviewMode || transition === "enter") && (
+        <Animated.View
+          style={[StyleSheet.absoluteFill, gridFlightStyle]}
+          pointerEvents={transition === null ? "auto" : "none"}
+        >
+          <LocationsOverview
+            onSelectLocation={handleSelectLocation}
+            onCreateNew={() => setAddLocationVisible(true)}
+          />
+        </Animated.View>
+      )}
+
+      {(!overviewMode || transition === "exit") && (
+        <Animated.View
+          style={[StyleSheet.absoluteFill, mapFlightStyle]}
+          pointerEvents={transition === null ? "auto" : "none"}
+        >
           {/* One-finger pan works in edit mode too now that moving a zone requires
               a press-and-hold to pick it up first (the canvas stands down while a
               zone is grabbed). */}
           <ZoomableContainer ref={zoomRef} panMinPointers={1}>
             <VanLayoutSVG onZonePress={handleZonePress} onEditInscription={setEditingSide} />
           </ZoomableContainer>
-        </View>
-      ) : (
-        <View style={StyleSheet.absoluteFill}>
-          <LocationsOverview
-            onSelectLocation={handleSelectLocation}
-            onCreateNew={() => setAddLocationVisible(true)}
-          />
-        </View>
+        </Animated.View>
       )}
 
       <Animated.View

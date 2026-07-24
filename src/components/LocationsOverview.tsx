@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, Pressable, StyleSheet, ScrollView, Alert, GestureResponderEvent } from "react-native";
-import Svg, { Rect } from "react-native-svg";
+import Svg, { Rect as SvgRect } from "react-native-svg";
 import { Text, IconButton, Icon } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../store/useAppStore";
@@ -8,11 +8,15 @@ import { LocationOutline } from "./LocationOutline";
 import { RenameLocationDialog } from "./dialogs/RenameLocationDialog";
 import { ContextMenu } from "./ContextMenu";
 import { useAppTheme } from "../theme/useAppTheme";
+import { Rect } from "./locationTransition";
 import * as repo from "../db/repository";
 import { ZoneWithCount, Location } from "../db/database";
 
 type Props = {
-  onSelectLocation: (locationId: string) => void;
+  // `planRect` is the on-screen box of the tile's miniature plan, in window
+  // coordinates — the map screen grows out of it. Null when it couldn't be
+  // measured, which the caller treats as "open without the transition".
+  onSelectLocation: (locationId: string, planRect: Rect | null) => void;
   onCreateNew: () => void;
 };
 
@@ -43,6 +47,21 @@ export function LocationsOverview({ onSelectLocation, onCreateNew }: Props) {
       cancelled = true;
     };
   }, [locations]);
+
+  // The plan box inside each tile, measured on tap so the map screen knows
+  // where to grow from.
+  const planRefs = useRef<Record<string, View | null>>({});
+
+  const handleTilePress = (locationId: string) => {
+    const node = planRefs.current[locationId];
+    if (!node) {
+      onSelectLocation(locationId, null);
+      return;
+    }
+    node.measureInWindow((x, y, width, height) => {
+      onSelectLocation(locationId, width > 0 && height > 0 ? { x, y, width, height } : null);
+    });
+  };
 
   const openMenu = (location: Location, e: GestureResponderEvent) => {
     // pageX/pageY can be absent on some platforms; fall back to the top-left.
@@ -92,29 +111,37 @@ export function LocationsOverview({ onSelectLocation, onCreateNew }: Props) {
       {locations.map((loc) => (
         <Pressable
           key={loc.id}
-          onPress={() => onSelectLocation(loc.id)}
+          onPress={() => handleTilePress(loc.id)}
           onLongPress={(e) => openMenu(loc, e)}
           style={[styles.tile, { backgroundColor: palette.surface, borderColor: palette.divider }]}
         >
-          <Svg
-            viewBox={`0 0 ${loc.outline.w} ${loc.outline.h}`}
-            style={styles.tileSvg}
+          <View
+            ref={(node) => {
+              planRefs.current[loc.id] = node;
+            }}
+            collapsable={false}
+            style={styles.tilePlan}
           >
-            <LocationOutline outline={loc.outline} />
-            {(zonesByLocation[loc.id] ?? []).map((zone) => (
-              <Rect
-                key={zone.id}
-                x={zone.geometry.x}
-                y={zone.geometry.y}
-                width={zone.geometry.w}
-                height={zone.geometry.h}
-                rx={6}
-                ry={6}
-                fill={zone.color || "#78909C"}
-                opacity={zone.fill_opacity ?? 0.4}
-              />
-            ))}
-          </Svg>
+            <Svg
+              viewBox={`0 0 ${loc.outline.w} ${loc.outline.h}`}
+              style={styles.tileSvg}
+            >
+              <LocationOutline outline={loc.outline} />
+              {(zonesByLocation[loc.id] ?? []).map((zone) => (
+                <SvgRect
+                  key={zone.id}
+                  x={zone.geometry.x}
+                  y={zone.geometry.y}
+                  width={zone.geometry.w}
+                  height={zone.geometry.h}
+                  rx={6}
+                  ry={6}
+                  fill={zone.color || "#78909C"}
+                  opacity={zone.fill_opacity ?? 0.4}
+                />
+              ))}
+            </Svg>
+          </View>
           <View style={styles.tileLabelRow}>
             <Icon source={loc.icon} size={16} color={palette.onSurfaceVariant} />
             <Text
@@ -208,8 +235,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  tileSvg: {
+  tilePlan: {
     width: "100%",
+    flex: 1,
+  },
+  tileSvg: {
     flex: 1,
   },
   tileLabelRow: {
