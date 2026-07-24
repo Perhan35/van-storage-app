@@ -7,7 +7,16 @@ export type Palette = {
   surface: string;
   surfaceVariant: string;
   headerBackground: string;
+  // Header icons/text form a four-state scale, all measured against
+  // headerBackground: headerTint (active) > headerSuccess/headerDanger
+  // (semantic actions) > headerTintMuted (disabled). Every step clears WCAG's
+  // 3:1 floor for non-text, and the drop from tint to muted stays wide enough
+  // to read as "unavailable" rather than "a different color". The bar itself is
+  // deep in both themes because that headroom is what makes the scale possible.
   headerTint: string;
+  headerTintMuted: string;
+  headerDanger: string;
+  headerSuccess: string;
   onSurface: string;
   onSurfaceVariant: string;
   divider: string;
@@ -27,6 +36,9 @@ export const lightPalette: Palette = {
   surfaceVariant: "#EEEEEE",
   headerBackground: "#4A90D9",
   headerTint: "#FFFFFF",
+  headerTintMuted: "#B5CBE0", // 3.85:1
+  headerDanger: "#FFA9A1", // 3.50:1
+  headerSuccess: "#B7E1B9", // 4.43:1
   onSurface: "#000000",
   onSurfaceVariant: "#757575",
   divider: "#E0E0E0",
@@ -44,8 +56,11 @@ export const darkPalette: Palette = {
   background: "#121212",
   surface: "#1E1E1E",
   surfaceVariant: "#2A2A2A",
-  headerBackground: "#1F4A73",
+  headerBackground: "#15334E", // 13.00:1 against headerTint
   headerTint: "#FFFFFF",
+  headerTintMuted: "#8CA5BF", // 5.11:1
+  headerDanger: "#FF8A80", // 5.69:1
+  headerSuccess: "#A5D6A7", // 7.91:1
   onSurface: "#FFFFFF",
   onSurfaceVariant: "#B0B0B0",
   divider: "#2F2F2F",
