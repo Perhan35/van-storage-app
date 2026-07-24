@@ -217,12 +217,13 @@ export function LocationsOverview({ onSelectLocation, onCreateNew }: Props) {
   );
 }
 
-const TILE_SIZE = 150;
+const TILE_SIZE = 168;
 
 const styles = StyleSheet.create({
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
+    justifyContent: "center",
     padding: 16,
     gap: 16,
   },
