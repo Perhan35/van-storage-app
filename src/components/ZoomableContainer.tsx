@@ -54,11 +54,10 @@ const PAN_MARGIN = 32;
 // Durations for the programmatic dive-in / dive-out animations. Callers that
 // coordinate a screen transition around the dive (e.g. overlapping it with a
 // navigation fade) can import DIVE_IN_DURATION to stay in sync.
-export const DIVE_IN_DURATION = 340;
-export const DIVE_OUT_DURATION = 300;
-// Eased both in and out so the dive accelerates gently then settles instead
-// of snapping to a stop, which is what made the first pass feel abrupt.
+export const DIVE_IN_DURATION = 300;
+export const DIVE_OUT_DURATION = 180;
 export const DIVE_EASING = Easing.inOut(Easing.cubic);
+export const DIVE_OUT_EASING = Easing.out(Easing.quad);
 
 // Live pinch-zoom level, so descendants (e.g. zone edit gesture math) can
 // convert screen-pixel deltas to content-space units as the user zooms.
@@ -260,7 +259,7 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
     },
     resetZoom() {
       animating.value = true;
-      const timingConfig = { duration: DIVE_OUT_DURATION, easing: DIVE_EASING };
+      const timingConfig = { duration: DIVE_OUT_DURATION, easing: DIVE_OUT_EASING };
       scale.value = withTiming(1, timingConfig);
       baseTranslateX.value = withTiming(0, timingConfig);
       baseTranslateY.value = withTiming(0, timingConfig, (finished) => {
