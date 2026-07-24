@@ -79,15 +79,32 @@ export default function OutOfVanScreen() {
   );
 
   // Title reflects scope: the single location's name when opened from within
-  // it, or the generic label when opened from the all-locations overview.
+  // it, or the generic label when opened from the all-locations overview. The
+  // count of what's out rides beneath it as a subtitle, the same title/subtitle
+  // pairing the map screen uses.
   useEffect(() => {
     const activeLocationName = locations.find((l) => l.id === activeLocationId)?.name ?? "";
     navigation.setOptions({
-      title: isGlobalView
-        ? t("nav.out_of_van")
-        : t("nav.out_of_van_named", { name: activeLocationName }),
+      headerTitle: () => (
+        <View style={styles.headerTitle}>
+          <Text
+            style={{ color: palette.headerTint, fontWeight: "bold", fontSize: 18 }}
+            numberOfLines={1}
+          >
+            {isGlobalView
+              ? t("nav.out_of_van")
+              : t("nav.out_of_van_named", { name: activeLocationName })}
+          </Text>
+          <Text
+            style={{ color: palette.headerTint, opacity: 0.8, fontSize: 12 }}
+            numberOfLines={1}
+          >
+            {t("nav.item_count", { count: items.length })}
+          </Text>
+        </View>
+      ),
     });
-  }, [navigation, isGlobalView, activeLocationId, locations, t]);
+  }, [navigation, isGlobalView, activeLocationId, locations, items.length, palette.headerTint, t]);
 
   const availableLocations = useMemo(() => {
     const seen = new Map<string, { id: string; name: string; icon: string }>();
@@ -184,16 +201,6 @@ export default function OutOfVanScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: palette.surface }]}>
-      <View style={[styles.header, { backgroundColor: palette.warningSurface }]}>
-        <Text variant="bodyMedium" style={{ color: palette.warningOn }}>
-          {t(
-            items.length === 1
-              ? "out.currently_out_one"
-              : "out.currently_out_other",
-            { count: items.length }
-          )}
-        </Text>
-      </View>
       {(availableZones.length > 0 || (isGlobalView && availableLocations.length > 0)) && (
         <View style={[styles.filterRow, styles.filterRowInline]}>
           {isGlobalView && availableLocations.length > 0 && (
@@ -338,7 +345,8 @@ export default function OutOfVanScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { padding: 16 },
+  // Subtitle sits centred under the title rather than flush left with it.
+  headerTitle: { alignItems: "center" },
   emptyContainer: { padding: 32, alignItems: "center" },
   filterRow: { paddingHorizontal: 16, paddingTop: 12, alignItems: "flex-start" },
   filterRowInline: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
