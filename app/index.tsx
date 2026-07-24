@@ -247,17 +247,18 @@ export default function VanMapScreen() {
         ? lastFlight.current.start
         : null;
 
-    setTransition("exit");
-    setOverviewMode(true);
-    beginTitleSwap(true);
-
     if (back) {
       // The grid starts where the entry left it — receded, invisible, about the
-      // same vanishing point — and comes back from there.
+      // same vanishing point — and comes back from there. Set before the state
+      // change that mounts it, so its first frame is never the resting state.
       gridScale.value = GRID_RECEDE_SCALE;
       gridOpacity.value = 0;
       gridOriginX.value = back.x;
       gridOriginY.value = back.y;
+
+      setTransition("exit");
+      setOverviewMode(true);
+      beginTitleSwap(true);
 
       const config = {
         duration: LOCATION_RETURN_DURATION,
@@ -280,6 +281,10 @@ export default function VanMapScreen() {
     gridOpacity.value = 0;
     gridOriginX.value = 0;
     gridOriginY.value = 0;
+
+    setTransition("exit");
+    setOverviewMode(true);
+    beginTitleSwap(true);
 
     const config = { duration: LOCATION_EXIT_DURATION, easing: LOCATION_EXIT_EASING };
     mapScale.value = withTiming(MAP_EXIT_SCALE, config);
