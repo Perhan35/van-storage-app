@@ -17,6 +17,14 @@ export type Palette = {
   headerTintMuted: string;
   headerDanger: string;
   headerSuccess: string;
+  // Undo/redo's own available/unavailable pair, separate from headerTint —
+  // that token also colors the header's title text and back button via
+  // navigation's headerTintColor, so repainting it to signal "available" was
+  // repainting the whole header. Dark mode already reads fine with the shared
+  // tokens (a light bar gives it a wide enough scale), so these only diverge
+  // from headerTint/headerTintMuted in light mode.
+  headerActionTint: string;
+  headerActionTintMuted: string;
   // The header's other primary actions (out-of-van, search, entering edit
   // mode) are meant to draw the eye — the opposite intent of headerUtility
   // below — so these are picked for hue identity, not for receding.
@@ -51,6 +59,8 @@ export const lightPalette: Palette = {
   headerBackground: "#4A90D9",
   headerTint: "#FFFFFF", // 3.34:1
   headerTintMuted: "#1F3F63", // 3.22:1
+  headerActionTint: "#463b0f", // 3.00:1 — warm cream, reads as a color, not white
+  headerActionTintMuted: "#C0C0C0", // 1.84:1 — neutral light gray, quieter than headerActionTint
   headerDanger: "#D32F2F", // 1.49:1 — chosen for hue, not contrast
   headerSuccess: "#2E7D32", // 1.53:1 — chosen for hue, not contrast
   headerOutOfVan: "#DE9509", // 1.34:1 — warm gold, a shade darker than dark mode's
@@ -81,6 +91,8 @@ export const darkPalette: Palette = {
   headerBackground: "#15334E", // 13.00:1 against headerTint
   headerTint: "#FFFFFF",
   headerTintMuted: "#8CA5BF", // 5.11:1
+  headerActionTint: "#FFFFFF", // same as headerTint — dark mode's white already reads as available
+  headerActionTintMuted: "#8CA5BF", // same as headerTintMuted — already reads as unavailable
   headerDanger: "#FF8A80", // 5.69:1
   headerSuccess: "#A5D6A7", // 7.91:1
   headerOutOfVan: "#F5A623", // 6.41:1 — warm gold
