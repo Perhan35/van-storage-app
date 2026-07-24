@@ -3,6 +3,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   forwardRef,
   useImperativeHandle,
 } from "react";
@@ -327,6 +328,37 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
     [pinch, pan, doubleTap]
   );
 
+  // Claims the transform for a programmatic run and returns its generation, so
+  // the timing callback can tell whether it's still the current one.
+  //
+  // The release is armed here on a JS timer as well as on that callback,
+  // because the callback is not guaranteed to run at all: a shared value
+  // written directly (a gesture worklet in the same frame the animation is
+  // started — a finger still down as the screen regains focus) *cancels* the
+  // animation rather than finishing it, and a cancelled animation never calls
+  // back. `animating` would then stay true forever and every gesture would
+  // stand down for the rest of the screen's life — no zoom, no pan, no
+  // double-tap. Nothing on the UI thread can cancel this timer.
+  const releaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const beginAnimation = (duration: number) => {
+    animating.value = true;
+    animGen.value += 1;
+    const gen = animGen.value;
+    if (releaseTimer.current) clearTimeout(releaseTimer.current);
+    releaseTimer.current = setTimeout(() => {
+      releaseTimer.current = null;
+      if (animGen.value === gen) animating.value = false;
+    }, duration + 60);
+    return gen;
+  };
+
+  useEffect(
+    () => () => {
+      if (releaseTimer.current) clearTimeout(releaseTimer.current);
+    },
+    []
+  );
+
   useImperativeHandle(ref, () => ({
     zoomToRect(rect) {
       const cw = containerWidth.value;
@@ -341,9 +373,7 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
       const targetTranslateX = -zoneCenterRelX * targetScale;
       const targetTranslateY = -zoneCenterRelY * targetScale;
 
-      animating.value = true;
-      animGen.value += 1;
-      const gen = animGen.value;
+      const gen = beginAnimation(DIVE_IN_DURATION);
 
       // Raw is set to the *final* target immediately, not animated: gesture
       // math is a no-op for the whole animation (gated by `animating`), so
@@ -364,9 +394,7 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
       return true;
     },
     resetZoom() {
-      animating.value = true;
-      animGen.value += 1;
-      const gen = animGen.value;
+      const gen = beginAnimation(DIVE_OUT_DURATION);
 
       rawTranslateX.value = 0;
       rawTranslateY.value = 0;

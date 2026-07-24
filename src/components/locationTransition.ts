@@ -28,7 +28,20 @@ export const GRID_RECEDE_SCALE = 1.12;
 export const GRID_FADE_DURATION = Math.round(LOCATION_ENTER_DURATION * 0.55);
 export const GRID_FADE_EASING = Easing.out(Easing.quad);
 
-// Coming back: the map falls away as the grid rises to meet it.
+// Coming back is the flight played backwards: the map shrinks back down onto
+// the tile it came from while the grid falls back in around it. Same duration
+// and mirrored easing, so the two directions retrace the same path.
+export const LOCATION_RETURN_DURATION = LOCATION_ENTER_DURATION;
+// Time-reverse of LOCATION_ENTER_EASING: cubic-bezier(x1,y1,x2,y2) reversed is
+// cubic-bezier(1-x2, 1-y2, 1-x1, 1-y1).
+export const LOCATION_RETURN_EASING = Easing.bezier(0.8, 0, 0.8, 0.1);
+// The grid faded out over the first stretch of the flight, so on the way back
+// it fades in over the last stretch — hence the delay.
+export const GRID_RETURN_FADE_DELAY = LOCATION_RETURN_DURATION - GRID_FADE_DURATION;
+export const GRID_RETURN_FADE_EASING = Easing.in(Easing.quad);
+
+// Fallback dismissal, used only when there's no tile to aim at (the location
+// was opened without a flight): the map falls away as the grid rises to meet it.
 export const GRID_RETURN_SCALE = 0.96;
 export const MAP_EXIT_SCALE = 0.92;
 
