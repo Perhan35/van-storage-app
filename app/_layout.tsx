@@ -236,10 +236,9 @@ export default function RootLayout() {
             options={{
               title: t("nav.zone"),
               animation: "fade",
-              // Default fade duration (500ms, iOS-only) reads as sluggish next
-              // to the map's own dive-in animation — shortened so the two
-              // blend into one continuous motion instead of two visible steps.
-              animationDuration: 320,
+              // Shortened fade duration (200ms) to blend seamlessly with the map's
+              // fast de-zoom animation on return.
+              animationDuration: 200,
             }}
           />
           <Stack.Screen

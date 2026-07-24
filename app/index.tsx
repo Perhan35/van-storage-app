@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { View, StyleSheet, Pressable } from "react-native";
-import { useRouter, useNavigation } from "expo-router";
+import { useRouter, useNavigation, useFocusEffect } from "expo-router";
 import { FAB, Text, Button, IconButton } from "react-native-paper";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  runOnJS,
 } from "react-native-reanimated";
 import { VanLayoutSVG, ZoneScreenRect } from "../src/components/VanLayoutSVG";
 import {
@@ -14,6 +15,7 @@ import {
   DIVE_IN_DURATION,
   DIVE_OUT_DURATION,
   DIVE_EASING,
+  DIVE_OUT_EASING,
 } from "../src/components/ZoomableContainer";
 import { LocationsOverview } from "../src/components/LocationsOverview";
 import { useAppStore } from "../src/store/useAppStore";
@@ -79,25 +81,23 @@ export default function VanMapScreen() {
   const diveOpacity = useSharedValue(0);
   const diveOverlayStyle = useAnimatedStyle(() => ({ opacity: diveOpacity.value }));
 
-  // Reverses the "dive into zone" effect as soon as this screen starts being
-  // revealed by a pop (e.g. navigating back from the zone screen). Native
-  // stack fires `transitionStart` at the very beginning of that transition —
-  // via the underlying willAppear/willDisappear callbacks — well before the
-  // JS navigation state finishes syncing. Focus-based state (useFocusEffect)
-  // only settles *after* interactive (swipe) pops finish animating, which
-  // left the map visibly stuck zoomed in for the whole pop before dezooming;
-  // this fires in sync with the pop instead, so the two motions overlap.
-  useEffect(() => {
-    const unsubscribe = (navigation as any).addListener(
-      "transitionStart",
-      (e: { data: { closing: boolean } }) => {
-        if (e.data.closing) return;
-        zoomRef.current?.resetZoom();
-        diveOpacity.value = withTiming(0, { duration: DIVE_OUT_DURATION, easing: DIVE_EASING });
-      }
-    );
-    return unsubscribe;
-  }, [navigation]);
+  // Reverses the "dive into zone" effect when returning to this screen (e.g.
+  // navigating back from the zone screen). Executed on screen focus so the
+  // color overlay smoothly fades back to transparent and zoom is reset.
+  useFocusEffect(
+    useCallback(() => {
+      zoomRef.current?.resetZoom();
+      diveOpacity.value = withTiming(
+        0,
+        { duration: DIVE_OUT_DURATION, easing: DIVE_OUT_EASING },
+        (finished) => {
+          if (finished) {
+            runOnJS(setDiveColor)(null);
+          }
+        }
+      );
+    }, [diveOpacity])
+  );
 
   const handleTitlePress = () => {
     if (editMode || overviewMode) return;
