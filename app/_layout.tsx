@@ -127,12 +127,14 @@ function HeaderRight() {
           )}
           <HeaderIcon
             icon="undo-variant"
+            tone="action"
             disabled={outlineEditMode ? !canUndoOutline : !canUndo}
             accessibilityLabel={t("nav.undo")}
             onPress={outlineEditMode ? undoOutline : undo}
           />
           <HeaderIcon
             icon="redo-variant"
+            tone="action"
             disabled={outlineEditMode ? !canRedoOutline : !canRedo}
             accessibilityLabel={t("nav.redo")}
             onPress={outlineEditMode ? redoOutline : redo}

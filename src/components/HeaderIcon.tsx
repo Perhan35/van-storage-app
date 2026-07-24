@@ -2,7 +2,15 @@ import React, { useMemo } from "react";
 import { IconButton } from "react-native-paper";
 import { useAppTheme } from "../theme/useAppTheme";
 
-type Tone = "default" | "danger" | "success" | "accent" | "utility" | "outOfVan" | "search";
+type Tone =
+  | "default"
+  | "danger"
+  | "success"
+  | "accent"
+  | "utility"
+  | "outOfVan"
+  | "search"
+  | "action";
 
 type Props = {
   icon: string;
@@ -46,11 +54,18 @@ export function HeaderIcon({
               ? palette.headerOutOfVan
               : tone === "search"
                 ? palette.headerSearch
-                : palette.headerTint;
+                : tone === "action"
+                  ? palette.headerActionTint // undo/redo — distinct from headerTint, which also drives the title text
+                  : palette.headerTint;
+
+  // "action" (undo/redo) is the only tone that's ever actually disabled today,
+  // so it's the only one with a dedicated muted color; everything else still
+  // falls back to headerTintMuted.
+  const disabledColor = tone === "action" ? palette.headerActionTintMuted : palette.headerTintMuted;
 
   const theme = useMemo(
-    () => ({ colors: { onSurfaceDisabled: palette.headerTintMuted } }),
-    [palette.headerTintMuted]
+    () => ({ colors: { onSurfaceDisabled: disabledColor } }),
+    [disabledColor]
   );
 
   return (
