@@ -103,6 +103,7 @@ function HeaderRight() {
             <>
               <HeaderIcon
                 icon="vector-polygon"
+                tone="accent"
                 accessibilityLabel={t("nav.edit_outline")}
                 onPress={toggleOutlineEditMode}
               />
@@ -149,7 +150,9 @@ function HeaderRight() {
           onPress={outlineEditMode ? toggleOutlineEditMode : toggleEditMode}
         />
       )}
-      {!editMode && <HeaderIcon icon="cog" onPress={() => router.push("/settings")} />}
+      {!editMode && (
+        <HeaderIcon icon="cog" tone="utility" onPress={() => router.push("/settings")} />
+      )}
     </View>
   );
 }

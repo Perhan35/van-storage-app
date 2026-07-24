@@ -7,16 +7,20 @@ export type Palette = {
   surface: string;
   surfaceVariant: string;
   headerBackground: string;
-  // Header icons/text form a four-state scale, all measured against
-  // headerBackground: headerTint (active) > headerSuccess/headerDanger
-  // (semantic actions) > headerTintMuted (disabled). Every step clears WCAG's
-  // 3:1 floor for non-text, and the drop from tint to muted stays wide enough
-  // to read as "unavailable" rather than "a different color". The bar itself is
-  // deep in both themes because that headroom is what makes the scale possible.
+  // Header icons come in four states — headerTint (available),
+  // headerTintMuted (unavailable), headerDanger and headerSuccess (the actions
+  // that end an edit session) — each measured against headerBackground. How
+  // much separation is available depends on how deep the bar is: the dark bar
+  // has room for a graduated scale that clears WCAG's 3:1 floor throughout, the
+  // light one only for a polarity flip. Re-measure before changing any of these.
   headerTint: string;
   headerTintMuted: string;
   headerDanger: string;
   headerSuccess: string;
+  // Separate from headerTintMuted: that token means "unavailable right now",
+  // this one means "a lower-priority action" (settings) — same icon whether
+  // it's usable or not, so it must never look disabled.
+  headerUtility: string;
   onSurface: string;
   onSurfaceVariant: string;
   divider: string;
@@ -34,11 +38,22 @@ export const lightPalette: Palette = {
   background: "#F5F5F5",
   surface: "#FFFFFF",
   surfaceVariant: "#EEEEEE",
+  // A mid-tone bar caps white at 3.34:1, so the states that need contrast have
+  // to go darker than the bar rather than lighter — hence the navy disabled
+  // ink. Cancel/confirm keep the app's familiar red and green by request; both
+  // sit near 1.5:1 here, so their hue, not their contrast, is what identifies
+  // them. Deepening headerBackground is what would buy them room.
   headerBackground: "#4A90D9",
-  headerTint: "#FFFFFF",
-  headerTintMuted: "#B5CBE0", // 3.85:1
-  headerDanger: "#FFA9A1", // 3.50:1
-  headerSuccess: "#B7E1B9", // 4.43:1
+  headerTint: "#FFFFFF", // 3.34:1
+  headerTintMuted: "#1F3F63", // 3.22:1
+  headerDanger: "#D32F2F", // 1.49:1 — chosen for hue, not contrast
+  headerSuccess: "#2E7D32", // 1.53:1 — chosen for hue, not contrast
+  // Deliberately low-contrast: this icon should recede into the bar rather
+  // than compete with the others, so unlike every other header token here it
+  // is not pushed toward the 3:1 floor. A darker ink (anthracite, ~3-4:1) reads
+  // as bold against this saturated blue — contrast itself draws the eye — so
+  // going closer to the bar's own tone is what makes it sit quietly.
+  headerUtility: "#7a7a7a", // 2.00:1 — intentionally low, reads as quiet not disabled
   onSurface: "#000000",
   onSurfaceVariant: "#757575",
   divider: "#E0E0E0",
@@ -61,6 +76,7 @@ export const darkPalette: Palette = {
   headerTintMuted: "#8CA5BF", // 5.11:1
   headerDanger: "#FF8A80", // 5.69:1
   headerSuccess: "#A5D6A7", // 7.91:1
+  headerUtility: "#94A0AB", // 4.88:1 — cool steel-gray, reads as quiet not disabled
   onSurface: "#FFFFFF",
   onSurfaceVariant: "#B0B0B0",
   divider: "#2F2F2F",

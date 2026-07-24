@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 import { IconButton } from "react-native-paper";
 import { useAppTheme } from "../theme/useAppTheme";
 
-type Tone = "default" | "danger" | "success";
+type Tone = "default" | "danger" | "success" | "accent" | "utility";
 
 type Props = {
   icon: string;
@@ -38,7 +38,11 @@ export function HeaderIcon({
       ? palette.headerDanger
       : tone === "success"
         ? palette.headerSuccess
-        : palette.headerTint;
+        : tone === "accent"
+          ? palette.secondary // the app's coral CTA color, e.g. the add-item FAB
+          : tone === "utility"
+            ? palette.headerUtility
+            : palette.headerTint;
 
   const theme = useMemo(
     () => ({ colors: { onSurfaceDisabled: palette.headerTintMuted } }),
