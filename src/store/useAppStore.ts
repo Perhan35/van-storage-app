@@ -1,5 +1,14 @@
 import { create } from "zustand";
-import { getDb, Zone, ZoneWithCount, Season, Location, LabelSide, LabelDef } from "../db/database";
+import {
+  getDb,
+  Zone,
+  ZoneWithCount,
+  Season,
+  Location,
+  LabelSide,
+  LabelDef,
+  LocationLabels,
+} from "../db/database";
 import { getPreference, setPreference } from "../db/preferences";
 import * as repo from "../db/repository";
 import { cancelAllReminders, requestNotificationPermissions, syncReminders } from "../notifications/reminders";
@@ -38,6 +47,48 @@ function snapshotGeometry(zones: ZoneWithCount[]): ZoneGeometrySnapshot {
 // undo step.
 function outlinesEqual(a: Outline, b: Outline): boolean {
   return a.w === b.w && a.h === b.h && JSON.stringify(a.points) === JSON.stringify(b.points);
+}
+
+// Everything outline-edit can change about a location: the polygon, and where
+// its inscriptions sit on it. The two share one history — they're edited in the
+// same session, on the same drawing, so undo and "discard" have to treat them
+// as one piece of work.
+type PlanSnapshot = { outline: Outline; labels: LocationLabels };
+
+const LABEL_SIDES: LabelSide[] = ["front", "rear", "left", "right"];
+
+function planSnapshot(location: Location): PlanSnapshot {
+  return { outline: location.outline, labels: location.labels ?? {} };
+}
+
+// Compares the fields a label carries rather than the objects, since an absent
+// side and a blank one mean the same thing on the plan.
+function labelsEqual(a: LocationLabels, b: LocationLabels): boolean {
+  return LABEL_SIDES.every((side) => {
+    const x = a[side] ?? {};
+    const y = b[side] ?? {};
+    return (
+      (x.text ?? "") === (y.text ?? "") &&
+      !!x.hidden === !!y.hidden &&
+      (x.x ?? null) === (y.x ?? null) &&
+      (x.y ?? null) === (y.y ?? null)
+    );
+  });
+}
+
+// Restores a plan snapshot. Each half is written only if it actually differs,
+// so undoing a label drag doesn't rewrite the outline row (and vice versa).
+async function applyPlanSnapshot(
+  locationId: string,
+  target: PlanSnapshot,
+  current: PlanSnapshot | null
+) {
+  if (!current || !outlinesEqual(current.outline, target.outline)) {
+    await repo.updateLocationOutline(locationId, target.outline);
+  }
+  if (!current || !labelsEqual(current.labels, target.labels)) {
+    await repo.updateLocationLabels(locationId, target.labels);
+  }
 }
 
 // Write each zone in `snapshot` back to its recorded geometry, skipping zones
@@ -90,14 +141,19 @@ type AppState = {
   // editing the location's outline polygon (add/move/delete a vertex).
   outlineEditMode: boolean;
   // Outline-edit history, kept separate from the zone undo/redo stacks so the
-  // two sub-modes each have their own undo. Each entry is a full outline
-  // snapshot taken *before* a change; meaningful only while outlineEditMode is
-  // on for the active location.
-  outlineUndoStack: Outline[];
-  outlineRedoStack: Outline[];
-  // The active location's outline the moment outline-edit was entered, so
-  // "cancel" can restore it regardless of how many edits happened in between.
-  outlineEditSessionSnapshot: Outline | null;
+  // two sub-modes each have their own undo. Each entry is a full plan snapshot
+  // (outline + inscriptions) taken *before* a change; meaningful only while
+  // outlineEditMode is on for the active location.
+  outlineUndoStack: PlanSnapshot[];
+  outlineRedoStack: PlanSnapshot[];
+  // The active location's plan the moment outline-edit was entered, so "cancel"
+  // can restore it regardless of how many edits happened in between.
+  outlineEditSessionSnapshot: PlanSnapshot | null;
+  // Which "discard your changes?" confirmation is on screen, null for none.
+  // Lives in the store because the two ways of asking to leave — the header's
+  // ✕ and the Android back button — sit in different components, and both must
+  // land on the same prompt.
+  discardPrompt: "session" | "outline" | null;
 
   init: () => Promise<void>;
   reloadLocations: () => Promise<void>;
@@ -176,6 +232,9 @@ type AppState = {
   undo: () => Promise<void>;
   redo: () => Promise<void>;
   cancelEditChanges: () => Promise<void>;
+  requestDiscard: () => void;
+  dismissDiscard: () => void;
+  confirmDiscard: () => Promise<void>;
 };
 
 function generateId(): string {
@@ -191,6 +250,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   undoStack: [],
   redoStack: [],
   editSessionSnapshot: null,
+  discardPrompt: null,
   themeMode: "auto",
   seasonMode: "summer",
   showMenuHeader: true,
@@ -299,18 +359,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   updateLocationOutline: async (locationId, outline) => {
-    const prev = get().locations.find((l) => l.id === locationId)?.outline;
+    const loc = get().locations.find((l) => l.id === locationId);
     // A drag that ends where it started (or a discrete edit that changes
     // nothing) is a no-op — don't write it or push an empty undo step.
-    if (prev && outlinesEqual(prev, outline)) return;
+    if (loc && outlinesEqual(loc.outline, outline)) return;
     await repo.updateLocationOutline(locationId, outline);
-    // While editing the outline, record where it stood *before* this change so
-    // it can be undone (mirrors updateZoneGeometry for zones). Edits made
+    // While editing the outline, record how the plan stood *before* this change
+    // so it can be undone (mirrors updateZoneGeometry for zones). Edits made
     // outside outline-edit mode don't feed the history.
     set((s) =>
-      s.outlineEditMode && prev
+      s.outlineEditMode && loc
         ? {
-            outlineUndoStack: [...s.outlineUndoStack, prev].slice(-MAX_HISTORY),
+            outlineUndoStack: [...s.outlineUndoStack, planSnapshot(loc)].slice(-MAX_HISTORY),
             outlineRedoStack: [],
           }
         : {}
@@ -340,9 +400,22 @@ export const useAppStore = create<AppState>((set, get) => ({
         ...(hasPos ? { x: Math.round(merged.x!), y: Math.round(merged.y!) } : {}),
       };
     }
-    // Immediate commit, independent of the zone/outline undo stacks — the same
-    // semantics as renaming a location (see renameLocation).
+    // A rename that changes nothing, or a drag that lands where it started,
+    // shouldn't cost an undo step.
+    if (labelsEqual(loc.labels ?? {}, next)) return;
+    const before = planSnapshot(loc);
     await repo.updateLocationLabels(locationId, next);
+    // Inscriptions are only editable inside outline-edit, and they're part of
+    // the same drawing as the outline — so they go on the same history, and
+    // "discard" puts them back too.
+    set((s) =>
+      s.outlineEditMode
+        ? {
+            outlineUndoStack: [...s.outlineUndoStack, before].slice(-MAX_HISTORY),
+            outlineRedoStack: [],
+          }
+        : {}
+    );
     await get().reloadLocations();
   },
 
@@ -353,7 +426,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     // side to its default text at its default anchor.
     const next = { ...loc.labels };
     delete next[side];
+    const before = planSnapshot(loc);
     await repo.updateLocationLabels(locationId, next);
+    set((s) =>
+      s.outlineEditMode
+        ? {
+            outlineUndoStack: [...s.outlineUndoStack, before].slice(-MAX_HISTORY),
+            outlineRedoStack: [],
+          }
+        : {}
+    );
     await get().reloadLocations();
   },
 
@@ -614,7 +696,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         outlineEditMode: turningOn,
         outlineUndoStack: [],
         outlineRedoStack: [],
-        outlineEditSessionSnapshot: turningOn ? active?.outline ?? null : null,
+        outlineEditSessionSnapshot: turningOn && active ? planSnapshot(active) : null,
       };
     }),
 
@@ -632,16 +714,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         outlineEditMode: true,
         outlineUndoStack: [],
         outlineRedoStack: [],
-        outlineEditSessionSnapshot: active?.outline ?? null,
+        outlineEditSessionSnapshot: active ? planSnapshot(active) : null,
       };
     }),
 
   undoOutline: async () => {
     const { outlineUndoStack, activeLocationId, locations } = get();
     if (outlineUndoStack.length === 0 || !activeLocationId) return;
-    const current = locations.find((l) => l.id === activeLocationId)?.outline;
+    const loc = locations.find((l) => l.id === activeLocationId);
+    const current = loc ? planSnapshot(loc) : null;
     const target = outlineUndoStack[outlineUndoStack.length - 1];
-    await repo.updateLocationOutline(activeLocationId, target);
+    await applyPlanSnapshot(activeLocationId, target, current);
     set((s) => ({
       outlineUndoStack: s.outlineUndoStack.slice(0, -1),
       outlineRedoStack: current
@@ -654,9 +737,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   redoOutline: async () => {
     const { outlineRedoStack, activeLocationId, locations } = get();
     if (outlineRedoStack.length === 0 || !activeLocationId) return;
-    const current = locations.find((l) => l.id === activeLocationId)?.outline;
+    const loc = locations.find((l) => l.id === activeLocationId);
+    const current = loc ? planSnapshot(loc) : null;
     const target = outlineRedoStack[outlineRedoStack.length - 1];
-    await repo.updateLocationOutline(activeLocationId, target);
+    await applyPlanSnapshot(activeLocationId, target, current);
     set((s) => ({
       outlineRedoStack: s.outlineRedoStack.slice(0, -1),
       outlineUndoStack: current
@@ -666,13 +750,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().reloadLocations();
   },
 
-  // Discards every outline change made this session, restoring the outline to
-  // how it looked when outline-edit was entered, then returns to zone editing
-  // (editMode itself, and the zones, are left untouched).
+  // Discards every outline and inscription change made this session, restoring
+  // the plan to how it looked when outline-edit was entered, then returns to
+  // zone editing (editMode itself, and the zones, are left untouched).
   cancelOutlineEdit: async () => {
-    const { outlineEditSessionSnapshot, activeLocationId } = get();
+    const { outlineEditSessionSnapshot, activeLocationId, locations } = get();
     if (outlineEditSessionSnapshot && activeLocationId) {
-      await repo.updateLocationOutline(activeLocationId, outlineEditSessionSnapshot);
+      const loc = locations.find((l) => l.id === activeLocationId);
+      await applyPlanSnapshot(
+        activeLocationId,
+        outlineEditSessionSnapshot,
+        loc ? planSnapshot(loc) : null
+      );
       await get().reloadLocations();
     }
     set({
@@ -747,7 +836,38 @@ export const useAppStore = create<AppState>((set, get) => ({
       outlineUndoStack: [],
       outlineRedoStack: [],
       outlineEditSessionSnapshot: null,
+      discardPrompt: null,
     });
     await get().loadZones();
+  },
+
+  // Asks to leave the current edit session — from the header's ✕ or from the
+  // Android back button. Which session that is depends on the sub-mode: in
+  // outline-edit only the outline is at stake, otherwise it's the whole
+  // editing session.
+  requestDiscard: () => {
+    const { editMode, outlineEditMode, undoStack, outlineUndoStack } = get();
+    if (!editMode) return;
+    // The undo stacks are empty exactly while the current state still matches
+    // the one the session started from — nothing to discard, nothing to ask,
+    // so leaving is immediate.
+    const hasChanges = (outlineEditMode ? outlineUndoStack : undoStack).length > 0;
+    if (!hasChanges) {
+      if (outlineEditMode) get().cancelOutlineEdit();
+      else get().cancelEditChanges();
+      return;
+    }
+    set({ discardPrompt: outlineEditMode ? "outline" : "session" });
+  },
+
+  dismissDiscard: () => set({ discardPrompt: null }),
+
+  // Reads the prompt rather than the live sub-mode, so it discards exactly what
+  // was asked about.
+  confirmDiscard: async () => {
+    const { discardPrompt } = get();
+    set({ discardPrompt: null });
+    if (discardPrompt === "outline") await get().cancelOutlineEdit();
+    else if (discardPrompt === "session") await get().cancelEditChanges();
   },
 }));

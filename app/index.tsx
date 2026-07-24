@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { View, StyleSheet, Pressable } from "react-native";
+import { View, StyleSheet, Pressable, BackHandler } from "react-native";
 import { useRouter, useNavigation, useFocusEffect } from "expo-router";
 import { FAB, Text, Button, IconButton } from "react-native-paper";
 import Animated, {
@@ -65,6 +65,7 @@ export default function VanMapScreen() {
   const addZone = useAppStore((s) => s.addZone);
   const addItem = useAppStore((s) => s.addItem);
   const editMode = useAppStore((s) => s.editMode);
+  const requestDiscard = useAppStore((s) => s.requestDiscard);
   const expirationAlertShown = useAppStore((s) => s.expirationAlertShown);
   const setExpirationAlertShown = useAppStore((s) => s.setExpirationAlertShown);
   const activeLocation = useAppStore((s) =>
@@ -437,6 +438,22 @@ export default function VanMapScreen() {
   useEffect(() => {
     if (editMode) setFabOpen(false);
   }, [editMode]);
+
+  // Android's back button/gesture is the other way out of an edit session, and
+  // this is the root screen — left alone it would drop the changes on the way
+  // to backgrounding the app. Route it through the same confirmation as the
+  // header's ✕. Registered on focus so it can't outlive the screen; only while
+  // editing, so back behaves normally everywhere else.
+  useFocusEffect(
+    useCallback(() => {
+      if (!editMode) return;
+      const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+        requestDiscard();
+        return true;
+      });
+      return () => sub.remove();
+    }, [editMode, requestDiscard])
+  );
 
   if (initError) {
     return (

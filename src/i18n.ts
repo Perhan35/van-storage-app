@@ -27,6 +27,13 @@ const resources = {
       "nav.cancel_edit": "Cancel all changes",
       "nav.cancel_outline": "Discard outline changes",
       "nav.confirm_outline": "Confirm outline",
+      "nav.discard_edit_title": "Leave edit mode?",
+      "nav.discard_edit_body":
+        "Are you sure you want to leave edit mode without saving your changes? Every zone goes back where it was.",
+      "nav.discard_outline_title": "Discard outline changes?",
+      "nav.discard_outline_body":
+        "Are you sure you want to leave outline editing without saving your changes? The outline goes back to its original shape.",
+      "nav.discard_confirm": "Confirm",
       "startup.error": "Something went wrong while loading your data.",
       "startup.retry": "Retry",
       "map.add_item": "Add item",
@@ -257,6 +264,13 @@ const resources = {
       "nav.cancel_edit": "Annuler tous les changements",
       "nav.cancel_outline": "Annuler les modifications du contour",
       "nav.confirm_outline": "Valider le contour",
+      "nav.discard_edit_title": "Quitter le mode édition ?",
+      "nav.discard_edit_body":
+        "Êtes-vous sûr de vouloir quitter le mode édition sans sauvegarder vos changements ? Chaque zone retrouvera sa position d'origine.",
+      "nav.discard_outline_title": "Annuler les modifications du contour ?",
+      "nav.discard_outline_body":
+        "Êtes-vous sûr de vouloir quitter l'édition du contour sans sauvegarder vos changements ? Le contour retrouvera sa forme d'origine.",
+      "nav.discard_confirm": "Confirmer",
       "startup.error": "Une erreur est survenue lors du chargement de vos données.",
       "startup.retry": "Réessayer",
       "map.add_item": "Ajouter un objet",
