@@ -103,26 +103,31 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
   const dragLock = useSharedValue(false);
   const containerWidth = useSharedValue(1);
   const containerHeight = useSharedValue(1);
-  // True while a programmatic zoom animation is running: gestures stand down
-  // and the transform bypasses the pan clamp so it can center an off-center
-  // zone that lies outside the normal pan bounds.
+  // True while a programmatic zoom animation is running, so gestures stand
+  // down instead of fighting the animation for the transform.
   const animating = useSharedValue(false);
-  const isProgrammatic = useSharedValue(false);
+  // Bumped by each programmatic run so a superseded animation's completion
+  // callback can tell it's stale and leave `animating` to the newer one.
+  const animGen = useSharedValue(0);
 
-  // Committed translation. Each gesture contributes its own *delta* on top of
-  // this base and folds that delta back into the base when it ends, so pinch
-  // and pan never write the same shared value and can run simultaneously
-  // without fighting over it.
-  const baseTranslateX = useSharedValue(0);
-  const baseTranslateY = useSharedValue(0);
-  const panX = useSharedValue(0);
-  const panY = useSharedValue(0);
-  const pinchX = useSharedValue(0);
-  const pinchY = useSharedValue(0);
+  // The single source of truth for the transform. Gestures update these
+  // *incrementally* and clamp as they write, so what the gesture math believes
+  // is on screen and what's actually rendered can never drift apart — the
+  // render path below is a pure read.
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
 
-  // The content-space point (pre-scale) under the focal anchor at pinch start.
-  const focalContentX = useSharedValue(0);
-  const focalContentY = useSharedValue(0);
+  // Pinch centroid (relative to the container center) at the previous update,
+  // so two-finger drag can be tracked as a per-frame delta.
+  const prevFocalX = useSharedValue(0);
+  const prevFocalY = useSharedValue(0);
+
+  // False until the pan's first change event has been discarded — see below.
+  const panPrimed = useSharedValue(false);
+  // Whether the live pinch has a baseline (savedScale / prevFocal) it can
+  // trust. Its onStart is skipped when gestures are standing down, so this
+  // also covers fingers that were already down when a dive animation ended.
+  const pinchPrimed = useSharedValue(false);
 
   useEffect(() => {
     gesturesEnabled.value = enabled;
@@ -133,84 +138,92 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
     containerHeight.value = e.nativeEvent.layout.height;
   };
 
+  // Pinch owns *everything* two-finger: both the scaling and the drag that
+  // comes with it (tracked from the centroid). Nothing here reads the pan
+  // gesture, so the two can't disagree about who moved the content.
   const pinch = Gesture.Pinch()
     .onStart((e) => {
       if (!gesturesEnabled.value || animating.value) return;
       savedScale.value = scale.value;
-      // Focal anchor relative to the container center at pinch start, and the
-      // content point currently under it (accounting for any in-flight pan).
-      const fx = e.focalX - containerWidth.value / 2;
-      const fy = e.focalY - containerHeight.value / 2;
-      const tx = baseTranslateX.value + panX.value;
-      const ty = baseTranslateY.value + panY.value;
-      focalContentX.value = (fx - tx) / scale.value;
-      focalContentY.value = (fy - ty) / scale.value;
-      pinchX.value = 0;
-      pinchY.value = 0;
+      prevFocalX.value = e.focalX - containerWidth.value / 2;
+      prevFocalY.value = e.focalY - containerHeight.value / 2;
+      pinchPrimed.value = true;
     })
     .onUpdate((e) => {
       if (!gesturesEnabled.value || animating.value) return;
+      const fx = e.focalX - containerWidth.value / 2;
+      const fy = e.focalY - containerHeight.value / 2;
+
+      // Adopt the current state as the baseline rather than acting on a stale
+      // one, so picking the gesture up mid-flight continues from where the
+      // content is instead of snapping. Dividing out e.scale makes this
+      // update a no-op; the next one moves for real.
+      if (!pinchPrimed.value) {
+        savedScale.value = scale.value / (e.scale || 1);
+        prevFocalX.value = fx;
+        prevFocalY.value = fy;
+        pinchPrimed.value = true;
+        return;
+      }
+
       const next = Math.min(
         Math.max(savedScale.value * e.scale, MIN_SCALE),
         MAX_SCALE
       );
+
+      // 1. Follow the centroid, so moving both fingers together drags.
+      let tx = translateX.value + (fx - prevFocalX.value);
+      let ty = translateY.value + (fy - prevFocalY.value);
+      // 2. Scale about the focal point, keeping the content under it pinned.
+      const ratio = next / scale.value;
+      tx = fx - (fx - tx) * ratio;
+      ty = fy - (fy - ty) * ratio;
+
       scale.value = next;
-      // Keep the focal content point pinned under the live centroid. Subtract
-      // pan's contribution so the two gestures don't double-count centroid
-      // movement (pan already tracks it via e.translation).
-      const fx = e.focalX - containerWidth.value / 2;
-      const fy = e.focalY - containerHeight.value / 2;
-      pinchX.value = fx - focalContentX.value * next - baseTranslateX.value - panX.value;
-      pinchY.value = fy - focalContentY.value * next - baseTranslateY.value - panY.value;
+      translateX.value = clampTranslate(tx, containerWidth.value, next);
+      translateY.value = clampTranslate(ty, containerHeight.value, next);
+      prevFocalX.value = fx;
+      prevFocalY.value = fy;
     })
-    .onEnd(() => {
-      baseTranslateX.value = clampTranslate(
-        baseTranslateX.value + pinchX.value,
-        containerWidth.value,
-        scale.value
-      );
-      baseTranslateY.value = clampTranslate(
-        baseTranslateY.value + pinchY.value,
-        containerHeight.value,
-        scale.value
-      );
-      pinchX.value = 0;
-      pinchY.value = 0;
+    .onFinalize(() => {
+      pinchPrimed.value = false;
     });
 
+  // Pan is strictly single-finger (see maxPointers), so it never runs during a
+  // pinch — two-finger dragging is the pinch's job above. Deltas come from
+  // e.change rather than the cumulative e.translation, so a dragLock pause
+  // resumes from where the content actually is rather than jumping by the
+  // whole travel since touch-down.
   const pan = Gesture.Pan()
     .minPointers(panMinPointers)
+    .maxPointers(panMinPointers)
     .minDistance(10)
     .onStart(() => {
-      if (!gesturesEnabled.value || animating.value) return;
-      panX.value = 0;
-      panY.value = 0;
+      panPrimed.value = false;
     })
-    .onUpdate((e) => {
+    .onChange((e) => {
       if (!gesturesEnabled.value || animating.value) return;
-      // A descendant is dragging its own content (e.g. a picked-up zone):
-      // don't also pan the canvas, and undo any pan applied before the lock.
-      if (dragLock.value) {
-        panX.value = 0;
-        panY.value = 0;
+      // RNGH reports the *first* change after activation as the full
+      // translation since touch-down, not a delta — with minDistance that's an
+      // instant >=10px jump. Drop it so the drag starts from the finger's
+      // current position; every later event is a true per-frame delta.
+      if (!panPrimed.value) {
+        panPrimed.value = true;
         return;
       }
-      panX.value = e.translationX;
-      panY.value = e.translationY;
-    })
-    .onEnd(() => {
-      baseTranslateX.value = clampTranslate(
-        baseTranslateX.value + panX.value,
+      // A descendant is dragging its own content (e.g. a picked-up zone):
+      // don't also pan the canvas.
+      if (dragLock.value) return;
+      translateX.value = clampTranslate(
+        translateX.value + e.changeX,
         containerWidth.value,
         scale.value
       );
-      baseTranslateY.value = clampTranslate(
-        baseTranslateY.value + panY.value,
+      translateY.value = clampTranslate(
+        translateY.value + e.changeY,
         containerHeight.value,
         scale.value
       );
-      panX.value = 0;
-      panY.value = 0;
     });
 
   const doubleTap = Gesture.Tap()
@@ -218,12 +231,8 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
     .onEnd(() => {
       if (!gesturesEnabled.value || animating.value) return;
       scale.value = 1;
-      baseTranslateX.value = 0;
-      baseTranslateY.value = 0;
-      panX.value = 0;
-      panY.value = 0;
-      pinchX.value = 0;
-      pinchY.value = 0;
+      translateX.value = 0;
+      translateY.value = 0;
     });
 
   const composed = Gesture.Simultaneous(pinch, pan, doubleTap);
@@ -243,62 +252,43 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
       const targetTranslateY = -zoneCenterRelY * targetScale;
 
       animating.value = true;
-      isProgrammatic.value = true;
-      panX.value = 0;
-      panY.value = 0;
-      pinchX.value = 0;
-      pinchY.value = 0;
+      animGen.value += 1;
+      const gen = animGen.value;
 
       const timingConfig = { duration: DIVE_IN_DURATION, easing: DIVE_EASING };
       scale.value = withTiming(targetScale, timingConfig);
-      baseTranslateX.value = withTiming(targetTranslateX, timingConfig);
-      baseTranslateY.value = withTiming(targetTranslateY, timingConfig, (finished) => {
-        if (finished) animating.value = false;
+      // Deliberately unclamped: framing an edge zone needs a translation
+      // outside the normal pan bounds. Nothing re-clamps until the next
+      // gesture, which is what lets the dive center any zone.
+      translateX.value = withTiming(targetTranslateX, timingConfig);
+      translateY.value = withTiming(targetTranslateY, timingConfig, () => {
+        if (animGen.value === gen) animating.value = false;
       });
       return true;
     },
     resetZoom() {
       animating.value = true;
+      animGen.value += 1;
+      const gen = animGen.value;
+
       const timingConfig = { duration: DIVE_OUT_DURATION, easing: DIVE_OUT_EASING };
       scale.value = withTiming(1, timingConfig);
-      baseTranslateX.value = withTiming(0, timingConfig);
-      baseTranslateY.value = withTiming(0, timingConfig, (finished) => {
-        if (finished) {
-          isProgrammatic.value = false;
-          animating.value = false;
-        }
+      translateX.value = withTiming(0, timingConfig);
+      translateY.value = withTiming(0, timingConfig, () => {
+        if (animGen.value === gen) animating.value = false;
       });
     },
   }));
 
-  const animatedStyle = useAnimatedStyle(() => {
-    if (isProgrammatic.value) {
-      return {
-        transform: [
-          { translateX: baseTranslateX.value },
-          { translateY: baseTranslateY.value },
-          { scale: scale.value },
-        ],
-      };
-    }
-    const tx = clampTranslate(
-      baseTranslateX.value + panX.value + pinchX.value,
-      containerWidth.value,
-      scale.value
-    );
-    const ty = clampTranslate(
-      baseTranslateY.value + panY.value + pinchY.value,
-      containerHeight.value,
-      scale.value
-    );
-    return {
-      transform: [
-        { translateX: tx },
-        { translateY: ty },
-        { scale: scale.value },
-      ],
-    };
-  });
+  // A pure read: every writer already clamped, so there's no recombination
+  // here that could disagree with what a gesture believes is on screen.
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value },
+    ],
+  }));
 
   return (
     <View style={styles.container} onLayout={onLayout}>
