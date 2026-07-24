@@ -6,6 +6,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  withDelay,
   runOnJS,
 } from "react-native-reanimated";
 import { VanLayoutSVG, ZoneScreenRect } from "../src/components/VanLayoutSVG";
@@ -20,6 +21,7 @@ import {
 import { LocationsOverview } from "../src/components/LocationsOverview";
 import {
   Rect,
+  FlightStart,
   locationFlightStart,
   LOCATION_ENTER_DURATION,
   LOCATION_ENTER_EASING,
@@ -29,6 +31,10 @@ import {
   GRID_RETURN_SCALE,
   GRID_FADE_DURATION,
   GRID_FADE_EASING,
+  LOCATION_RETURN_DURATION,
+  LOCATION_RETURN_EASING,
+  GRID_RETURN_FADE_DELAY,
+  GRID_RETURN_FADE_EASING,
   MAP_EXIT_SCALE,
   HEADER_FADE_DURATION,
   HEADER_FADE_EASING,
@@ -103,6 +109,9 @@ export default function VanMapScreen() {
   const [transition, setTransition] = useState<"enter" | "exit" | null>(null);
   const containerRef = useRef<View>(null);
   const containerRect = useRef<Rect | null>(null);
+  // The flight the current location was opened with, so leaving can retrace it
+  // back onto the same tile. Null when it was opened without one.
+  const lastFlight = useRef<{ locationId: string; start: FlightStart } | null>(null);
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const mapScale = useSharedValue(1);
@@ -139,13 +148,7 @@ export default function VanMapScreen() {
     ],
   }));
 
-  // Both layers return to their resting values whenever nothing is running.
-  // An effect (rather than the animation's completion callback) because it
-  // fires after the commit that unmounts the outgoing layer — so resetting the
-  // map's opacity here can't flash it back into view, and the map can never be
-  // left stranded faded out the way the old fade transition sometimes was.
-  useEffect(() => {
-    if (transition !== null) return;
+  const restLayers = useCallback(() => {
     mapScale.value = 1;
     mapX.value = 0;
     mapY.value = 0;
@@ -154,7 +157,17 @@ export default function VanMapScreen() {
     gridOpacity.value = 1;
     gridOriginX.value = 0;
     gridOriginY.value = 0;
-  }, [transition]);
+  }, []);
+
+  // Both layers return to their resting values whenever nothing is running.
+  // An effect (rather than the animation's completion callback) because it
+  // fires after the commit that unmounts the outgoing layer — so resetting the
+  // map's opacity here can't flash it back into view, and the map can never be
+  // left stranded faded out the way the old fade transition sometimes was.
+  useEffect(() => {
+    if (transition !== null) return;
+    restLayers();
+  }, [transition, restLayers]);
 
   // Ending on a timer rather than on the animation finishing: a completion
   // callback that never fires (an interrupted animation) would strand both
@@ -218,18 +231,55 @@ export default function VanMapScreen() {
     });
   }, []);
 
-  // Leaving isn't the entry played backwards: opening a location is a
-  // deliberate act, closing one is a dismissal. The map falls away as the grid
-  // rises to meet it, quickly, with no particular tile to aim at.
+  // Leaving retraces the flight that opened the location: the map shrinks back
+  // down onto its tile while the grid falls back in around that same point, at
+  // the same duration with mirrored easing, so the two directions are one move
+  // and its undo rather than two unrelated effects.
+  //
+  // Without a flight to retrace (opened from the overview's menu, at startup,
+  // just created) there's no tile to aim at, so it falls back to the plain
+  // dismissal: the map falls away as the grid rises to meet it.
   const goToOverview = useCallback(() => {
     if (overviewMode || editMode) return;
+    const activeId = useAppStore.getState().activeLocationId;
+    const back =
+      lastFlight.current && lastFlight.current.locationId === activeId
+        ? lastFlight.current.start
+        : null;
+
+    setTransition("exit");
+    setOverviewMode(true);
+    beginTitleSwap(true);
+
+    if (back) {
+      // The grid starts where the entry left it — receded, invisible, about the
+      // same vanishing point — and comes back from there.
+      gridScale.value = GRID_RECEDE_SCALE;
+      gridOpacity.value = 0;
+      gridOriginX.value = back.x;
+      gridOriginY.value = back.y;
+
+      const config = {
+        duration: LOCATION_RETURN_DURATION,
+        easing: LOCATION_RETURN_EASING,
+      };
+      mapScale.value = withTiming(back.scale, config);
+      mapX.value = withTiming(back.x, config);
+      mapY.value = withTiming(back.y, config);
+      mapOpacity.value = 1;
+      gridScale.value = withTiming(1, config);
+      gridOpacity.value = withDelay(
+        GRID_RETURN_FADE_DELAY,
+        withTiming(1, { duration: GRID_FADE_DURATION, easing: GRID_RETURN_FADE_EASING })
+      );
+      armTransitionEnd(LOCATION_RETURN_DURATION);
+      return;
+    }
+
     gridScale.value = GRID_RETURN_SCALE;
     gridOpacity.value = 0;
     gridOriginX.value = 0;
     gridOriginY.value = 0;
-    setTransition("exit");
-    setOverviewMode(true);
-    beginTitleSwap(true);
 
     const config = { duration: LOCATION_EXIT_DURATION, easing: LOCATION_EXIT_EASING };
     mapScale.value = withTiming(MAP_EXIT_SCALE, config);
@@ -244,6 +294,34 @@ export default function VanMapScreen() {
   // color overlay smoothly fades back to transparent and zoom is reset.
   useFocusEffect(
     useCallback(() => {
+      // Nothing can legitimately be mid-flight while another screen sits on top
+      // of this one: the layers only ever move in answer to a tap here, and both
+      // are untouchable (pointerEvents="none") for as long as they do. So focus
+      // is a point where "at rest" is always the right state — and forcing it
+      // here is what repairs a flight whose ending never ran. That ending hangs
+      // off a setTimeout, and a timer dropped while the screen was off-screen
+      // used to strand `transition` non-null for good: the map frozen at tile
+      // size in the corner (its seeded start-of-flight transform) with every
+      // layer, gesture and header control dead. Resetting the shared values
+      // directly rather than through setTransition alone, because when the state
+      // is already null there is no re-render to run the effect that does it.
+      if (transitionTimer.current) {
+        clearTimeout(transitionTimer.current);
+        transitionTimer.current = null;
+      }
+      if (titleTimer.current) {
+        clearTimeout(titleTimer.current);
+        titleTimer.current = null;
+      }
+      setTransition(null);
+      // Read from the store rather than closing over the rendered value: this
+      // callback must not take `overviewMode` as a dependency, or entering and
+      // leaving a location would re-run the whole effect and wipe out the very
+      // flight that changed the mode.
+      setTitleOverview(useAppStore.getState().overviewMode);
+      headerOpacity.value = 1;
+      restLayers();
+
       zoomRef.current?.resetZoom();
       diveOpacity.value = withTiming(
         0,
@@ -254,7 +332,7 @@ export default function VanMapScreen() {
           }
         }
       );
-    }, [diveOpacity])
+    }, [diveOpacity, restLayers])
   );
 
   const handleTitlePress = () => {
@@ -358,10 +436,15 @@ export default function VanMapScreen() {
         : null;
 
     if (!start) {
-      // Nothing measured to fly from: open it the plain way.
+      // Nothing measured to fly from: open it the plain way, and leave nothing
+      // for the return to retrace.
+      lastFlight.current = null;
       await setActiveLocation(locationId);
       return;
     }
+
+    // Kept so leaving can play this same flight backwards.
+    lastFlight.current = { locationId, start };
 
     // Seeded before the map layer mounts, so its very first frame already sits
     // on the tile instead of appearing full-screen for a frame.
