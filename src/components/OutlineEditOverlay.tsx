@@ -10,6 +10,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { usePanLock } from "./ZoomableContainer";
 import { OutlinePoint, Outline } from "../db/templates";
+import { triggerHaptic } from "../utils/haptics";
 
 const VERTEX_SIZE = 22;
 const MIDPOINT_SIZE = 20;
@@ -216,6 +217,7 @@ function VertexHandle({
   const dragGesture = Gesture.Pan()
     .activateAfterLongPress(250)
     .onStart(() => {
+      runOnJS(triggerHaptic)();
       startX.value = svgX.value;
       startY.value = svgY.value;
       active.value = withTiming(1, { duration: 120 });
@@ -336,6 +338,7 @@ function EdgeHandle({
   const longPressGesture = Gesture.LongPress()
     .minDuration(450)
     .onStart(() => {
+      runOnJS(triggerHaptic)();
       if (curved) runOnJS(onStraighten)(index);
     });
 

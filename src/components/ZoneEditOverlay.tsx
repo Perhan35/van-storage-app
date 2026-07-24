@@ -11,6 +11,7 @@ import Animated, {
 import { ZoneWithCount, Zone } from "../db/database";
 import { usePanLock } from "./ZoomableContainer";
 import { ZONE_SNAP_THRESHOLD_PX, ZONE_SNAP_GAP_SVG } from "./layoutConstants";
+import { triggerHaptic } from "../utils/haptics";
 
 const HANDLE_SIZE = 24;
 const MIN_ZONE_SIZE_SVG = 30;
@@ -169,6 +170,7 @@ export function ZoneEditOverlay({
   const dragGesture = Gesture.Pan()
     .activateAfterLongPress(250)
     .onStart(() => {
+      runOnJS(triggerHaptic)();
       startX.value = svgX.value;
       startY.value = svgY.value;
       dragActive.value = withTiming(1, { duration: 120 });
@@ -243,6 +245,7 @@ export function ZoneEditOverlay({
   const resizeGesture = Gesture.Pan()
     .activateAfterLongPress(250)
     .onStart(() => {
+      runOnJS(triggerHaptic)();
       startW.value = svgW.value;
       startH.value = svgH.value;
       dragActive.value = withTiming(1, { duration: 120 });
@@ -299,6 +302,7 @@ export function ZoneEditOverlay({
   const resizeTLGesture = Gesture.Pan()
     .activateAfterLongPress(250)
     .onStart(() => {
+      runOnJS(triggerHaptic)();
       startX.value = svgX.value;
       startY.value = svgY.value;
       startW.value = svgW.value;

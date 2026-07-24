@@ -11,6 +11,7 @@ import { useAppTheme } from "../theme/useAppTheme";
 import { Rect } from "./locationTransition";
 import * as repo from "../db/repository";
 import { ZoneWithCount, Location } from "../db/database";
+import { triggerHaptic } from "../utils/haptics";
 
 type Props = {
   // `planRect` is the on-screen box of the tile's miniature plan, in window
@@ -112,7 +113,10 @@ export function LocationsOverview({ onSelectLocation, onCreateNew }: Props) {
         <Pressable
           key={loc.id}
           onPress={() => handleTilePress(loc.id)}
-          onLongPress={(e) => openMenu(loc, e)}
+          onLongPress={(e) => {
+            triggerHaptic();
+            openMenu(loc, e);
+          }}
           style={[styles.tile, { backgroundColor: palette.surface, borderColor: palette.divider }]}
         >
           <View

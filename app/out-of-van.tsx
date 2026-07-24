@@ -12,6 +12,7 @@ import { useAppTheme } from "../src/theme/useAppTheme";
 import { seasonIconName, seasonIconColor } from "../src/components/seasonIcon";
 import { EditItemDialog } from "../src/components/dialogs/EditItemDialog";
 import { ContextMenu } from "../src/components/ContextMenu";
+import { triggerHaptic } from "../src/utils/haptics";
 
 type OutItem = OutOfVanItem;
 type SeasonFilter = Season | "all";
@@ -263,7 +264,10 @@ export default function OutOfVanScreen() {
             title={item.name}
             description={`📍 ${isGlobalView ? `${item.location_name} • ` : ""}${item.zone_name}${item.notes ? ` • ${item.notes}` : ""}`}
             onPress={() => handleLocate(item)}
-            onLongPress={() => setEditingItem(item)}
+            onLongPress={() => {
+              triggerHaptic();
+              setEditingItem(item);
+            }}
             left={(props) => (
               <View style={styles.itemIcons}>
                 <List.Icon {...props} icon="exit-to-app" color={palette.danger} />

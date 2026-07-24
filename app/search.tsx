@@ -24,6 +24,7 @@ import { AnimatedCheckRow } from "../src/components/AnimatedCheckRow";
 import { AnimatedOutOfVanRow } from "../src/components/AnimatedOutOfVanRow";
 import { EditItemDialog } from "../src/components/dialogs/EditItemDialog";
 import { Season } from "../src/db/database";
+import { triggerHaptic } from "../src/utils/haptics";
 
 type SearchResult = SearchResultItem;
 
@@ -343,7 +344,10 @@ export default function SearchScreen() {
                   );
                 }}
                 onPress={() => handleItemPress(item)}
-                onLongPress={() => setEditingItem(item)}
+                onLongPress={() => {
+                  triggerHaptic();
+                  setEditingItem(item);
+                }}
                 titleStyle={
                   item.checked
                     ? { color: palette.onSurfaceVariant, textDecorationLine: "line-through" }
