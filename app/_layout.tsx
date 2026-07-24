@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { View, StyleSheet, Text, Pressable, useColorScheme, LogBox } from "react-native";
 import { Stack, useRouter } from "expo-router";
-import { PaperProvider, IconButton } from "react-native-paper";
+import { PaperProvider } from "react-native-paper";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useTranslation } from "react-i18next";
@@ -10,6 +10,7 @@ import { useAppTheme } from "../src/theme/useAppTheme";
 import { paperDarkTheme, paperLightTheme, darkPalette, lightPalette } from "../src/theme/palette";
 import { configureNotificationHandler } from "../src/notifications/reminders";
 import { OnboardingTutorial } from "../src/components/OnboardingTutorial";
+import { HeaderIcon } from "../src/components/HeaderIcon";
 import i18n from "../src/i18n";
 
 // expo-notifications warns on import when running in Expo Go (SDK 53+ dropped
@@ -56,17 +57,8 @@ const styles = StyleSheet.create({
 
 function GameHeaderRight() {
   const router = useRouter();
-  const { palette } = useAppTheme();
 
-  return (
-    <IconButton
-      icon="close"
-      size={26}
-      iconColor={palette.headerTint}
-      style={{ margin: 0 }}
-      onPress={() => router.back()}
-    />
-  );
+  return <HeaderIcon icon="close" size={26} onPress={() => router.back()} />;
 }
 
 function HeaderRight() {
@@ -97,23 +89,9 @@ function HeaderRight() {
   return (
     <View style={{ flexDirection: "row", alignItems: "center" }}>
       {!editMode && (
-        <IconButton
-          icon="exit-to-app"
-          size={24}
-          iconColor={palette.headerTint}
-          style={{ margin: 0 }}
-          onPress={() => router.push("/out-of-van")}
-        />
+        <HeaderIcon icon="exit-to-app" onPress={() => router.push("/out-of-van")} />
       )}
-      {!editMode && (
-        <IconButton
-          icon="magnify"
-          size={24}
-          iconColor={palette.headerTint}
-          style={{ margin: 0 }}
-          onPress={() => router.push("/search")}
-        />
-      )}
+      {!editMode && <HeaderIcon icon="magnify" onPress={() => router.push("/search")} />}
       {editMode && (
         <>
           {/* Hidden while editing the outline: the polygon toggle is the way
@@ -123,52 +101,40 @@ function HeaderRight() {
               control. */}
           {!outlineEditMode && (
             <>
-              <IconButton
+              <HeaderIcon
                 icon="vector-polygon"
-                size={24}
-                iconColor={palette.headerTint}
                 accessibilityLabel={t("nav.edit_outline")}
-                style={{ margin: 0 }}
                 onPress={toggleOutlineEditMode}
               />
               <View
                 style={{
                   width: 1.5,
                   height: 26,
-                  backgroundColor: palette.headerTint,
-                  opacity: 0.6,
+                  backgroundColor: palette.headerTintMuted,
                   marginHorizontal: 2,
                   borderRadius: 1,
                 }}
               />
             </>
           )}
-          <IconButton
+          <HeaderIcon
             icon="undo-variant"
-            size={24}
-            iconColor={palette.headerTint}
             disabled={outlineEditMode ? !canUndoOutline : !canUndo}
             accessibilityLabel={t("nav.undo")}
-            style={{ margin: 0 }}
             onPress={outlineEditMode ? undoOutline : undo}
           />
-          <IconButton
+          <HeaderIcon
             icon="redo-variant"
-            size={24}
-            iconColor={palette.headerTint}
             disabled={outlineEditMode ? !canRedoOutline : !canRedo}
             accessibilityLabel={t("nav.redo")}
-            style={{ margin: 0 }}
             onPress={outlineEditMode ? redoOutline : redo}
           />
           {/* In outline-edit, cancel discards only the outline changes and drops
               back to zone editing; otherwise it reverts the whole session. */}
-          <IconButton
+          <HeaderIcon
             icon="cancel"
-            size={24}
-            iconColor={palette.danger}
+            tone="danger"
             accessibilityLabel={outlineEditMode ? t("nav.cancel_outline") : t("nav.cancel_edit")}
-            style={{ margin: 0 }}
             onPress={outlineEditMode ? cancelOutlineEdit : cancelEditChanges}
           />
         </>
@@ -176,24 +142,14 @@ function HeaderRight() {
       {!overviewMode && (
         // In outline-edit, the check confirms the outline and returns to zone
         // editing (stays in edit mode); otherwise it toggles edit mode itself.
-        <IconButton
+        <HeaderIcon
           icon={editMode ? "check" : "cursor-move"}
-          size={24}
-          iconColor={editMode ? palette.success : palette.headerTint}
+          tone={editMode ? "success" : "default"}
           accessibilityLabel={outlineEditMode ? t("nav.confirm_outline") : undefined}
-          style={{ margin: 0 }}
           onPress={outlineEditMode ? toggleOutlineEditMode : toggleEditMode}
         />
       )}
-      {!editMode && (
-        <IconButton
-          icon="cog"
-          size={24}
-          iconColor={palette.headerTint}
-          style={{ margin: 0 }}
-          onPress={() => router.push("/settings")}
-        />
-      )}
+      {!editMode && <HeaderIcon icon="cog" onPress={() => router.push("/settings")} />}
     </View>
   );
 }
