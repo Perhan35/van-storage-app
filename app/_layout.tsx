@@ -94,9 +94,11 @@ function HeaderRight() {
   return (
     <View style={{ flexDirection: "row", alignItems: "center" }}>
       {!editMode && (
-        <HeaderIcon icon="exit-to-app" onPress={() => router.push("/out-of-van")} />
+        <HeaderIcon icon="exit-to-app" tone="outOfVan" onPress={() => router.push("/out-of-van")} />
       )}
-      {!editMode && <HeaderIcon icon="magnify" onPress={() => router.push("/search")} />}
+      {!editMode && (
+        <HeaderIcon icon="magnify" tone="search" onPress={() => router.push("/search")} />
+      )}
       {editMode && (
         <>
           {/* Hidden while editing the outline: the polygon toggle is the way
@@ -151,7 +153,7 @@ function HeaderRight() {
         // editing (stays in edit mode); otherwise it toggles edit mode itself.
         <HeaderIcon
           icon={editMode ? "check" : "cursor-move"}
-          tone={editMode ? "success" : "default"}
+          tone={editMode ? "success" : "accent"}
           accessibilityLabel={outlineEditMode ? t("nav.confirm_outline") : undefined}
           onPress={outlineEditMode ? toggleOutlineEditMode : toggleEditMode}
         />
