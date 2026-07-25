@@ -264,6 +264,7 @@ export default function SettingsScreen() {
     Alert.alert(
       t("settings.import_confirm_title"),
       t("settings.import_confirm_text", {
+        locationsCount: rawLocations.length,
         zonesCount: rawZones.length,
         itemsCount: rawItems.length,
       }),
