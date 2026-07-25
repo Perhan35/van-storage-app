@@ -1,69 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, FlatList, StyleSheet } from "react-native";
-import ReanimatedSwipeable, {
-  SwipeableMethods,
-  SwipeDirection,
-} from "react-native-gesture-handler/ReanimatedSwipeable";
-import Animated, {
-  Extrapolation,
-  LinearTransition,
-  SharedValue,
-  SlideOutRight,
-  interpolate,
-  useAnimatedStyle,
-  useReducedMotion,
-} from "react-native-reanimated";
+import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
-import { Button, Divider, IconButton, List, SegmentedButtons, Text } from "react-native-paper";
+import { Button, Divider, SegmentedButtons, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAppStore } from "../src/store/useAppStore";
 import { getOutOfVanItems, getAllOutOfVanItems, OutOfVanItem } from "../src/db/repository";
 import { Season } from "../src/db/database";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
-import { seasonIconName, seasonIconColor } from "../src/components/seasonIcon";
+import { OutOfVanRow } from "../src/components/OutOfVanRow";
 import { EditItemDialog } from "../src/components/dialogs/EditItemDialog";
 import { ContextMenu } from "../src/components/ContextMenu";
-import { triggerHaptic } from "../src/utils/haptics";
 
 type OutItem = OutOfVanItem;
 type SeasonFilter = Season | "all";
-
-const ACTION_WIDTH = 64;
-
-// Slides the action button in from its edge as the row is swiped open.
-// Swiping left reveals it, matching the out-of-van toggle direction used
-// elsewhere in the app (zone list, search results).
-function SwipeActionButton({
-  translation,
-  backgroundColor,
-  icon,
-  onPress,
-}: {
-  translation: SharedValue<number>;
-  backgroundColor: string;
-  icon: string;
-  onPress: () => void;
-}) {
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      {
-        translateX: interpolate(
-          translation.value,
-          [-ACTION_WIDTH, 0],
-          [0, ACTION_WIDTH],
-          Extrapolation.CLAMP
-        ),
-      },
-    ],
-  }));
-
-  return (
-    <Animated.View style={[styles.swipeAction, { backgroundColor }, animatedStyle]}>
-      <IconButton icon={icon} iconColor="#fff" size={26} onPress={onPress} />
-    </Animated.View>
-  );
-}
 
 export default function OutOfVanScreen() {
   const router = useRouter();
@@ -71,7 +22,6 @@ export default function OutOfVanScreen() {
   const { t } = useTranslation();
   const { palette } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const reducedMotion = useReducedMotion();
   const locations = useAppStore((s) => s.locations);
   const activeLocationId = useAppStore((s) => s.activeLocationId);
   const setItemOutOfVan = useAppStore((s) => s.setItemOutOfVan);
@@ -224,18 +174,36 @@ export default function OutOfVanScreen() {
   const selectedLocation = availableLocations.find((l) => l.id === selectedLocationId);
   const selectedZone = availableZones.find((z) => z.id === selectedZoneId);
 
-  const handlePutBack = async (item: OutItem) => {
-    swipeableRefs.current.get(item.id)?.close();
-    await setItemOutOfVan(item.id, false);
-    await load();
-  };
+  // useCallback'd: passed as props to OutOfVanRow, which is React.memo'd so
+  // putting one item back doesn't re-render every other row's swipeable +
+  // exit/layout animation wrappers.
+  const handlePutBack = useCallback(
+    async (item: OutItem) => {
+      swipeableRefs.current.get(item.id)?.close();
+      await setItemOutOfVan(item.id, false);
+      await load();
+    },
+    [setItemOutOfVan, load]
+  );
 
-  const handleLocate = async (item: OutItem) => {
-    if (item.location_id !== activeLocationId) {
-      await setActiveLocation(item.location_id);
-    }
-    router.dismissTo(`/zone/${item.zone_id}?highlightItemId=${item.id}`);
-  };
+  const handleLocate = useCallback(
+    async (item: OutItem) => {
+      if (item.location_id !== activeLocationId) {
+        await setActiveLocation(item.location_id);
+      }
+      router.dismissTo(`/zone/${item.zone_id}?highlightItemId=${item.id}`);
+    },
+    [activeLocationId, setActiveLocation, router]
+  );
+
+  const handleLongPressItem = useCallback((item: OutItem) => {
+    setEditingItem(item);
+  }, []);
+
+  const handleSwipeableRef = useCallback((itemId: string, ref: SwipeableMethods | null) => {
+    if (ref) swipeableRefs.current.set(itemId, ref);
+    else swipeableRefs.current.delete(itemId);
+  }, []);
 
   const handleSaveEdit = async (
     name: string,
@@ -303,59 +271,19 @@ export default function OutOfVanScreen() {
         data={visibleItems}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
-        renderItem={({ item }) => {
-          const seasonIcon = seasonIconName(item.season);
-          return (
-          <Animated.View
-            exiting={reducedMotion ? undefined : SlideOutRight.duration(280)}
-            layout={reducedMotion ? undefined : LinearTransition.duration(220)}
-          >
-          <ReanimatedSwipeable
-            ref={(ref) => {
-              if (ref) swipeableRefs.current.set(item.id, ref);
-              else swipeableRefs.current.delete(item.id);
-            }}
-            overshootRight={false}
-            onSwipeableOpen={(direction) => {
-              if (direction === SwipeDirection.LEFT) handlePutBack(item);
-            }}
-            renderRightActions={(_progress, translation) => (
-              <SwipeActionButton
-                translation={translation}
-                backgroundColor={palette.success}
-                icon={item.location_icon}
-                onPress={() => handlePutBack(item)}
-              />
-            )}
-          >
-          <List.Item
-            title={item.name}
-            description={`📍 ${isGlobalView ? `${item.location_name} • ` : ""}${item.zone_name}${item.notes ? ` • ${item.notes}` : ""}`}
-            onPress={() => handleLocate(item)}
-            onLongPress={() => {
-              triggerHaptic();
-              setEditingItem(item);
-            }}
-            left={(props) => (
-              <View style={styles.itemIcons}>
-                <List.Icon {...props} icon="export" color={palette.danger} />
-                {seasonIcon && (
-                  <List.Icon {...props} icon={seasonIcon} color={seasonIconColor(item.season)} />
-                )}
-              </View>
-            )}
-            right={() => (
-              <IconButton
-                icon={item.location_icon}
-                size={24}
-                onPress={() => handlePutBack(item)}
-              />
-            )}
+        renderItem={({ item }) => (
+          <OutOfVanRow
+            item={item}
+            isGlobalView={isGlobalView}
+            onPutBack={handlePutBack}
+            onLocate={handleLocate}
+            onLongPressItem={handleLongPressItem}
+            onSwipeableRef={handleSwipeableRef}
           />
-          </ReanimatedSwipeable>
-          </Animated.View>
-          );
-        }}
+        )}
+        initialNumToRender={12}
+        maxToRenderPerBatch={8}
+        windowSize={10}
         ItemSeparatorComponent={Divider}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
@@ -426,10 +354,4 @@ const styles = StyleSheet.create({
   filterRowInline: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   filterButton: { borderRadius: 8 },
   filterButtonContent: { flexDirection: "row-reverse" },
-  itemIcons: { flexDirection: "row" },
-  swipeAction: {
-    width: ACTION_WIDTH,
-    justifyContent: "center",
-    alignItems: "center",
-  },
 });

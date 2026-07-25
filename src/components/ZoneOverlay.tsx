@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useMemo } from "react";
 import { Rect, G, Text as SvgText, TSpan } from "react-native-svg";
 import Animated, {
   useSharedValue,
@@ -127,7 +127,7 @@ type Props = {
   dimmed: boolean;
 };
 
-export function ZoneOverlay({ zone, highlighted, dimmed }: Props) {
+function ZoneOverlayInner({ zone, highlighted, dimmed }: Props) {
   const { isDark } = useAppTheme();
   const { x, y, w, h } = zone.geometry;
   const cx = x + w / 2;
@@ -214,10 +214,12 @@ export function ZoneOverlay({ zone, highlighted, dimmed }: Props) {
     textCy = cy;
   }
 
-  const { lines, fontSize, lineHeight } = fitText(
-    zone.name,
-    textMaxWidth,
-    textMaxHeight
+  // Word-wrapping tries up to 4 font sizes per call — worth memoizing since it
+  // otherwise reran every time this component rendered, including renders
+  // where zone.name/w/h haven't actually changed (see the React.memo below).
+  const { lines, fontSize, lineHeight } = useMemo(
+    () => fitText(zone.name, textMaxWidth, textMaxHeight),
+    [zone.name, textMaxWidth, textMaxHeight]
   );
 
   // Center the multi-line block on (textCx, textCy). For SVG text the y
@@ -276,3 +278,10 @@ export function ZoneOverlay({ zone, highlighted, dimmed }: Props) {
     </G>
   );
 }
+
+// Memoized: VanLayoutSVG renders one of these per zone, and re-renders for
+// reasons that touch only one zone at a time (highlight/dim on select,
+// geometry drag) or none of them (layout/gesture-only updates). Without this,
+// every zone repeated the text-fit + animated-prop work above on every one of
+// those renders.
+export const ZoneOverlay = React.memo(ZoneOverlayInner);

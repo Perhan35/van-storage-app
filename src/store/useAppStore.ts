@@ -147,6 +147,11 @@ type AppState = {
   tutorialVisible: boolean;
   recentSearches: string[];
   locations: Location[];
+  // Every location's zones (with item counts), keyed by location id. Lets the
+  // overview grid and setActiveLocation avoid an N+1 / blocking query per tap —
+  // populated by one listAllZonesWithCounts() call and kept in sync by loadZones
+  // for the active location. A location with zero zones simply has no key.
+  zonesByLocation: Record<string, ZoneWithCount[]>;
   activeLocationId: string | null;
   // Whether the map screen is showing the all-locations overview (true) or a
   // single location's map (false). Lives in the store so the header (a separate
@@ -174,6 +179,9 @@ type AppState = {
   // Restarts a startup that failed or never came back (see the action).
   retryInit: () => Promise<void>;
   reloadLocations: () => Promise<void>;
+  // Repopulates zonesByLocation for every location in one query. Call whenever
+  // the zone set for a location other than the active one may have changed.
+  reloadZonesByLocation: () => Promise<void>;
   setOverviewMode: (overview: boolean) => void;
   setActiveLocation: (locationId: string) => Promise<void>;
   addLocation: (name: string, templateId: string, icon: string) => Promise<string>;
@@ -264,6 +272,24 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+let reminderSyncTimer: ReturnType<typeof setTimeout> | null = null;
+// Collapses a burst of item add/edit/delete calls (e.g. an import, or several
+// quick edits) into a single reminder resync instead of a full
+// cancel-every-notification-and-reschedule pass per mutation. Not awaited by
+// its callers — the resync happens in the background after the debounce
+// window, well after the mutation that triggered it has already returned.
+const REMINDER_SYNC_DEBOUNCE_MS = 500;
+
+function scheduleReminderSync(get: () => AppState): void {
+  if (reminderSyncTimer) clearTimeout(reminderSyncTimer);
+  reminderSyncTimer = setTimeout(() => {
+    reminderSyncTimer = null;
+    get()
+      .syncRemindersIfEnabled()
+      .catch((err) => console.warn("Reminder sync failed", err));
+  }, REMINDER_SYNC_DEBOUNCE_MS);
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   zones: [],
   highlightedZoneId: null,
@@ -285,6 +311,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   tutorialVisible: false,
   recentSearches: [],
   locations: [],
+  zonesByLocation: {},
   activeLocationId: null,
   overviewMode: false,
   outlineEditMode: false,
@@ -308,7 +335,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         await get().reloadRemindersEnabled();
         await get().reloadBackupSettings();
         await get().reloadRecentSearches();
+        // Both queries are needed regardless (locations + all zones), so doing
+        // them here up front populates zonesByLocation for every location and
+        // means the resolved active location's zones below come from cache
+        // rather than a second, redundant query.
         await get().reloadLocations();
+        await get().reloadZonesByLocation();
 
         // The backup reminder measures "how long has it been" from the last
         // export — an install that never exported has nothing to measure from,
@@ -336,7 +368,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         // overview). Migrated single-"Van" installs therefore behave as before.
         set({ overviewMode: locations.length !== 1 });
 
-        await get().loadZones();
+        // zonesByLocation was just populated above, so this is a cache read,
+        // not a third query.
+        set((s) => ({ zones: resolvedId ? s.zonesByLocation[resolvedId] ?? [] : [] }));
         // First launch: no "tutorialShown" preference yet → surface the guided
         // tour. Dismissing it records the preference so it never auto-opens again.
         const tutorialShown = await getPreference("tutorialShown");
@@ -371,21 +405,64 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ locations });
   },
 
+  reloadZonesByLocation: async () => {
+    const all = await repo.listAllZonesWithCounts();
+    const grouped: Record<string, ZoneWithCount[]> = {};
+    for (const zone of all) {
+      (grouped[zone.location_id] ??= []).push(zone);
+    }
+    set({ zonesByLocation: grouped });
+  },
+
   setOverviewMode: (overview) => set({ overviewMode: overview }),
 
   setActiveLocation: async (locationId) => {
-    // Fetch the new location's zones *before* switching. Committing the id
-    // first would render one frame of the new outline against the previous
+    const seq = ++activeLocationSeq;
+    const cached = get().zonesByLocation[locationId];
+
+    if (cached) {
+      // Cache hit: switch synchronously, on the same tick as the tap, so a
+      // flight animation kicked off right after this call starts on the very
+      // next frame instead of waiting on a DB round-trip. Location and zones
+      // still land in one set() — the invariant that guards against a frame of
+      // the new outline over stale zones (see the fallback path below) holds
+      // here too, since both come from the same cache entry.
+      set({ activeLocationId: locationId, zones: cached, overviewMode: false });
+      // Reconcile against the DB in the background in case the cache is stale
+      // (e.g. another device's export just got restored). Silently dropped if
+      // a newer switch has since taken over, or if it fails outright — the
+      // cached data already rendered and stays as the fallback.
+      repo
+        .listZonesWithCounts(locationId)
+        .then((zones) => {
+          if (seq !== activeLocationSeq) return;
+          set((s) => ({
+            zones,
+            zonesByLocation: { ...s.zonesByLocation, [locationId]: zones },
+          }));
+        })
+        .catch((err) => console.warn("Reconciling active location's zones failed", err));
+      await setPreference("activeLocationId", locationId);
+      return;
+    }
+
+    // No cache entry yet (e.g. a location just created this session). Fetch
+    // the new location's zones *before* switching. Committing the id first
+    // would render one frame of the new outline against the previous
     // location's zones (they only arrive when the query resolves) — the map
     // visibly flashed the old layout before snapping to the right one.
-    const seq = ++activeLocationSeq;
     const zones = await repo.listZonesWithCounts(locationId);
     // A newer switch started while this query was in flight (fast taps in the
     // overview): its result is the one that must win, so drop this one.
     if (seq !== activeLocationSeq) return;
     // Location, its zones and leaving the overview land in a single render, so
     // the first frame of the new map is already the correct one.
-    set({ activeLocationId: locationId, zones, overviewMode: false });
+    set((s) => ({
+      activeLocationId: locationId,
+      zones,
+      overviewMode: false,
+      zonesByLocation: { ...s.zonesByLocation, [locationId]: zones },
+    }));
     await setPreference("activeLocationId", locationId);
   },
 
@@ -411,6 +488,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (locations.length <= 1) return;
     await repo.deleteLocation(locationId);
     await get().reloadLocations();
+    set((s) => {
+      if (!(locationId in s.zonesByLocation)) return {};
+      const next = { ...s.zonesByLocation };
+      delete next[locationId];
+      return { zonesByLocation: next };
+    });
     if (activeLocationId === locationId) {
       const next = get().locations[0];
       if (next) await get().setActiveLocation(next.id);
@@ -680,26 +763,29 @@ export const useAppStore = create<AppState>((set, get) => ({
       return;
     }
     const zones = await repo.listZonesWithCounts(locationId);
-    set({ zones });
+    // Every zone mutation stays within the active location, so refreshing its
+    // zonesByLocation entry here (rather than a full reloadZonesByLocation) is
+    // enough to keep the overview grid's tiles in sync too.
+    set((s) => ({ zones, zonesByLocation: { ...s.zonesByLocation, [locationId]: zones } }));
   },
 
   addItem: async (name, zoneId, notes = "", season = "none", expirationDate = null, reminderDays = 7) => {
     const id = generateId();
     await repo.insertItem(id, name, zoneId, notes, season, expirationDate, reminderDays);
     await get().loadZones();
-    await get().syncRemindersIfEnabled();
+    scheduleReminderSync(get);
   },
 
   deleteItem: async (itemId) => {
     await repo.deleteItem(itemId);
     await get().loadZones();
-    await get().syncRemindersIfEnabled();
+    scheduleReminderSync(get);
   },
 
   updateItem: async (itemId, name, notes, season, expirationDate, reminderDays) => {
     await repo.updateItem(itemId, name, notes, season, expirationDate, reminderDays);
     await get().loadZones();
-    await get().syncRemindersIfEnabled();
+    scheduleReminderSync(get);
   },
 
   moveItem: async (itemId, newZoneId) => {
@@ -712,14 +798,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadZones();
   },
 
+  // Neither of these can change a zone's item_count or geometry — the only
+  // things zonesByLocation/zones carry — so unlike the other item mutations
+  // there's nothing here for loadZones to refresh. The zone screen updates its
+  // own item list directly (see handleToggleChecked/handleResetChecklist).
   setItemChecked: async (itemId, checked) => {
     await repo.setItemChecked(itemId, checked);
-    await get().loadZones();
   },
 
   resetChecklist: async (zoneId) => {
     await repo.resetChecklistItems(zoneId);
-    await get().loadZones();
   },
 
   setHighlightedZoneId: (zoneId) => {

@@ -1,5 +1,11 @@
 import * as SQLite from "expo-sqlite";
-import { ITEM_COLUMNS_TO_ADD, LOCATION_COLUMNS_TO_ADD, MIGRATIONS, ZONE_COLUMNS_TO_ADD } from "./schema";
+import {
+  ITEM_COLUMNS_TO_ADD,
+  LOCATION_COLUMNS_TO_ADD,
+  MIGRATIONS,
+  POST_COLUMN_INDEXES,
+  ZONE_COLUMNS_TO_ADD,
+} from "./schema";
 import { getTemplate, Outline } from "./templates";
 import i18n from "../i18n";
 
@@ -92,6 +98,12 @@ async function openAndMigrate(): Promise<SQLite.SQLiteDatabase> {
     if (!existingLocationCols.has(col.name)) {
       await db.execAsync(col.ddl);
     }
+  }
+
+  // Now that every column the app expects exists (fresh install or migrated),
+  // it's safe to index the ones added above.
+  for (const ddl of POST_COLUMN_INDEXES) {
+    await db.execAsync(ddl);
   }
 
   // One-time setup, guarded by "locations is empty" so it runs exactly once

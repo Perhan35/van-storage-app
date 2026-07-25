@@ -1,83 +1,23 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { View, FlatList, StyleSheet } from "react-native";
-import ReanimatedSwipeable, {
-  SwipeableMethods,
-  SwipeDirection,
-} from "react-native-gesture-handler/ReanimatedSwipeable";
-import Animated, {
-  useAnimatedStyle,
-  interpolate,
-  Extrapolation,
-  SharedValue,
-} from "react-native-reanimated";
+import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useRouter } from "expo-router";
 import { Searchbar, List, Divider, Text, IconButton } from "react-native-paper";
 import { useAppStore } from "../src/store/useAppStore";
 import { searchItems, searchAllItems, SearchResultItem } from "../src/db/repository";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
-import { seasonIconName, seasonIconColor } from "../src/components/seasonIcon";
-import { expirationIconColor } from "../src/components/expirationIcon";
-import { getExpirationStatus } from "../src/utils/expiration";
-import { formatExpiration } from "../src/utils/date";
-import { AnimatedCheckRow } from "../src/components/AnimatedCheckRow";
-import { AnimatedOutOfVanRow } from "../src/components/AnimatedOutOfVanRow";
+import { SearchResultRow } from "../src/components/SearchResultRow";
 import { EditItemDialog } from "../src/components/dialogs/EditItemDialog";
 import { Season } from "../src/db/database";
-import { triggerHaptic } from "../src/utils/haptics";
 
 type SearchResult = SearchResultItem;
 
 const SEARCH_DEBOUNCE_MS = 250;
-const ACTION_WIDTH = 64;
-
-// Slides the action button in from its edge as the row is swiped open.
-// `translation` mirrors the legacy Swipeable's `drag` value: positive while
-// revealing a left action, negative while revealing a right action.
-function SwipeActionButton({
-  translation,
-  side,
-  backgroundColor,
-  icon,
-  onPress,
-}: {
-  translation: SharedValue<number>;
-  side: "left" | "right";
-  backgroundColor: string;
-  icon: string;
-  onPress: () => void;
-}) {
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      {
-        translateX:
-          side === "left"
-            ? interpolate(
-                translation.value,
-                [0, ACTION_WIDTH],
-                [-ACTION_WIDTH, 0],
-                Extrapolation.CLAMP
-              )
-            : interpolate(
-                translation.value,
-                [-ACTION_WIDTH, 0],
-                [0, ACTION_WIDTH],
-                Extrapolation.CLAMP
-              ),
-      },
-    ],
-  }));
-
-  return (
-    <Animated.View style={[styles.swipeAction, { backgroundColor }, animatedStyle]}>
-      <IconButton icon={icon} iconColor="#fff" size={26} onPress={onPress} />
-    </Animated.View>
-  );
-}
 
 export default function SearchScreen() {
   const router = useRouter();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { palette } = useAppTheme();
   const activeLocationId = useAppStore((s) => s.activeLocationId);
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
@@ -168,37 +108,59 @@ export default function SearchScreen() {
     await addRecentSearch(text);
   };
 
-  const handleItemPress = async (item: SearchResult) => {
-    addRecentSearch(query.trim());
-    // From the all-locations overview, `activeLocationId` can already equal
-    // the result's location (left over from a previous visit) while
-    // `overviewMode` is still true — skipping setActiveLocation there would
-    // leave the overview mode untouched and the location would never open.
-    if (item.location_id !== activeLocationId || isGlobalView) {
-      await setActiveLocation(item.location_id);
-    }
-    setHighlightedZoneId(item.zone_id);
-    router.dismissTo("/");
-  };
+  // useCallback'd: passed as props to SearchResultRow, which is React.memo'd
+  // so toggling one result doesn't re-render every row's swipeable/animated
+  // wrappers — a plain function identity here would defeat that on every
+  // render of this screen (which happens on every keystroke).
+  const handleItemPress = useCallback(
+    async (item: SearchResult) => {
+      addRecentSearch(query.trim());
+      // From the all-locations overview, `activeLocationId` can already equal
+      // the result's location (left over from a previous visit) while
+      // `overviewMode` is still true — skipping setActiveLocation there would
+      // leave the overview mode untouched and the location would never open.
+      if (item.location_id !== activeLocationId || isGlobalView) {
+        await setActiveLocation(item.location_id);
+      }
+      setHighlightedZoneId(item.zone_id);
+      router.dismissTo("/");
+    },
+    [addRecentSearch, query, activeLocationId, isGlobalView, setActiveLocation, setHighlightedZoneId, router]
+  );
 
-  const handleToggleOutOfVan = async (item: SearchResult) => {
-    swipeableRefs.current.get(item.id)?.close();
-    const outOfVan = !item.out_of_van;
-    await setItemOutOfVan(item.id, outOfVan);
-    setResults((rs) =>
-      rs.map((r) => (r.id === item.id ? { ...r, out_of_van: outOfVan ? 1 : 0 } : r))
-    );
-  };
+  const handleToggleOutOfVan = useCallback(
+    async (item: SearchResult) => {
+      swipeableRefs.current.get(item.id)?.close();
+      const outOfVan = !item.out_of_van;
+      await setItemOutOfVan(item.id, outOfVan);
+      setResults((rs) =>
+        rs.map((r) => (r.id === item.id ? { ...r, out_of_van: outOfVan ? 1 : 0 } : r))
+      );
+    },
+    [setItemOutOfVan]
+  );
 
-  const handleToggleChecked = async (item: SearchResult) => {
-    if (!item.zone_checklist) return;
-    swipeableRefs.current.get(item.id)?.close();
-    const checked = !item.checked;
-    await setItemChecked(item.id, checked);
-    setResults((rs) =>
-      rs.map((r) => (r.id === item.id ? { ...r, checked: checked ? 1 : 0 } : r))
-    );
-  };
+  const handleToggleChecked = useCallback(
+    async (item: SearchResult) => {
+      if (!item.zone_checklist) return;
+      swipeableRefs.current.get(item.id)?.close();
+      const checked = !item.checked;
+      await setItemChecked(item.id, checked);
+      setResults((rs) =>
+        rs.map((r) => (r.id === item.id ? { ...r, checked: checked ? 1 : 0 } : r))
+      );
+    },
+    [setItemChecked]
+  );
+
+  const handleLongPressItem = useCallback((item: SearchResult) => {
+    setEditingItem(item);
+  }, []);
+
+  const handleSwipeableRef = useCallback((itemId: string, ref: SwipeableMethods | null) => {
+    if (ref) swipeableRefs.current.set(itemId, ref);
+    else swipeableRefs.current.delete(itemId);
+  }, []);
 
   const handleSaveEdit = async (
     name: string,
@@ -272,111 +234,19 @@ export default function SearchScreen() {
           data={results}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <ReanimatedSwipeable
-              ref={(ref) => {
-                if (ref) swipeableRefs.current.set(item.id, ref);
-                else swipeableRefs.current.delete(item.id);
-              }}
-              overshootRight={false}
-              onSwipeableOpen={(direction) => {
-                // ReanimatedSwipeable's SwipeDirection is inverted relative to
-                // the legacy Swipeable: LEFT means the row moved left,
-                // revealing the *right* actions panel (out-of-van), and
-                // RIGHT reveals the left actions panel (checked).
-                if (direction === SwipeDirection.LEFT) handleToggleOutOfVan(item);
-                else if (direction === SwipeDirection.RIGHT) handleToggleChecked(item);
-              }}
-              renderLeftActions={
-                item.zone_checklist
-                  ? (_progress, translation) => (
-                      <SwipeActionButton
-                        translation={translation}
-                        side="left"
-                        backgroundColor={palette.primary}
-                        icon={item.checked ? "checkbox-blank-outline" : "check-bold"}
-                        onPress={() => handleToggleChecked(item)}
-                      />
-                    )
-                  : undefined
-              }
-              renderRightActions={(_progress, translation) => (
-                <SwipeActionButton
-                  translation={translation}
-                  side="right"
-                  backgroundColor={item.out_of_van ? palette.success : palette.danger}
-                  icon={item.out_of_van ? item.location_icon : "export"}
-                  onPress={() => handleToggleOutOfVan(item)}
-                />
-              )}
-            >
-              <AnimatedOutOfVanRow
-                outOfVan={!!item.out_of_van}
-                outColor={palette.danger}
-                inColor={palette.success}
-                outIcon="export"
-                inIcon={item.location_icon}
-              >
-              <AnimatedCheckRow checked={!!item.checked}>
-              <List.Item
-                title={item.name}
-                description={(props) => {
-                  const location = isGlobalView ? `${item.location_name} • ` : "";
-                  const zoneLine = item.out_of_van
-                    ? `📍 ${location}${item.zone_name} • ${t("search.out_of_van")}`
-                    : `📍 ${location}${item.zone_name}`;
-                  return (
-                    <View>
-                      <Text style={{ color: props.color, fontSize: props.fontSize }}>
-                        {zoneLine}
-                      </Text>
-                      {!!item.expiration_date && (
-                        <Text
-                          style={{
-                            color: expirationIconColor(
-                              getExpirationStatus(item.expiration_date, item.reminder_days),
-                              palette
-                            ),
-                            fontSize: props.fontSize,
-                          }}
-                        >
-                          {t("zone.expires_on", {
-                            date: formatExpiration(item.expiration_date, i18n.language),
-                          })}
-                        </Text>
-                      )}
-                    </View>
-                  );
-                }}
-                onPress={() => handleItemPress(item)}
-                onLongPress={() => {
-                  triggerHaptic();
-                  setEditingItem(item);
-                }}
-                titleStyle={
-                  item.checked
-                    ? { color: palette.onSurfaceVariant, textDecorationLine: "line-through" }
-                    : undefined
-                }
-                left={(props) => {
-                  const seasonIcon = seasonIconName(item.season);
-                  return (
-                    <View style={styles.itemIcons}>
-                      <List.Icon
-                        {...props}
-                        icon={item.out_of_van ? "export" : item.location_icon}
-                        color={item.out_of_van ? palette.danger : undefined}
-                      />
-                      {seasonIcon && (
-                        <List.Icon {...props} icon={seasonIcon} color={seasonIconColor(item.season)} />
-                      )}
-                    </View>
-                  );
-                }}
-              />
-              </AnimatedCheckRow>
-              </AnimatedOutOfVanRow>
-            </ReanimatedSwipeable>
+            <SearchResultRow
+              item={item}
+              isGlobalView={isGlobalView}
+              onToggleChecked={handleToggleChecked}
+              onToggleOutOfVan={handleToggleOutOfVan}
+              onPressItem={handleItemPress}
+              onLongPressItem={handleLongPressItem}
+              onSwipeableRef={handleSwipeableRef}
+            />
           )}
+          initialNumToRender={12}
+          maxToRenderPerBatch={8}
+          windowSize={10}
           ItemSeparatorComponent={Divider}
           ListEmptyComponent={
             searchError ? (
@@ -414,12 +284,6 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   searchbar: { margin: 12 },
-  itemIcons: { flexDirection: "row" },
   emptyContainer: { padding: 32, alignItems: "center" },
   recentTitle: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
-  swipeAction: {
-    width: ACTION_WIDTH,
-    justifyContent: "center",
-    alignItems: "center",
-  },
 });

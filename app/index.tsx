@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { View, StyleSheet, Pressable, BackHandler, AppState } from "react-native";
+import { View, StyleSheet, Pressable, BackHandler, AppState, InteractionManager } from "react-native";
 import { useRouter, useNavigation, useFocusEffect } from "expo-router";
 import { FAB, Text, Button, IconButton } from "react-native-paper";
 import Animated, {
@@ -508,7 +508,12 @@ export default function VanMapScreen() {
   // Opening a location: the map is placed on the tapped tile at the size the
   // plan is drawn there, then flown up to full screen — the tile and the map
   // are the same drawing, so this is a change of distance, not of screen.
-  const handleSelectLocation = async (locationId: string, planRect: Rect | null) => {
+  //
+  // useCallback'd (along with the other handlers below passed down to
+  // LocationsOverview/VanLayoutSVG): a plain inline function here gets a new
+  // identity every render of this screen, which is disproportionately often
+  // during a flight/dive (shared-value-driven re-renders, focus effects).
+  const handleSelectLocation = useCallback(async (locationId: string, planRect: Rect | null) => {
     const outline = useAppStore.getState().locations.find((l) => l.id === locationId)?.outline;
     const start =
       planRect && containerRect.current && outline
@@ -567,30 +572,33 @@ export default function VanMapScreen() {
       easing: GRID_FADE_EASING,
     });
     armTransitionEnd(LOCATION_ENTER_DURATION);
-  };
+  }, [setActiveLocation, beginTitleSwap, armTransitionEnd]);
 
   const handleCreateLocation = async (name: string, templateId: string, icon: string) => {
     await addLocation(name, templateId, icon);
     setAddLocationVisible(false);
   };
 
-  const handleZonePress = (zoneId: string, rect: ZoneScreenRect) => {
-    const zone = zones.find((z) => z.id === zoneId);
-    setDiveColor(zone?.color ?? null);
-    diveOpacity.value = withTiming(DIVE_FADE_PEAK, {
-      duration: DIVE_IN_DURATION,
-      easing: DIVE_EASING,
-    });
-    const started = zoomRef.current?.zoomToRect(rect);
-    // Push partway through the dive rather than after it fully settles, so
-    // the screen's own fade-in overlaps the tail of the zoom instead of
-    // waiting for it — one continuous motion rather than two abrupt steps.
-    if (started) {
-      setTimeout(() => router.push(`/zone/${zoneId}`), DIVE_PUSH_DELAY);
-    } else {
-      router.push(`/zone/${zoneId}`);
-    }
-  };
+  const handleZonePress = useCallback(
+    (zoneId: string, rect: ZoneScreenRect) => {
+      const zone = zones.find((z) => z.id === zoneId);
+      setDiveColor(zone?.color ?? null);
+      diveOpacity.value = withTiming(DIVE_FADE_PEAK, {
+        duration: DIVE_IN_DURATION,
+        easing: DIVE_EASING,
+      });
+      const started = zoomRef.current?.zoomToRect(rect);
+      // Push partway through the dive rather than after it fully settles, so
+      // the screen's own fade-in overlaps the tail of the zoom instead of
+      // waiting for it — one continuous motion rather than two abrupt steps.
+      if (started) {
+        setTimeout(() => router.push(`/zone/${zoneId}`), DIVE_PUSH_DELAY);
+      } else {
+        router.push(`/zone/${zoneId}`);
+      }
+    },
+    [zones, router, diveOpacity]
+  );
 
   // Watches for a startup that never lands. Re-armed on every attempt, and
   // stood down the moment the data is in, so it only ever speaks up when this
@@ -609,19 +617,28 @@ export default function VanMapScreen() {
 
   // Shown once per app launch: surfaces items that are already expired or
   // expiring soon, right after the data has finished loading.
+  //
+  // Deferred behind runAfterInteractions so this query doesn't compete with
+  // the first screen's own startup queries on the serialized DB queue (see
+  // withDb) — the first paint happens sooner, and this alert (a one-per-
+  // launch nicety, not something the user is waiting on) arrives a beat
+  // later instead.
   useEffect(() => {
     if (!initialized || expirationAlertShown) return;
     setExpirationAlertShown(true);
-    listItemsWithExpiration().then((items) => {
-      const hasUrgent = items.some(
-        (item) => getExpirationStatus(item.expiration_date as string, item.reminder_days) !== "ok"
-      );
-      if (hasUrgent) setStartupOverviewVisible(true);
-      // The other launch-time prompt. Both are dialogs, so they're sequenced
-      // rather than stacked: the backup reminder waits for the expiration
-      // overview to be closed (see onDismiss below).
-      else checkBackupReminder();
+    const task = InteractionManager.runAfterInteractions(() => {
+      listItemsWithExpiration().then((items) => {
+        const hasUrgent = items.some(
+          (item) => getExpirationStatus(item.expiration_date as string, item.reminder_days) !== "ok"
+        );
+        if (hasUrgent) setStartupOverviewVisible(true);
+        // The other launch-time prompt. Both are dialogs, so they're sequenced
+        // rather than stacked: the backup reminder waits for the expiration
+        // overview to be closed (see onDismiss below).
+        else checkBackupReminder();
+      });
     });
+    return () => task.cancel();
   }, [initialized, expirationAlertShown]);
 
   // Edit mode and the overview both hide the FAB; close it too, for two
@@ -650,6 +667,65 @@ export default function VanMapScreen() {
     }, [editMode, requestDiscard])
   );
 
+  // These four (like handleSelectLocation/handleZonePress above) are
+  // useCallback'd rather than plain functions, and defined here — above the
+  // early returns below — rather than at their original spot after them,
+  // since a hook can't run conditionally: it has to execute on every render
+  // in the same order, including the renders that bail out early below.
+  const handleCreateZone = useCallback(
+    async (name: string, color: string, checklist: boolean) => {
+      const canvasH = activeLocation?.outline.h ?? DEFAULT_CANVAS_H;
+      let maxBottom = 70;
+      for (const z of zones) {
+        const bottom = z.geometry.y + z.geometry.h;
+        if (bottom > maxBottom) maxBottom = bottom;
+      }
+      const y = Math.min(maxBottom + 10, canvasH - 80);
+      const geometry = {
+        type: "rect" as const,
+        x: 50,
+        y,
+        w: 200,
+        h: 60,
+      };
+
+      await addZone(name, color, geometry, checklist);
+      setAddZoneVisible(false);
+    },
+    [activeLocation, zones, addZone]
+  );
+
+  const handleCreateItem = useCallback(
+    async (
+      name: string,
+      notes: string,
+      season: Season,
+      zoneId: string,
+      expirationDate: string | null,
+      reminderDays: number
+    ) => {
+      await addItem(name, zoneId, notes, season, expirationDate, reminderDays);
+      setAddItemVisible(false);
+      router.push(`/zone/${zoneId}`);
+    },
+    [addItem, router]
+  );
+
+  const handleSaveLabel = useCallback(
+    (side: LabelSide, def: LabelDef) => {
+      if (activeLocation) updateLocationLabel(activeLocation.id, side, def);
+      setEditingSide(null);
+    },
+    [activeLocation, updateLocationLabel]
+  );
+  const handleResetLabel = useCallback(
+    (side: LabelSide) => {
+      if (activeLocation) resetLocationLabel(activeLocation.id, side);
+      setEditingSide(null);
+    },
+    [activeLocation, resetLocationLabel]
+  );
+
   // Both ways startup can fail the user land here: it reported an error, or it
   // never came back at all. The second used to be indistinguishable from a very
   // slow launch — a blank screen with nothing on it to press — so it stayed
@@ -672,53 +748,11 @@ export default function VanMapScreen() {
     return <View style={[styles.container, { backgroundColor: palette.background }]} />;
   }
 
-  const handleCreateZone = async (name: string, color: string, checklist: boolean) => {
-    const canvasH = activeLocation?.outline.h ?? DEFAULT_CANVAS_H;
-    let maxBottom = 70;
-    for (const z of zones) {
-      const bottom = z.geometry.y + z.geometry.h;
-      if (bottom > maxBottom) maxBottom = bottom;
-    }
-    const y = Math.min(maxBottom + 10, canvasH - 80);
-    const geometry = {
-      type: "rect" as const,
-      x: 50,
-      y,
-      w: 200,
-      h: 60,
-    };
-
-    await addZone(name, color, geometry, checklist);
-    setAddZoneVisible(false);
-  };
-
-  const handleCreateItem = async (
-    name: string,
-    notes: string,
-    season: Season,
-    zoneId: string,
-    expirationDate: string | null,
-    reminderDays: number
-  ) => {
-    await addItem(name, zoneId, notes, season, expirationDate, reminderDays);
-    setAddItemVisible(false);
-    router.push(`/zone/${zoneId}`);
-  };
-
   // --- Orientation inscriptions (front/rear/left/right labels on the plan) ---
   const labels = activeLocation?.labels ?? {};
   // front/rear have a built-in default; left/right have none.
   const inscriptionDefault = (side: LabelSide): string | null =>
     side === "front" ? t("map.front") : side === "rear" ? t("map.rear") : null;
-
-  const handleSaveLabel = (side: LabelSide, def: LabelDef) => {
-    if (activeLocation) updateLocationLabel(activeLocation.id, side, def);
-    setEditingSide(null);
-  };
-  const handleResetLabel = (side: LabelSide) => {
-    if (activeLocation) resetLocationLabel(activeLocation.id, side);
-    setEditingSide(null);
-  };
 
   return (
     <View

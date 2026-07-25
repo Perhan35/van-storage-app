@@ -101,7 +101,7 @@ type Props = {
   onGeometryChange: (zoneId: string, geometry: Zone["geometry"]) => void;
 };
 
-export function ZoneEditOverlay({
+function ZoneEditOverlayInner({
   zone,
   fitScale,
   zoomScale,
@@ -442,6 +442,13 @@ export function ZoneEditOverlay({
     </>
   );
 }
+
+// Memoized, mirroring OutlineEditOverlay: without this, every zone re-rendered
+// (and, before VanLayoutSVG's otherZonesByZoneId memo, rebuilt its `otherZones`
+// array) whenever VanLayoutSVG re-rendered for any reason — a gesture-only
+// update elsewhere, a layout change — not just when this zone's own props
+// changed.
+export const ZoneEditOverlay = React.memo(ZoneEditOverlayInner);
 
 const styles = StyleSheet.create({
   dragBody: {

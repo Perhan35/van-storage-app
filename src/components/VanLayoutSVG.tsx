@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import { View, LayoutChangeEvent, StyleSheet, Pressable } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Svg, { Text as SvgText, G } from "react-native-svg";
@@ -179,45 +179,60 @@ export function VanLayoutSVG({ onZonePress, onEditInscription }: Props) {
     setLayout({ width, height });
   }, []);
 
-  // Content = the zones plus the outline (with its curve control points). Both
-  // views frame this so nothing the user drew — including a curve pushed past
-  // the frame — is ever clipped out of view.
-  const contentBBox = unionBBox(getZonesBoundingBox(zones), getOutlineBoundingBox(outline))!;
+  // Bbox/viewBox/scale math, memoized: it re-derives from the full zones
+  // array and outline points on every call, and previously ran on every
+  // render — including renders driven by unrelated state (highlight timers,
+  // gesture-only updates) while a flight/dive animation is in progress.
+  const { viewBoxMinX, viewBoxMinY, viewBoxW, viewBoxH, svgScale, svgOffsetX, svgOffsetY } =
+    useMemo(() => {
+      // Content = the zones plus the outline (with its curve control points).
+      // Both views frame this so nothing the user drew — including a curve
+      // pushed past the frame — is ever clipped out of view.
+      const contentBBox = unionBBox(getZonesBoundingBox(zones), getOutlineBoundingBox(outline))!;
 
-  let viewBoxMinX: number;
-  let viewBoxMinY: number;
-  let viewBoxW: number;
-  let viewBoxH: number;
-  if (editMode) {
-    // Show the standard editable area (canvas + overflow margin, where zones
-    // and vertices may be dragged) unioned with any content already beyond it,
-    // so curves bowed past the frame stay visible and grabbable while editing.
-    const minX = Math.min(-ZONE_OVERFLOW_MARGIN, contentBBox.minX);
-    const minY = Math.min(-ZONE_OVERFLOW_MARGIN, contentBBox.minY);
-    const maxX = Math.max(canvasW + ZONE_OVERFLOW_MARGIN, contentBBox.maxX);
-    const maxY = Math.max(canvasH + ZONE_OVERFLOW_MARGIN, contentBBox.maxY);
-    viewBoxMinX = minX;
-    viewBoxMinY = minY;
-    viewBoxW = maxX - minX;
-    viewBoxH = maxY - minY;
-  } else {
-    viewBoxMinX = contentBBox.minX - ZONES_FIT_PADDING;
-    viewBoxMinY = contentBBox.minY - ZONES_FIT_PADDING;
-    viewBoxW = contentBBox.maxX - contentBBox.minX + ZONES_FIT_PADDING * 2;
-    viewBoxH = contentBBox.maxY - contentBBox.minY + ZONES_FIT_PADDING * 2;
-  }
+      let minX: number;
+      let minY: number;
+      let w: number;
+      let h: number;
+      if (editMode) {
+        // Show the standard editable area (canvas + overflow margin, where
+        // zones and vertices may be dragged) unioned with any content already
+        // beyond it, so curves bowed past the frame stay visible and
+        // grabbable while editing.
+        const bx = Math.min(-ZONE_OVERFLOW_MARGIN, contentBBox.minX);
+        const by = Math.min(-ZONE_OVERFLOW_MARGIN, contentBBox.minY);
+        const bmaxX = Math.max(canvasW + ZONE_OVERFLOW_MARGIN, contentBBox.maxX);
+        const bmaxY = Math.max(canvasH + ZONE_OVERFLOW_MARGIN, contentBBox.maxY);
+        minX = bx;
+        minY = by;
+        w = bmaxX - bx;
+        h = bmaxY - by;
+      } else {
+        minX = contentBBox.minX - ZONES_FIT_PADDING;
+        minY = contentBBox.minY - ZONES_FIT_PADDING;
+        w = contentBBox.maxX - contentBBox.minX + ZONES_FIT_PADDING * 2;
+        h = contentBBox.maxY - contentBBox.minY + ZONES_FIT_PADDING * 2;
+      }
 
-  // Compute SVG -> screen mapping
-  let svgScale = 1;
-  let svgOffsetX = 0;
-  let svgOffsetY = 0;
-  if (layout) {
-    svgScale = Math.min(layout.width / viewBoxW, layout.height / viewBoxH);
-    svgOffsetX =
-      (layout.width - viewBoxW * svgScale) / 2 - viewBoxMinX * svgScale;
-    svgOffsetY =
-      (layout.height - viewBoxH * svgScale) / 2 - viewBoxMinY * svgScale;
-  }
+      let scale = 1;
+      let offsetX = 0;
+      let offsetY = 0;
+      if (layout) {
+        scale = Math.min(layout.width / w, layout.height / h);
+        offsetX = (layout.width - w * scale) / 2 - minX * scale;
+        offsetY = (layout.height - h * scale) / 2 - minY * scale;
+      }
+
+      return {
+        viewBoxMinX: minX,
+        viewBoxMinY: minY,
+        viewBoxW: w,
+        viewBoxH: h,
+        svgScale: scale,
+        svgOffsetX: offsetX,
+        svgOffsetY: offsetY,
+      };
+    }, [zones, outline, editMode, canvasW, canvasH, layout]);
 
   const handleGeometryChange = useCallback(
     (zoneId: string, geometry: Zone["geometry"]) => {
@@ -225,6 +240,22 @@ export function VanLayoutSVG({ onZonePress, onEditInscription }: Props) {
     },
     [updateZoneGeometry]
   );
+
+  // Each ZoneEditOverlay needs every *other* zone's geometry (for snapping).
+  // Filtering+mapping `zones` once per zone inline in the render below was
+  // O(n²) allocations per render; this builds the same per-zone arrays in one
+  // pass instead.
+  const otherZonesByZoneId = useMemo(() => {
+    const map = new Map<string, Zone["geometry"][]>();
+    if (zones.length === 0) return map;
+    const allGeometry = zones.map((z) => z.geometry);
+    zones.forEach((zone, i) => {
+      const others = allGeometry.slice();
+      others.splice(i, 1);
+      map.set(zone.id, others);
+    });
+    return map;
+  }, [zones]);
 
   // Live outline points show through the drawn line while a handle is dragged;
   // the committed outline drives everything else.
@@ -264,6 +295,15 @@ export function VanLayoutSVG({ onZonePress, onEditInscription }: Props) {
   //   - maxDistance(10): matches the pan's minDistance, so the moment a drag
   //     travels far enough to pan, the hold fails instead of firing.
   // What's left is a deliberate one-finger, stationary press.
+  //
+  // Deliberately NOT memoized (unlike ZoomableContainer's pinch/pan/doubleTap):
+  // this gesture lives in a GestureDetector nested *inside* ZoomableContainer's
+  // own, and making it persist across renders alongside that outer memoized
+  // gesture produced an intermittent bug — after diving into a zone and back,
+  // the canvas's pinch/pan (and, cascading from a stuck transition state, the
+  // header's back-to-overview control) would stop responding. Reverted to
+  // rebuilding it every render, which is the combination this app actually
+  // shipped and was tested with.
   const longPressEdit = Gesture.LongPress()
     .minDuration(450)
     .numberOfPointers(1)
@@ -359,9 +399,7 @@ export function VanLayoutSVG({ onZonePress, onEditInscription }: Props) {
             maxX={zoneBounds.maxX}
             minY={zoneBounds.minY}
             maxY={zoneBounds.maxY}
-            otherZones={zones
-              .filter((z) => z.id !== zone.id)
-              .map((z) => z.geometry)}
+            otherZones={otherZonesByZoneId.get(zone.id) ?? []}
             onGeometryChange={handleGeometryChange}
           />
         ))}
