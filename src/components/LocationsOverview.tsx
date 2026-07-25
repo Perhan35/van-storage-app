@@ -48,6 +48,10 @@ export function LocationsOverview({ onSelectLocation, onCreateNew }: Props) {
     setRefreshing(true);
     try {
       await reloadLocations();
+    } catch (err) {
+      // A failed reload leaves the list as it was — worth a line in the log,
+      // but never worth an unhandled rejection or a spinner left turning.
+      console.warn("Reloading locations failed", err);
     } finally {
       setRefreshing(false);
     }

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   getDb,
+  resetDbConnection,
   Zone,
   ZoneWithCount,
   Season,
@@ -38,6 +39,10 @@ let highlightTimer: ReturnType<typeof setTimeout> | null = null;
 // Bumped by every setActiveLocation call so an earlier, slower zone query can't
 // overwrite a later switch's result (see setActiveLocation).
 let activeLocationSeq = 0;
+
+// The startup run currently in progress, so the recovery attempts (see
+// retryInit) join it instead of stacking competing passes over the same tables.
+let initRun: Promise<void> | null = null;
 
 function snapshotGeometry(zones: ZoneWithCount[]): ZoneGeometrySnapshot {
   const snapshot: ZoneGeometrySnapshot = {};
@@ -166,6 +171,8 @@ type AppState = {
   discardPrompt: "session" | "outline" | null;
 
   init: () => Promise<void>;
+  // Restarts a startup that failed or never came back (see the action).
+  retryInit: () => Promise<void>;
   reloadLocations: () => Promise<void>;
   setOverviewMode: (overview: boolean) => void;
   setActiveLocation: (locationId: string) => Promise<void>;
@@ -287,51 +294,76 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   init: async () => {
     if (get().initialized) return;
-    set({ initError: null });
-    try {
-      await getDb();
-      await get().reloadThemeMode();
-      await get().reloadShowMenuHeader();
-      await get().reloadSeasonMode();
-      await get().reloadRemindersEnabled();
-      await get().reloadBackupSettings();
-      await get().reloadRecentSearches();
-      await get().reloadLocations();
+    // Called on mount and again by every recovery attempt (focus, foreground,
+    // pull-to-refresh): join the pass already running rather than starting a
+    // competing one.
+    if (initRun) return initRun;
+    const run = (async () => {
+      set({ initError: null });
+      try {
+        await getDb();
+        await get().reloadThemeMode();
+        await get().reloadShowMenuHeader();
+        await get().reloadSeasonMode();
+        await get().reloadRemindersEnabled();
+        await get().reloadBackupSettings();
+        await get().reloadRecentSearches();
+        await get().reloadLocations();
 
-      // The backup reminder measures "how long has it been" from the last
-      // export — an install that never exported has nothing to measure from,
-      // so first launch is recorded as the starting point.
-      if (!(await getPreference("firstLaunchAt"))) {
-        await setPreference("firstLaunchAt", new Date().toISOString());
+        // The backup reminder measures "how long has it been" from the last
+        // export — an install that never exported has nothing to measure from,
+        // so first launch is recorded as the starting point.
+        if (!(await getPreference("firstLaunchAt"))) {
+          await setPreference("firstLaunchAt", new Date().toISOString());
+        }
+
+        // Resolve which location is active: the persisted preference if it
+        // still exists, otherwise the first location (e.g. right after the
+        // one-time migration created the default "Van" location).
+        const locations = get().locations;
+        const storedId = await getPreference("activeLocationId");
+        const resolvedId =
+          (storedId && locations.some((l) => l.id === storedId) ? storedId : null) ??
+          locations[0]?.id ??
+          null;
+        set({ activeLocationId: resolvedId });
+        if (resolvedId && resolvedId !== storedId) {
+          await setPreference("activeLocationId", resolvedId);
+        }
+
+        // Start on the all-locations overview, unless there's exactly one
+        // location — then land directly inside it (no reason to show a one-tile
+        // overview). Migrated single-"Van" installs therefore behave as before.
+        set({ overviewMode: locations.length !== 1 });
+
+        await get().loadZones();
+        // First launch: no "tutorialShown" preference yet → surface the guided
+        // tour. Dismissing it records the preference so it never auto-opens again.
+        const tutorialShown = await getPreference("tutorialShown");
+        set({ initialized: true, tutorialVisible: tutorialShown !== "yes" });
+      } catch (err) {
+        set({ initError: err instanceof Error ? err.message : String(err) });
       }
+    })();
+    initRun = run;
+    // Only clears its own registration: a retry that gave up on this run has
+    // already replaced it, and must not be unregistered by the run it replaced.
+    run.finally(() => {
+      if (initRun === run) initRun = null;
+    });
+    return run;
+  },
 
-      // Resolve which location is active: the persisted preference if it
-      // still exists, otherwise the first location (e.g. right after the
-      // one-time migration created the default "Van" location).
-      const locations = get().locations;
-      const storedId = await getPreference("activeLocationId");
-      const resolvedId =
-        (storedId && locations.some((l) => l.id === storedId) ? storedId : null) ??
-        locations[0]?.id ??
-        null;
-      set({ activeLocationId: resolvedId });
-      if (resolvedId && resolvedId !== storedId) {
-        await setPreference("activeLocationId", resolvedId);
-      }
-
-      // Start on the all-locations overview, unless there's exactly one
-      // location — then land directly inside it (no reason to show a one-tile
-      // overview). Migrated single-"Van" installs therefore behave as before.
-      set({ overviewMode: locations.length !== 1 });
-
-      await get().loadZones();
-      // First launch: no "tutorialShown" preference yet → surface the guided
-      // tour. Dismissing it records the preference so it never auto-opens again.
-      const tutorialShown = await getPreference("tutorialShown");
-      set({ initialized: true, tutorialVisible: tutorialShown !== "yes" });
-    } catch (err) {
-      set({ initError: err instanceof Error ? err.message : String(err) });
-    }
+  // Startup that never finished — an error, or a pass still hanging on a
+  // database call that will never come back — used to mean a blank main screen
+  // for the life of the process, since nothing ever asked again. This is the
+  // way back: throw away whatever the last attempt was waiting on and start a
+  // clean one. Safe to call at any time; it's a no-op once startup succeeded.
+  retryInit: async () => {
+    if (get().initialized) return;
+    resetDbConnection();
+    initRun = null;
+    await get().init();
   },
 
   reloadLocations: async () => {
