@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { View, StyleSheet, Pressable, BackHandler } from "react-native";
+import { View, StyleSheet, Pressable, BackHandler, AppState } from "react-native";
 import { useRouter, useNavigation, useFocusEffect } from "expo-router";
 import { FAB, Text, Button, IconButton } from "react-native-paper";
 import Animated, {
@@ -294,38 +294,44 @@ export default function VanMapScreen() {
     armTransitionEnd(LOCATION_EXIT_DURATION);
   }, [overviewMode, editMode, setOverviewMode, armTransitionEnd, beginTitleSwap]);
 
+  // Nothing can legitimately be mid-flight while this screen isn't the one the
+  // user is looking at: the layers only ever move in answer to a tap here, and
+  // both are untouchable (pointerEvents="none") for as long as they do. So
+  // "at rest" is always the right state to force whenever we can't be sure the
+  // in-flight animation's own ending will still run — repairing a flight whose
+  // timer-based ending never fired. That ending hangs off a setTimeout, and a
+  // timer dropped while the screen was off-screen (or the app backgrounded)
+  // used to strand `transition` non-null for good: the map frozen at tile size
+  // in the corner (its seeded start-of-flight transform) with every layer,
+  // gesture and header control dead — or the grid left unmounted/invisible.
+  // Resetting the shared values directly rather than through setTransition
+  // alone, because when the state is already null there is no re-render to run
+  // the effect that does it.
+  const recoverTransitionState = useCallback(() => {
+    if (transitionTimer.current) {
+      clearTimeout(transitionTimer.current);
+      transitionTimer.current = null;
+    }
+    if (titleTimer.current) {
+      clearTimeout(titleTimer.current);
+      titleTimer.current = null;
+    }
+    setTransition(null);
+    // Read from the store rather than closing over the rendered value: this
+    // callback must not take `overviewMode` as a dependency, or entering and
+    // leaving a location would re-run it and wipe out the very flight that
+    // changed the mode.
+    setTitleOverview(useAppStore.getState().overviewMode);
+    headerOpacity.value = 1;
+    restLayers();
+  }, [restLayers]);
+
   // Reverses the "dive into zone" effect when returning to this screen (e.g.
   // navigating back from the zone screen). Executed on screen focus so the
   // color overlay smoothly fades back to transparent and zoom is reset.
   useFocusEffect(
     useCallback(() => {
-      // Nothing can legitimately be mid-flight while another screen sits on top
-      // of this one: the layers only ever move in answer to a tap here, and both
-      // are untouchable (pointerEvents="none") for as long as they do. So focus
-      // is a point where "at rest" is always the right state — and forcing it
-      // here is what repairs a flight whose ending never ran. That ending hangs
-      // off a setTimeout, and a timer dropped while the screen was off-screen
-      // used to strand `transition` non-null for good: the map frozen at tile
-      // size in the corner (its seeded start-of-flight transform) with every
-      // layer, gesture and header control dead. Resetting the shared values
-      // directly rather than through setTransition alone, because when the state
-      // is already null there is no re-render to run the effect that does it.
-      if (transitionTimer.current) {
-        clearTimeout(transitionTimer.current);
-        transitionTimer.current = null;
-      }
-      if (titleTimer.current) {
-        clearTimeout(titleTimer.current);
-        titleTimer.current = null;
-      }
-      setTransition(null);
-      // Read from the store rather than closing over the rendered value: this
-      // callback must not take `overviewMode` as a dependency, or entering and
-      // leaving a location would re-run the whole effect and wipe out the very
-      // flight that changed the mode.
-      setTitleOverview(useAppStore.getState().overviewMode);
-      headerOpacity.value = 1;
-      restLayers();
+      recoverTransitionState();
 
       zoomRef.current?.resetZoom();
       diveOpacity.value = withTiming(
@@ -337,8 +343,21 @@ export default function VanMapScreen() {
           }
         }
       );
-    }, [diveOpacity, restLayers])
+    }, [diveOpacity, recoverTransitionState])
   );
+
+  // Navigation focus alone doesn't cover every way this screen's JS can get
+  // interrupted mid-flight: locking the phone, a call, or switching apps while
+  // `transition` is "enter"/"exit" suspends the timer that would otherwise
+  // clear it, and none of that involves leaving the `index` route, so
+  // useFocusEffect never re-fires to repair it. Reusing the same recovery on
+  // the next foreground catches that gap too.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") recoverTransitionState();
+    });
+    return () => sub.remove();
+  }, [recoverTransitionState]);
 
   const handleTitlePress = () => {
     goToOverview();
