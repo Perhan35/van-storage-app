@@ -10,8 +10,14 @@ import { FeedbackOverlay } from "../src/components/game/FeedbackOverlay";
 import { useAppStore } from "../src/store/useAppStore";
 import { useAppTheme } from "../src/theme/useAppTheme";
 import { listAllItems, listAllZonesWithCounts } from "../src/db/repository";
-import { ZoneWithCount } from "../src/db/database";
-import { GameQuestion, ItemWithZoneName, generateQuestion, questionKey } from "../src/game/questions";
+import {
+  GameQuestion,
+  ItemWithZoneName,
+  ZoneWithLocationIcon,
+  generateQuestion,
+  questionKey,
+  questionLocationIcon,
+} from "../src/game/questions";
 
 const ADVANCE_DELAY_MS = 1200;
 
@@ -26,7 +32,7 @@ export default function GameScreen() {
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
 
   const [items, setItems] = useState<ItemWithZoneName[]>([]);
-  const [poolZones, setPoolZones] = useState<ZoneWithCount[]>([]);
+  const [poolZones, setPoolZones] = useState<ZoneWithLocationIcon[]>([]);
   const [loading, setLoading] = useState(true);
   const [switchingLocation, setSwitchingLocation] = useState(false);
   const [question, setQuestion] = useState<GameQuestion | null>(null);
@@ -175,7 +181,11 @@ export default function GameScreen() {
     <View style={[styles.container, { backgroundColor: palette.background }]}>
       <View style={styles.topSection}>
         <GameHud score={score} streak={streak} />
-        <QuestionBanner text={questionText} questionKey={questionKey(question)} />
+        <QuestionBanner
+          text={questionText}
+          icon={questionLocationIcon(question)}
+          questionKey={questionKey(question)}
+        />
         {isZoneQuestion && (
           <View style={styles.tapHint}>
             <Text style={[styles.tapHintText, { color: palette.onSurfaceVariant }]}>

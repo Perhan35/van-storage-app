@@ -1,6 +1,8 @@
 import { Item, Season, ZoneWithCount } from "../db/database";
 
-export type ItemWithZoneName = Item & { zone_name: string; location_id: string };
+export type ItemWithZoneName = Item & { zone_name: string; location_id: string; location_icon: string };
+
+export type ZoneWithLocationIcon = ZoneWithCount & { location_icon: string };
 
 export type ZoneQuestion = {
   kind: "zone";
@@ -16,7 +18,7 @@ export type SeasonQuestion = {
 
 export type QuantityQuestion = {
   kind: "quantity";
-  zone: ZoneWithCount;
+  zone: ZoneWithLocationIcon;
   correct: number;
   choices: number[];
 };
@@ -63,10 +65,23 @@ export function questionKey(q: GameQuestion): string {
   }
 }
 
+// The location icon for a question's subject — omitted for "zone" ("where
+// is") questions, since those are about finding the location, not shown it.
+export function questionLocationIcon(q: GameQuestion): string | null {
+  switch (q.kind) {
+    case "zone":
+      return null;
+    case "season":
+      return q.item.location_icon;
+    case "quantity":
+      return q.zone.location_icon;
+  }
+}
+
 function buildQuestion(
   kind: GameQuestion["kind"],
   items: ItemWithZoneName[],
-  zones: ZoneWithCount[]
+  zones: ZoneWithLocationIcon[]
 ): GameQuestion {
   switch (kind) {
     case "zone": {
@@ -93,7 +108,7 @@ function buildQuestion(
 // previous question (identified by questionKey) when another option exists.
 export function generateQuestion(
   items: ItemWithZoneName[],
-  zones: ZoneWithCount[],
+  zones: ZoneWithLocationIcon[],
   avoidKey?: string
 ): GameQuestion | null {
   const kinds: GameQuestion["kind"][] = [];
