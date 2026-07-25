@@ -41,15 +41,25 @@ export function isValidGeometry(g: unknown): g is Zone["geometry"] {
 }
 
 export function listZonesWithCounts(locationId: string): Promise<ZoneWithCount[]> {
+  return queryZonesWithCounts("WHERE z.location_id = ?", [locationId]);
+}
+
+// Zones across every location, used by the game screen's question pool so
+// quiz subjects aren't limited to whichever location is currently active.
+export function listAllZonesWithCounts(): Promise<ZoneWithCount[]> {
+  return queryZonesWithCounts("", []);
+}
+
+function queryZonesWithCounts(whereClause: string, params: string[]): Promise<ZoneWithCount[]> {
   return withDb(async (db) => {
     const rows = await db.getAllAsync<ZoneWithCount & { geometry: string }>(
       `SELECT z.*, COALESCE(c.cnt, 0) as item_count
        FROM zones z
        LEFT JOIN (SELECT zone_id, COUNT(*) as cnt FROM items GROUP BY zone_id) c
        ON z.id = c.zone_id
-       WHERE z.location_id = ?
+       ${whereClause}
        ORDER BY z.sort_order`,
-      [locationId]
+      params
     );
     return rows.flatMap((r) => {
       let geometry: unknown;
@@ -274,10 +284,10 @@ export function listItemsWithExpiration(): Promise<ItemWithExpiration[]> {
   );
 }
 
-export function listAllItems(): Promise<(Item & { zone_name: string })[]> {
+export function listAllItems(): Promise<(Item & { zone_name: string; location_id: string })[]> {
   return withDb((db) =>
-    db.getAllAsync<Item & { zone_name: string }>(
-      `SELECT i.*, z.name as zone_name
+    db.getAllAsync<Item & { zone_name: string; location_id: string }>(
+      `SELECT i.*, z.name as zone_name, z.location_id as location_id
        FROM items i JOIN zones z ON i.zone_id = z.id
        ORDER BY i.name COLLATE NOCASE`
     )
@@ -476,6 +486,47 @@ export function instantiateTemplate(
         );
       }
     });
+  });
+}
+
+export type DataFingerprint = { fingerprint: string; itemCount: number };
+
+// A cheap stand-in for "has anything worth backing up changed?": the row count
+// of each table plus the most recent updated_at in it. Edits bump updated_at,
+// additions and deletions move the counts — so any change to locations, zones
+// or items produces a different string, without instrumenting every mutation.
+// Preferences are deliberately left out: switching theme or season isn't data
+// worth re-exporting for.
+export function getDataFingerprint(): Promise<DataFingerprint> {
+  return withDb(async (db) => {
+    const row = await db.getFirstAsync<{
+      location_count: number;
+      zone_count: number;
+      item_count: number;
+      locations_at: string;
+      zones_at: string;
+      items_at: string;
+    }>(
+      `SELECT
+         (SELECT COUNT(*) FROM locations) AS location_count,
+         (SELECT COUNT(*) FROM zones) AS zone_count,
+         (SELECT COUNT(*) FROM items) AS item_count,
+         (SELECT COALESCE(MAX(updated_at), '') FROM locations) AS locations_at,
+         (SELECT COALESCE(MAX(updated_at), '') FROM zones) AS zones_at,
+         (SELECT COALESCE(MAX(updated_at), '') FROM items) AS items_at`
+    );
+    if (!row) return { fingerprint: "", itemCount: 0 };
+    return {
+      fingerprint: [
+        row.location_count,
+        row.zone_count,
+        row.item_count,
+        row.locations_at,
+        row.zones_at,
+        row.items_at,
+      ].join("|"),
+      itemCount: row.item_count,
+    };
   });
 }
 

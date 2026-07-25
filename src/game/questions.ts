@@ -1,6 +1,6 @@
 import { Item, Season, ZoneWithCount } from "../db/database";
 
-export type ItemWithZoneName = Item & { zone_name: string };
+export type ItemWithZoneName = Item & { zone_name: string; location_id: string };
 
 export type ZoneQuestion = {
   kind: "zone";
@@ -97,9 +97,9 @@ export function generateQuestion(
   avoidKey?: string
 ): GameQuestion | null {
   const kinds: GameQuestion["kind"][] = [];
-  if (items.length >= 1 && zones.length >= 2) kinds.push("zone");
-  // Weighted 2x: season questions were showing up too rarely in practice.
-  if (items.length >= 1) kinds.push("season", "season");
+  // Weighted 2x: "where is" questions should come up more often than season ones.
+  if (items.length >= 1 && zones.length >= 2) kinds.push("zone", "zone");
+  if (items.length >= 1) kinds.push("season");
   if (zones.length >= 1) kinds.push("quantity");
 
   if (kinds.length === 0) return null;
