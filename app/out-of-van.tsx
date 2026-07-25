@@ -270,7 +270,7 @@ export default function OutOfVanScreen() {
             }}
             left={(props) => (
               <View style={styles.itemIcons}>
-                <List.Icon {...props} icon="exit-to-app" color={palette.danger} />
+                <List.Icon {...props} icon="export" color={palette.danger} />
                 {seasonIcon && (
                   <List.Icon {...props} icon={seasonIcon} color={seasonIconColor(item.season)} />
                 )}

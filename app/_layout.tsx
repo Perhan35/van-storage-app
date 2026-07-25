@@ -95,7 +95,7 @@ function HeaderRight() {
     <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "transparent" }}>
       {!editMode && (
         <HeaderIcon
-          icon="exit-to-app"
+          icon="export"
           tone="outOfVan"
           size={30}
           onPress={() => router.push("/out-of-van")}
