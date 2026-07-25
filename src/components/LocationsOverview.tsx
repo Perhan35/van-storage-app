@@ -1,5 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Pressable, StyleSheet, ScrollView, Alert, GestureResponderEvent } from "react-native";
+import {
+  View,
+  Pressable,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  GestureResponderEvent,
+  RefreshControl,
+} from "react-native";
 import Svg, { Rect as SvgRect } from "react-native-svg";
 import { Text, IconButton, Icon } from "react-native-paper";
 import { useTranslation } from "react-i18next";
@@ -29,10 +37,21 @@ export function LocationsOverview({ onSelectLocation, onCreateNew }: Props) {
   const deleteLocation = useAppStore((s) => s.deleteLocation);
   const setActiveLocation = useAppStore((s) => s.setActiveLocation);
   const enterOutlineEditMode = useAppStore((s) => s.enterOutlineEditMode);
+  const reloadLocations = useAppStore((s) => s.reloadLocations);
   const [zonesByLocation, setZonesByLocation] = useState<Record<string, ZoneWithCount[]>>({});
   // Long-press context menu, anchored at the touch point (#7).
   const [menu, setMenu] = useState<{ location: Location; x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState<Location | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await reloadLocations();
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +127,14 @@ export function LocationsOverview({ onSelectLocation, onCreateNew }: Props) {
     <ScrollView
       contentContainerStyle={styles.grid}
       style={{ backgroundColor: palette.background }}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor={palette.primary}
+          colors={[palette.primary]}
+        />
+      }
     >
       {locations.map((loc) => (
         <Pressable
