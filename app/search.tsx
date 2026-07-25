@@ -170,7 +170,11 @@ export default function SearchScreen() {
 
   const handleItemPress = async (item: SearchResult) => {
     addRecentSearch(query.trim());
-    if (item.location_id !== activeLocationId) {
+    // From the all-locations overview, `activeLocationId` can already equal
+    // the result's location (left over from a previous visit) while
+    // `overviewMode` is still true — skipping setActiveLocation there would
+    // leave the overview mode untouched and the location would never open.
+    if (item.location_id !== activeLocationId || isGlobalView) {
       await setActiveLocation(item.location_id);
     }
     setHighlightedZoneId(item.zone_id);
