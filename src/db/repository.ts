@@ -41,23 +41,32 @@ export function isValidGeometry(g: unknown): g is Zone["geometry"] {
 }
 
 export function listZonesWithCounts(locationId: string): Promise<ZoneWithCount[]> {
-  return queryZonesWithCounts("WHERE z.location_id = ?", [locationId]);
+  return queryZonesWithCounts("", "WHERE z.location_id = ?", [locationId]);
 }
 
-// Zones across every location, used by the game screen's question pool so
-// quiz subjects aren't limited to whichever location is currently active.
-export function listAllZonesWithCounts(): Promise<ZoneWithCount[]> {
-  return queryZonesWithCounts("", []);
+// Zones across every location, with each zone's location icon, used by the
+// game screen's question pool so quiz subjects aren't limited to whichever
+// location is currently active.
+export function listAllZonesWithCounts(): Promise<(ZoneWithCount & { location_icon: string })[]> {
+  return queryZonesWithCounts(
+    ", l.icon as location_icon",
+    "JOIN locations l ON z.location_id = l.id",
+    []
+  );
 }
 
-function queryZonesWithCounts(whereClause: string, params: string[]): Promise<ZoneWithCount[]> {
+function queryZonesWithCounts<T extends ZoneWithCount = ZoneWithCount>(
+  extraSelect: string,
+  joinAndWhere: string,
+  params: string[]
+): Promise<T[]> {
   return withDb(async (db) => {
-    const rows = await db.getAllAsync<ZoneWithCount & { geometry: string }>(
-      `SELECT z.*, COALESCE(c.cnt, 0) as item_count
+    const rows = await db.getAllAsync<T & { geometry: string }>(
+      `SELECT z.*, COALESCE(c.cnt, 0) as item_count${extraSelect}
        FROM zones z
        LEFT JOIN (SELECT zone_id, COUNT(*) as cnt FROM items GROUP BY zone_id) c
        ON z.id = c.zone_id
-       ${whereClause}
+       ${joinAndWhere}
        ORDER BY z.sort_order`,
       params
     );
@@ -284,11 +293,15 @@ export function listItemsWithExpiration(): Promise<ItemWithExpiration[]> {
   );
 }
 
-export function listAllItems(): Promise<(Item & { zone_name: string; location_id: string })[]> {
+export function listAllItems(): Promise<
+  (Item & { zone_name: string; location_id: string; location_icon: string })[]
+> {
   return withDb((db) =>
-    db.getAllAsync<Item & { zone_name: string; location_id: string }>(
-      `SELECT i.*, z.name as zone_name, z.location_id as location_id
-       FROM items i JOIN zones z ON i.zone_id = z.id
+    db.getAllAsync<Item & { zone_name: string; location_id: string; location_icon: string }>(
+      `SELECT i.*, z.name as zone_name, z.location_id as location_id, l.icon as location_icon
+       FROM items i
+       JOIN zones z ON i.zone_id = z.id
+       JOIN locations l ON z.location_id = l.id
        ORDER BY i.name COLLATE NOCASE`
     )
   );
