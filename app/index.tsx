@@ -55,6 +55,12 @@ import { getExpirationStatus } from "../src/utils/expiration";
 import { DEFAULT_CANVAS_H } from "../src/components/layoutConstants";
 
 const DIVE_FADE_PEAK = 0.5;
+// A startup still unfinished after this long isn't slow, it's stuck — a
+// database call that will never come back takes the whole startup sequence
+// with it (see resetDbConnection), and this screen would sit blank for as long
+// as the app stayed open. Long enough that a cold start with a migration to
+// run never trips it.
+const STARTUP_STALL_MS = 8000;
 // Fires the navigation near the end of the dive, so only its last moment
 // overlaps with the zone screen's own fade-in — a brief handoff rather than
 // the two animations running side by side for most of their length.
@@ -67,7 +73,7 @@ export default function VanMapScreen() {
   const { palette } = useAppTheme();
   const initialized = useAppStore((s) => s.initialized);
   const initError = useAppStore((s) => s.initError);
-  const init = useAppStore((s) => s.init);
+  const retryInit = useAppStore((s) => s.retryInit);
   const zones = useAppStore((s) => s.zones);
   const addZone = useAppStore((s) => s.addZone);
   const addItem = useAppStore((s) => s.addItem);
@@ -96,6 +102,9 @@ export default function VanMapScreen() {
   const [addItemVisible, setAddItemVisible] = useState(false);
   const [addLocationVisible, setAddLocationVisible] = useState(false);
   const [startupOverviewVisible, setStartupOverviewVisible] = useState(false);
+  // Startup that never arrived, and the retries offered for it (see below).
+  const [startupStalled, setStartupStalled] = useState(false);
+  const [startupAttempt, setStartupAttempt] = useState(0);
   // Inscription (front/rear/left/right label) currently open in the editor —
   // opened by tapping a label directly on the plan while editing the layout.
   const [editingSide, setEditingSide] = useState<LabelSide | null>(null);
@@ -115,6 +124,11 @@ export default function VanMapScreen() {
   // back onto the same tile. Null when it was opened without one.
   const lastFlight = useRef<{ locationId: string; start: FlightStart } | null>(null);
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Identifies the flight that owns the layers. Bumped when one starts, and by
+  // the recovery below — so a flight that has to wait on the database before it
+  // can animate (see handleSelectLocation) can tell, when it resumes, whether
+  // it is still the one in charge, and keep its hands off the layers if not.
+  const flightSeq = useRef(0);
 
   const mapScale = useSharedValue(1);
   const mapX = useSharedValue(0);
@@ -128,27 +142,50 @@ export default function VanMapScreen() {
   const gridOriginX = useSharedValue(0);
   const gridOriginY = useSharedValue(0);
 
-  const mapFlightStyle = useAnimatedStyle(() => ({
-    opacity: mapOpacity.value,
-    transform: [
-      { translateX: mapX.value },
-      { translateY: mapY.value },
-      { scale: mapScale.value },
-    ],
-  }));
+  // Whether the shared values below get any say in how the layers look. They
+  // live outside React, so anything that interrupts a flight can strand them
+  // part-way through a move — and a layer stranded at opacity 0 is a main
+  // screen that is simply blank: no tiles, nothing to pull on, and no way back
+  // short of restarting the app. So they're only read while a flight is
+  // actually running; the rest of the time both styles state the resting
+  // values outright, and whatever the shared values happen to hold is
+  // irrelevant. (Each flight seeds every value it animates before it starts, so
+  // none of them depend on having been left tidy.)
+  //
+  // Read from the render rather than mirrored into a shared value on purpose:
+  // it puts the decision on the React state that also decides which layers are
+  // mounted, where it can't itself get stranded.
+  const flying = transition !== null;
+
+  const mapFlightStyle = useAnimatedStyle(() =>
+    flying
+      ? {
+          opacity: mapOpacity.value,
+          transform: [
+            { translateX: mapX.value },
+            { translateY: mapY.value },
+            { scale: mapScale.value },
+          ],
+        }
+      : { opacity: 1, transform: [] }
+  );
 
   // Scale about the tapped tile rather than the layer's own center: shift the
   // origin there, scale, shift back.
-  const gridFlightStyle = useAnimatedStyle(() => ({
-    opacity: gridOpacity.value,
-    transform: [
-      { translateX: gridOriginX.value },
-      { translateY: gridOriginY.value },
-      { scale: gridScale.value },
-      { translateX: -gridOriginX.value },
-      { translateY: -gridOriginY.value },
-    ],
-  }));
+  const gridFlightStyle = useAnimatedStyle(() =>
+    flying
+      ? {
+          opacity: gridOpacity.value,
+          transform: [
+            { translateX: gridOriginX.value },
+            { translateY: gridOriginY.value },
+            { scale: gridScale.value },
+            { translateX: -gridOriginX.value },
+            { translateY: -gridOriginY.value },
+          ],
+        }
+      : { opacity: 1, transform: [] }
+  );
 
   const restLayers = useCallback(() => {
     mapScale.value = 1;
@@ -249,6 +286,8 @@ export default function VanMapScreen() {
         ? lastFlight.current.start
         : null;
 
+    flightSeq.current++;
+
     if (back) {
       // The grid starts where the entry left it — receded, invisible, about the
       // same vanishing point — and comes back from there. Set before the state
@@ -257,6 +296,13 @@ export default function VanMapScreen() {
       gridOpacity.value = 0;
       gridOriginX.value = back.x;
       gridOriginY.value = back.y;
+      // The map is on screen at full size, so that is where the return starts
+      // from. Stated rather than assumed: an interrupted flight can leave these
+      // holding stale values (the resting render ignores them, so nothing shows
+      // it), and animating out of those would fling the map in from nowhere.
+      mapScale.value = 1;
+      mapX.value = 0;
+      mapY.value = 0;
 
       setTransition("exit");
       setOverviewMode(true);
@@ -283,6 +329,10 @@ export default function VanMapScreen() {
     gridOpacity.value = 0;
     gridOriginX.value = 0;
     gridOriginY.value = 0;
+    mapScale.value = 1;
+    mapX.value = 0;
+    mapY.value = 0;
+    mapOpacity.value = 1;
 
     setTransition("exit");
     setOverviewMode(true);
@@ -318,6 +368,10 @@ export default function VanMapScreen() {
       clearTimeout(titleTimer.current);
       titleTimer.current = null;
     }
+    // Takes the layers away from whichever flight held them: one that is
+    // waiting on the database mid-take-off would otherwise resume afterwards
+    // and re-apply its animations onto layers that are supposed to be at rest.
+    flightSeq.current++;
     setTransition(null);
     // Read from the store rather than closing over the rendered value: this
     // callback must not take `overviewMode` as a dependency, or entering and
@@ -471,6 +525,7 @@ export default function VanMapScreen() {
 
     // Kept so leaving can play this same flight backwards.
     lastFlight.current = { locationId, start };
+    const seq = ++flightSeq.current;
 
     // Seeded before the map layer mounts, so its very first frame already sits
     // on the tile instead of appearing full-screen for a frame.
@@ -491,6 +546,14 @@ export default function VanMapScreen() {
     // Awaited: the map has to mount with the new location's zones already in
     // place, or the flight would carry the previous location's layout up.
     await setActiveLocation(locationId);
+
+    // Somebody else has taken the layers over during that wait — a newer tap,
+    // or the recovery below putting everything back at rest. Taking off now
+    // would animate layers that are no longer ours: at best it fights the newer
+    // flight, at worst (nothing running any more, so no ending left to clean up
+    // after it) it leaves the overview faded to nothing, with the "flight over"
+    // reset that would have restored it never firing again.
+    if (seq !== flightSeq.current) return;
 
     const config = { duration: LOCATION_ENTER_DURATION, easing: LOCATION_ENTER_EASING };
     mapScale.value = withTiming(1, config);
@@ -529,6 +592,21 @@ export default function VanMapScreen() {
     }
   };
 
+  // Watches for a startup that never lands. Re-armed on every attempt, and
+  // stood down the moment the data is in, so it only ever speaks up when this
+  // screen would otherwise be showing nothing at all.
+  useEffect(() => {
+    if (initialized) return;
+    setStartupStalled(false);
+    const timer = setTimeout(() => setStartupStalled(true), STARTUP_STALL_MS);
+    return () => clearTimeout(timer);
+  }, [initialized, startupAttempt]);
+
+  const handleRetryInit = useCallback(() => {
+    setStartupAttempt((n) => n + 1);
+    retryInit();
+  }, [retryInit]);
+
   // Shown once per app launch: surfaces items that are already expired or
   // expiring soon, right after the data has finished loading.
   useEffect(() => {
@@ -546,11 +624,15 @@ export default function VanMapScreen() {
     });
   }, [initialized, expirationAlertShown]);
 
-  // Entering edit mode hides the FAB; close it too so it doesn't reappear
-  // already-open the next time it's shown.
+  // Edit mode and the overview both hide the FAB; close it too, for two
+  // reasons. It mustn't reappear already-open the next time it's shown — and,
+  // more importantly, an open speed dial lays a full-screen backdrop over
+  // everything, whose touch handling follows `open` alone and ignores
+  // `visible`. Left open on the way to the overview, that invisible sheet
+  // swallows every tap and pull the locations grid should have received.
   useEffect(() => {
-    if (editMode) setFabOpen(false);
-  }, [editMode]);
+    if (editMode || overviewMode) setFabOpen(false);
+  }, [editMode, overviewMode]);
 
   // Android's back button/gesture is the other way out of an edit session, and
   // this is the root screen — left alone it would drop the changes on the way
@@ -568,13 +650,18 @@ export default function VanMapScreen() {
     }, [editMode, requestDiscard])
   );
 
-  if (initError) {
+  // Both ways startup can fail the user land here: it reported an error, or it
+  // never came back at all. The second used to be indistinguishable from a very
+  // slow launch — a blank screen with nothing on it to press — so it stayed
+  // blank until the app was killed and started again. That's what this offers
+  // instead, without leaving the app.
+  if (initError || (!initialized && startupStalled)) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: palette.background }]}>
         <Text style={{ color: palette.onSurface, textAlign: "center", marginBottom: 16 }}>
-          {t("startup.error")}
+          {t(initError ? "startup.error" : "startup.stalled")}
         </Text>
-        <Button mode="contained" onPress={() => init()}>
+        <Button mode="contained" onPress={handleRetryInit}>
           {t("startup.retry")}
         </Button>
       </View>

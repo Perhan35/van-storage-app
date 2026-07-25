@@ -40,6 +40,23 @@ export function withDb<T>(fn: (db: SQLite.SQLiteDatabase) => Promise<T>): Promis
   return run;
 }
 
+// Throws away the memoized connection *and* the queue, so the next call opens a
+// fresh one and starts a fresh chain.
+//
+// The queue is what makes a single dropped promise fatal: every later call is
+// chained behind the previous one, so one native call that never settles (a
+// query interrupted by the app being suspended mid-flight, say) leaves every
+// subsequent read hanging for the life of the process — the startup sequence
+// included, which is the "blank screen, only a restart fixes it" failure. This
+// is the recovery for that, and it is deliberately blunt: nothing is closed
+// (the old connection may itself be wedged), the references are simply dropped
+// for the garbage collector. Only call it from a recovery path — a caller still
+// waiting on the old chain keeps waiting.
+export function resetDbConnection(): void {
+  dbPromise = null;
+  dbQueue = Promise.resolve();
+}
+
 async function openAndMigrate(): Promise<SQLite.SQLiteDatabase> {
   const db = await SQLite.openDatabaseAsync("my-inventory.db");
   await db.execAsync("PRAGMA journal_mode = WAL;");
