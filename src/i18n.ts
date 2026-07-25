@@ -107,6 +107,23 @@ const resources = {
       "settings.import_success_title": "Success",
       "settings.import_success": "Data imported successfully!",
       "settings.import_error": "Import failed:",
+      "settings.backup_reminders_enabled": "Enable backup reminders",
+      "settings.backup_reminders_hint":
+        "If a week goes by with unsaved changes, the app offers to back up at launch.",
+      "settings.last_backup": "Last backup: {{date}}",
+      "settings.last_backup_never": "Last backup: never",
+
+      "backup.reminder_title": "Time to back up",
+      "backup.reminder_body_one": "Your data has changed and hasn't been backed up for {{count}} day.",
+      "backup.reminder_body_other": "Your data has changed and hasn't been backed up for {{count}} days.",
+      "backup.reminder_body_never": "Your data has never been backed up.",
+      "backup.reminder_hint":
+        "Export the file and keep it somewhere other than this device — cloud drive, email, another computer. A backup left on the phone disappears with it.",
+      "backup.reminder_now": "Back up now",
+      "backup.reminder_tomorrow": "Remind me tomorrow",
+      "backup.reminder_never": "Don't remind me again",
+      "backup.reminder_off_title": "Reminders off",
+      "backup.reminder_off_text": "Backup reminders can be turned back on at any time in Settings.",
 
       "game.title": "Game Mode",
       "game.score": "Score",
@@ -344,6 +361,26 @@ const resources = {
       "settings.import_success_title": "Succès",
       "settings.import_success": "Données importées avec succès !",
       "settings.import_error": "Import échoué: ",
+      "settings.backup_reminders_enabled": "Activer les rappels de sauvegarde",
+      "settings.backup_reminders_hint":
+        "Si une semaine passe avec des changements non sauvegardés, l'application propose une sauvegarde au démarrage.",
+      "settings.last_backup": "Dernière sauvegarde : {{date}}",
+      "settings.last_backup_never": "Dernière sauvegarde : jamais",
+
+      "backup.reminder_title": "Pensez à sauvegarder",
+      "backup.reminder_body_one":
+        "Vos données ont changé et n'ont pas été sauvegardées depuis {{count}} jour.",
+      "backup.reminder_body_other":
+        "Vos données ont changé et n'ont pas été sauvegardées depuis {{count}} jours.",
+      "backup.reminder_body_never": "Vos données n'ont jamais été sauvegardées.",
+      "backup.reminder_hint":
+        "Exportez le fichier et conservez-le ailleurs que sur cet appareil — cloud, e-mail, autre ordinateur. Une sauvegarde restée sur le téléphone disparaît avec lui.",
+      "backup.reminder_now": "Le faire maintenant",
+      "backup.reminder_tomorrow": "Me rappeler demain",
+      "backup.reminder_never": "Ne plus me rappeler",
+      "backup.reminder_off_title": "Rappels désactivés",
+      "backup.reminder_off_text":
+        "Le rappel des sauvegardes peut être réactivé à tout moment dans les paramètres.",
 
       "game.title": "Mode Jeu",
       "game.score": "Score",
