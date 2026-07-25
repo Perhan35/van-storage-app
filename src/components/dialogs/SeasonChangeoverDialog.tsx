@@ -70,7 +70,7 @@ export function SeasonChangeoverDialog({ visible, season, onDismiss }: Props) {
         right={(props) => (
           <IconButton
             {...props}
-            icon={action === "remove" ? "exit-to-app" : item.location_icon}
+            icon={action === "remove" ? "export" : item.location_icon}
             iconColor={action === "remove" ? undefined : "#2e7d32"}
             accessibilityLabel={action === "remove" ? t("zone.take_out") : t("zone.put_back")}
             onPress={() => handleApply(item, action === "remove")}

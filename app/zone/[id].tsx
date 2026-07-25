@@ -518,7 +518,7 @@ export default function ZoneDetailScreen() {
                 translation={translation}
                 side="right"
                 backgroundColor={item.out_of_van ? palette.success : palette.danger}
-                icon={item.out_of_van ? activeLocationIcon : "exit-to-app"}
+                icon={item.out_of_van ? activeLocationIcon : "export"}
                 onPress={() => handleToggleOutOfVan(item)}
               />
             )}
@@ -527,7 +527,7 @@ export default function ZoneDetailScreen() {
             outOfVan={!!item.out_of_van}
             outColor={palette.danger}
             inColor={palette.success}
-            outIcon="exit-to-app"
+            outIcon="export"
             inIcon={activeLocationIcon}
           >
           <AnimatedCheckRow checked={!!item.checked}>
@@ -602,7 +602,7 @@ export default function ZoneDetailScreen() {
                     />
                   )}
                   {!!item.out_of_van && (
-                    <List.Icon icon="exit-to-app" color={palette.danger} />
+                    <List.Icon icon="export" color={palette.danger} />
                   )}
                   {!!seasonIcon && (
                     <List.Icon icon={seasonIcon} color={seasonIconColor(item.season)} />
@@ -678,7 +678,7 @@ export default function ZoneDetailScreen() {
                     ]
                   : []),
                 {
-                  icon: menu.item.out_of_van ? "tray-arrow-down" : "exit-to-app",
+                  icon: menu.item.out_of_van ? "tray-arrow-down" : "export",
                   label: menu.item.out_of_van ? t("zone.put_back") : t("zone.take_out"),
                   onPress: () => handleToggleOutOfVan(menu.item),
                 },

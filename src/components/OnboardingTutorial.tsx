@@ -55,7 +55,7 @@ function MockItemCard() {
         <Icon source="check-bold" size={22} color="#fff" />
       </View>
       <View style={[styles.mockAction, styles.mockActionRight, { backgroundColor: palette.danger }]}>
-        <Icon source="exit-to-app" size={22} color="#fff" />
+        <Icon source="export" size={22} color="#fff" />
       </View>
       <Animated.View style={[styles.mockCard, { backgroundColor: palette.surface }, cardStyle]}>
         <Icon source="weather-sunny" size={26} color={seasonIconColor("summer")} />

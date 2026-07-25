@@ -300,7 +300,7 @@ export default function SearchScreen() {
                   translation={translation}
                   side="right"
                   backgroundColor={item.out_of_van ? palette.success : palette.danger}
-                  icon={item.out_of_van ? item.location_icon : "exit-to-app"}
+                  icon={item.out_of_van ? item.location_icon : "export"}
                   onPress={() => handleToggleOutOfVan(item)}
                 />
               )}
@@ -309,7 +309,7 @@ export default function SearchScreen() {
                 outOfVan={!!item.out_of_van}
                 outColor={palette.danger}
                 inColor={palette.success}
-                outIcon="exit-to-app"
+                outIcon="export"
                 inIcon={item.location_icon}
               >
               <AnimatedCheckRow checked={!!item.checked}>
@@ -359,7 +359,7 @@ export default function SearchScreen() {
                     <View style={styles.itemIcons}>
                       <List.Icon
                         {...props}
-                        icon={item.out_of_van ? "exit-to-app" : item.location_icon}
+                        icon={item.out_of_van ? "export" : item.location_icon}
                         color={item.out_of_van ? palette.danger : undefined}
                       />
                       {seasonIcon && (
