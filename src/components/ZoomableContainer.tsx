@@ -1,5 +1,6 @@
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -13,6 +14,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  runOnJS,
   Easing,
   SharedValue,
 } from "react-native-reanimated";
@@ -43,6 +45,11 @@ type Props = {
   // their own single-finger drag gestures inside the canvas (e.g. zone
   // editing) should raise this so a 1-finger drag isn't stolen by panning.
   panMinPointers?: number;
+  // A deliberate one-finger, stationary hold anywhere on the canvas. Lives
+  // here rather than in a GestureDetector nested inside this one — see the
+  // comment on `composed` below for why that nesting had to go.
+  onLongPress?: () => void;
+  longPressEnabled?: boolean;
 };
 
 const MIN_SCALE = 0.5;
@@ -60,6 +67,16 @@ export const DIVE_IN_DURATION = 300;
 export const DIVE_OUT_DURATION = 180;
 export const DIVE_EASING = Easing.inOut(Easing.cubic);
 export const DIVE_OUT_EASING = Easing.out(Easing.quad);
+
+// Slack added to a programmatic animation's duration before gestures are
+// allowed to touch the transform again, covering the frame or two between the
+// animation reaching its target and settling.
+const ANIM_LOCKOUT_SLACK = 60;
+
+const LONG_PRESS_DURATION = 450;
+// Matches the pan's minDistance, so the moment a drag travels far enough to
+// pan, the hold fails instead of firing.
+const LONG_PRESS_MAX_DISTANCE = 10;
 
 // Live pinch-zoom level, so descendants (e.g. zone edit gesture math) can
 // convert screen-pixel deltas to content-space units as the user zooms.
@@ -96,7 +113,13 @@ function clampTranslate(
 
 export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
   function ZoomableContainer(
-    { children, enabled = true, panMinPointers = 1 },
+    {
+      children,
+      enabled = true,
+      panMinPointers = 1,
+      onLongPress,
+      longPressEnabled = true,
+    },
     ref
   ) {
   const scale = useSharedValue(1);
@@ -105,12 +128,19 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
   const dragLock = useSharedValue(false);
   const containerWidth = useSharedValue(1);
   const containerHeight = useSharedValue(1);
-  // True while a programmatic zoom animation is running, so gestures stand
-  // down instead of fighting the animation for the transform.
-  const animating = useSharedValue(false);
-  // Bumped by each programmatic run so a superseded animation's completion
-  // callback can tell it's stale and leave `animating` to the newer one.
-  const animGen = useSharedValue(0);
+
+  // Deadline (wall-clock ms) until which a programmatic zoom animation owns the
+  // transform and gestures stand down instead of fighting it for it.
+  //
+  // A deadline rather than an `animating` boolean released by the animation's
+  // own completion callback: that callback is not guaranteed to run at all — a
+  // shared value written directly (a gesture worklet in the same frame the
+  // animation starts, e.g. a finger still down as the screen regains focus)
+  // *cancels* the animation, and a cancelled animation never calls back. The
+  // flag would then stay true forever and every gesture would stand down for
+  // the rest of the screen's life: no zoom, no pan. A deadline expires on its
+  // own, so that failure mode does not exist.
+  const animUntil = useSharedValue(0);
 
   // `translateX/Y` is the clamped, rendered value — the render path is a
   // pure read of these, nothing else. `rawTranslateX/Y` is the *unclamped*
@@ -147,57 +177,112 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
   // also covers fingers that were already down when a dive animation ended.
   const pinchPrimed = useSharedValue(false);
 
-  // True for the entire span a second finger is down. This is the *only*
-  // thing pan checks to stand down during a pinch — not pointer count. On
-  // iOS, RNGH's pan `maxPointers` maps straight to UIPanGestureRecognizer's
-  // `maximumNumberOfTouches`, which does not cancel the recognizer when an
-  // extra touch lands: it just keeps tracking the original finger and
-  // reports numberOfPointers as if nothing changed. So a pointer-count check
-  // is a no-op there, and pan kept writing translateX/Y for the *entire*
-  // two-finger gesture, racing pinch's writes every frame — the "oscillates
-  // between two positions" behaviour. This flag is set/cleared directly by
-  // pinch's own lifecycle, independent of what any recognizer reports.
-  const pinchActive = useSharedValue(false);
+  // Live count of fingers on the canvas, and a latch that goes true the moment
+  // a second one lands and only clears once *every* finger is back up.
+  //
+  // The latch is what keeps pan and pinch from both writing the transform.
+  // Recognizer state can't be used for this: on iOS the pan's `maxPointers`
+  // maps straight to UIPanGestureRecognizer's `maximumNumberOfTouches`, which
+  // does not cancel the recognizer when an extra touch lands — it keeps
+  // tracking the original finger and reports as if nothing happened. And the
+  // pinch's own onStart only fires once UIPinchGestureRecognizer *activates*,
+  // which needs a real scale change, so it does not cover the window between
+  // the second finger landing and the pinch taking off. In that window both
+  // gestures were writing: pan mutating rawTranslate by its one finger's delta
+  // and pinch overwriting it from the centroid, in a per-frame order that isn't
+  // fixed. Zoomed out, where the clamp bound collapses to PAN_MARGIN, the two
+  // results straddle that bound and the canvas snaps between two positions —
+  // the "flickers between two spots, depends where my fingers are" behaviour.
+  //
+  // Counting raw touch events instead is independent of every recognizer, and
+  // latching until all fingers are up means pan can never take the transform
+  // back mid-sequence.
+  const activeTouches = useSharedValue(0);
+  const multiTouch = useSharedValue(false);
 
   useEffect(() => {
     gesturesEnabled.value = enabled;
   }, [enabled]);
+
+  // Read inside the long-press worklet rather than through `.enabled()`, so
+  // toggling edit mode never changes the gesture's identity — see `composed`.
+  const longPressArmed = useSharedValue(longPressEnabled);
+  useEffect(() => {
+    longPressArmed.value = longPressEnabled;
+  }, [longPressEnabled]);
+
+  // Indirection so the gesture below can stay memoized for the component's
+  // whole life while still calling the latest handler.
+  const onLongPressRef = useRef(onLongPress);
+  onLongPressRef.current = onLongPress;
+  const fireLongPress = useCallback(() => {
+    onLongPressRef.current?.();
+  }, []);
 
   const onLayout = (e: LayoutChangeEvent) => {
     containerWidth.value = e.nativeEvent.layout.width;
     containerHeight.value = e.nativeEvent.layout.height;
   };
 
+  // Touch counting rides on a manual gesture, which never activates and never
+  // fails on its own, so it sees the whole touch stream for the entire
+  // sequence — unlike pan/pinch, which stop reporting once their recognizer
+  // resolves.
+  //
+  // The count is re-anchored from `numberOfTouches` on every touch-down (where
+  // it unambiguously means "fingers currently down") and only decremented from
+  // `changedTouches` on the way up, so a miscount can't accumulate across
+  // sequences.
+  const touchTracker = useMemo(() => Gesture.Manual()
+    .onTouchesDown((e) => {
+      activeTouches.value = e.numberOfTouches;
+      if (activeTouches.value >= 2) multiTouch.value = true;
+    })
+    .onTouchesUp((e) => {
+      activeTouches.value = Math.max(
+        0,
+        activeTouches.value - e.changedTouches.length
+      );
+      if (activeTouches.value === 0) multiTouch.value = false;
+    })
+    .onTouchesCancelled((e) => {
+      activeTouches.value = Math.max(
+        0,
+        activeTouches.value - e.changedTouches.length
+      );
+      if (activeTouches.value === 0) multiTouch.value = false;
+    }), []);
+
   // Pinch owns *everything* two-finger: both the scaling and the drag that
   // comes with it (tracked from the centroid). Nothing here reads the pan
   // gesture, so the two can't disagree about who moved the content.
-  //
-  // Memoized (as are pan/doubleTap/composed below): every callback here
-  // closes only over shared values, which are stable refs, so this never
-  // needs to change identity. Rebuilding and reattaching the composed
-  // gesture on every render of this component — which happens whenever the
-  // parent re-renders for unrelated reasons, e.g. app/index.tsx's own state —
-  // risks resetting the native recognizer's in-flight state mid-gesture.
   const pinch = useMemo(() => Gesture.Pinch()
     .onStart((e) => {
-      // Claim exclusivity the moment a pinch is recognized, unconditionally —
-      // pan must stand down even if gesturesEnabled/animating below causes
-      // pinch itself to do nothing this gesture.
-      pinchActive.value = true;
-      if (!gesturesEnabled.value || animating.value) return;
+      // A recognized pinch means two fingers are down, whatever the touch
+      // tracker believes — a floor under it, in case its handler was reset
+      // mid-interaction and it lost count. Set unconditionally, before the
+      // guards below: pan must stand down even if this pinch itself ends up
+      // doing nothing.
+      multiTouch.value = true;
+      if (!gesturesEnabled.value || Date.now() < animUntil.value) return;
       savedScale.value = scale.value;
       prevFocalX.value = e.focalX - containerWidth.value / 2;
       prevFocalY.value = e.focalY - containerHeight.value / 2;
-      // Defensive resync: every other writer of translateX/Y (doubleTap,
-      // zoomToRect, resetZoom, and this gesture's own onFinalize below) keeps
-      // raw in lockstep, so this should be a no-op — but starting a fresh
-      // gesture from a guaranteed-consistent baseline costs nothing.
+      // Defensive resync: every other writer of translateX/Y (zoomToRect,
+      // resetZoom, and this gesture's own onFinalize below) keeps raw in
+      // lockstep, so this should be a no-op — but starting a fresh gesture
+      // from a guaranteed-consistent baseline costs nothing.
       rawTranslateX.value = translateX.value;
       rawTranslateY.value = translateY.value;
       pinchPrimed.value = true;
     })
     .onUpdate((e) => {
-      if (!gesturesEnabled.value || animating.value) return;
+      // Re-asserted every frame, not just in onStart: resetZoom clears the
+      // latch to un-stick whatever a navigation interrupted, and it can land
+      // while a pinch is already in flight — after which onStart is never
+      // coming again to put it back.
+      multiTouch.value = true;
+      if (!gesturesEnabled.value || Date.now() < animUntil.value) return;
       // A finger lifting mid-pinch is reported here (not via onEnd) for one
       // last event with a stale/unreliable focal & scale — RNGH hasn't yet
       // decided the gesture is over. Skip it and force a re-prime, so if a
@@ -248,7 +333,6 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
     })
     .onFinalize(() => {
       pinchPrimed.value = false;
-      pinchActive.value = false;
       // Drop any past-the-bound overshoot rather than carrying it into the
       // next gesture, so releasing and re-grabbing never feels "sticky".
       rawTranslateX.value = translateX.value;
@@ -256,11 +340,11 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
     }), []);
 
   // Pan is single-finger by config (see maxPointers), but that alone doesn't
-  // keep it from running during a pinch (see pinchActive's comment above) —
-  // the `pinchActive` check below is what actually excludes it. Deltas come
-  // from e.change rather than the cumulative e.translation, so a dragLock
-  // pause resumes from where the content actually is rather than jumping by
-  // the whole travel since touch-down.
+  // keep it from running during a pinch (see multiTouch's comment above) — the
+  // `multiTouch` check below is what actually excludes it. Deltas come from
+  // e.change rather than the cumulative e.translation, so a dragLock pause
+  // resumes from where the content actually is rather than jumping by the
+  // whole travel since touch-down.
   const pan = useMemo(() => Gesture.Pan()
     .minPointers(panMinPointers)
     .maxPointers(panMinPointers)
@@ -269,12 +353,12 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
       panPrimed.value = false;
     })
     .onChange((e) => {
-      if (!gesturesEnabled.value || animating.value) return;
-      if (pinchActive.value) {
-        // A second finger is down and pinch owns the transform. Re-prime so
-        // panning resumes cleanly (no jump) once pinch releases, instead of
-        // applying everything that happened while it was locked out in one
-        // big delta.
+      if (!gesturesEnabled.value || Date.now() < animUntil.value) return;
+      if (multiTouch.value) {
+        // A second finger has been down at some point in this touch sequence
+        // and pinch owns the transform for the rest of it. Re-prime so panning
+        // resumes cleanly (no jump) on the next sequence, instead of applying
+        // everything that happened while it was locked out in one big delta.
         panPrimed.value = false;
         return;
       }
@@ -306,57 +390,49 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
       );
     })
     .onFinalize(() => {
+      // Same exclusion as onChange, and for a sharper reason: on iOS the pan
+      // recognizer can resolve part-way through a two-finger gesture, and
+      // slamming the pinch's unclamped working baseline back to the clamped
+      // value mid-pinch is exactly the corruption rawTranslate exists to
+      // prevent.
+      if (multiTouch.value) return;
       // Drop any past-the-bound overshoot rather than carrying it into the
       // next gesture, so releasing and re-grabbing never feels "sticky".
       rawTranslateX.value = translateX.value;
       rawTranslateY.value = translateY.value;
     }), [panMinPointers]);
 
-  const doubleTap = useMemo(() => Gesture.Tap()
-    .numberOfTaps(2)
-    .onEnd(() => {
-      if (!gesturesEnabled.value || animating.value) return;
-      scale.value = 1;
-      translateX.value = 0;
-      translateY.value = 0;
-      rawTranslateX.value = 0;
-      rawTranslateY.value = 0;
-    }), []);
+  // A deliberate one-finger, stationary press drops into edit mode. Constrained
+  // so it can't be mistaken for the canvas' own navigation: one pointer, and a
+  // max travel matching the pan's minDistance. `multiTouch` covers the rest —
+  // a pinch whose fingers landed a beat apart can't be read as a hold.
+  const longPress = useMemo(() => Gesture.LongPress()
+    .minDuration(LONG_PRESS_DURATION)
+    .numberOfPointers(1)
+    .maxDistance(LONG_PRESS_MAX_DISTANCE)
+    .onStart(() => {
+      if (!gesturesEnabled.value || !longPressArmed.value) return;
+      if (multiTouch.value || Date.now() < animUntil.value) return;
+      runOnJS(fireLongPress)();
+    }), [fireLongPress]);
 
-  const composed = useMemo(
-    () => Gesture.Simultaneous(pinch, pan, doubleTap),
-    [pinch, pan, doubleTap]
-  );
-
-  // Claims the transform for a programmatic run and returns its generation, so
-  // the timing callback can tell whether it's still the current one.
+  // One GestureDetector for the whole canvas, and a composition whose identity
+  // never changes for the life of the component.
   //
-  // The release is armed here on a JS timer as well as on that callback,
-  // because the callback is not guaranteed to run at all: a shared value
-  // written directly (a gesture worklet in the same frame the animation is
-  // started — a finger still down as the screen regains focus) *cancels* the
-  // animation rather than finishing it, and a cancelled animation never calls
-  // back. `animating` would then stay true forever and every gesture would
-  // stand down for the rest of the screen's life — no zoom, no pan, no
-  // double-tap. Nothing on the UI thread can cancel this timer.
-  const releaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const beginAnimation = (duration: number) => {
-    animating.value = true;
-    animGen.value += 1;
-    const gen = animGen.value;
-    if (releaseTimer.current) clearTimeout(releaseTimer.current);
-    releaseTimer.current = setTimeout(() => {
-      releaseTimer.current = null;
-      if (animGen.value === gen) animating.value = false;
-    }, duration + 60);
-    return gen;
-  };
-
-  useEffect(
-    () => () => {
-      if (releaseTimer.current) clearTimeout(releaseTimer.current);
-    },
-    []
+  // Both halves of that matter. This used to be two nested detectors — this one
+  // plus a long-press detector inside VanLayoutSVG — with no relation declared
+  // between them, and the inner gesture rebuilt on every render. RNGH rewires
+  // the relations across the whole detector tree whenever any detector
+  // re-attaches, and doing that while this one's recognizers were live left
+  // them wedged: after diving into a zone and back, the canvas' pinch and pan
+  // would stop responding until the container was unmounted (going out to the
+  // locations overview and back in). Everything the canvas recognizes now lives
+  // in this one composition, and every gesture in it closes only over shared
+  // values — including the enabled flags, deliberately read inside the worklets
+  // rather than set with `.enabled()` — so nothing here ever needs to reattach.
+  const composed = useMemo(
+    () => Gesture.Simultaneous(touchTracker, pinch, pan, longPress),
+    [touchTracker, pinch, pan, longPress]
   );
 
   useImperativeHandle(ref, () => ({
@@ -373,12 +449,12 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
       const targetTranslateX = -zoneCenterRelX * targetScale;
       const targetTranslateY = -zoneCenterRelY * targetScale;
 
-      const gen = beginAnimation(DIVE_IN_DURATION);
+      animUntil.value = Date.now() + DIVE_IN_DURATION + ANIM_LOCKOUT_SLACK;
 
       // Raw is set to the *final* target immediately, not animated: gesture
-      // math is a no-op for the whole animation (gated by `animating`), so
-      // raw only needs to be correct by the time a gesture can read it again
-      // — which is exactly when this animation has settled at its target.
+      // math is a no-op for the whole animation (gated by `animUntil`), so raw
+      // only needs to be correct by the time a gesture can read it again —
+      // which is exactly when this animation has settled at its target.
       rawTranslateX.value = targetTranslateX;
       rawTranslateY.value = targetTranslateY;
 
@@ -388,13 +464,22 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
       // outside the normal pan bounds. Nothing re-clamps until the next
       // gesture, which is what lets the dive center any zone.
       translateX.value = withTiming(targetTranslateX, timingConfig);
-      translateY.value = withTiming(targetTranslateY, timingConfig, () => {
-        if (animGen.value === gen) animating.value = false;
-      });
+      translateY.value = withTiming(targetTranslateY, timingConfig);
       return true;
     },
     resetZoom() {
-      const gen = beginAnimation(DIVE_OUT_DURATION);
+      // Called on every focus of the map screen, which makes it the natural
+      // place to guarantee a clean slate: whatever a gesture interrupted by the
+      // navigation away left behind (a latched multi-touch, a zone still
+      // holding the pan lock, a half-primed pinch) is cleared here rather than
+      // surviving into the next interaction.
+      activeTouches.value = 0;
+      multiTouch.value = false;
+      dragLock.value = false;
+      pinchPrimed.value = false;
+      panPrimed.value = false;
+
+      animUntil.value = Date.now() + DIVE_OUT_DURATION + ANIM_LOCKOUT_SLACK;
 
       rawTranslateX.value = 0;
       rawTranslateY.value = 0;
@@ -402,11 +487,9 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
       const timingConfig = { duration: DIVE_OUT_DURATION, easing: DIVE_OUT_EASING };
       scale.value = withTiming(1, timingConfig);
       translateX.value = withTiming(0, timingConfig);
-      translateY.value = withTiming(0, timingConfig, () => {
-        if (animGen.value === gen) animating.value = false;
-      });
+      translateY.value = withTiming(0, timingConfig);
     },
-  }));
+  }), []);
 
   // A pure read: gestures already clamp as they write (zoomToRect/resetZoom
   // are the deliberate exception, see above), so there's no recombination
