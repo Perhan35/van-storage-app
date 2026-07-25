@@ -46,6 +46,7 @@ import { CreateZoneDialog } from "../src/components/dialogs/CreateZoneDialog";
 import { AddItemDialog } from "../src/components/dialogs/AddItemDialog";
 import { CreateLocationDialog } from "../src/components/dialogs/CreateLocationDialog";
 import { ExpirationOverviewDialog } from "../src/components/dialogs/ExpirationOverviewDialog";
+import { BackupReminderDialog } from "../src/components/dialogs/BackupReminderDialog";
 import { EditInscriptionDialog } from "../src/components/dialogs/EditInscriptionDialog";
 import { plusIcon, tagFabStyle, FAB_RADIUS_SMALL } from "../src/components/AddFab";
 import { Season, LabelSide, LabelDef } from "../src/db/database";
@@ -74,6 +75,7 @@ export default function VanMapScreen() {
   const requestDiscard = useAppStore((s) => s.requestDiscard);
   const expirationAlertShown = useAppStore((s) => s.expirationAlertShown);
   const setExpirationAlertShown = useAppStore((s) => s.setExpirationAlertShown);
+  const checkBackupReminder = useAppStore((s) => s.checkBackupReminder);
   const activeLocation = useAppStore((s) =>
     s.locations.find((l) => l.id === s.activeLocationId)
   );
@@ -537,6 +539,10 @@ export default function VanMapScreen() {
         (item) => getExpirationStatus(item.expiration_date as string, item.reminder_days) !== "ok"
       );
       if (hasUrgent) setStartupOverviewVisible(true);
+      // The other launch-time prompt. Both are dialogs, so they're sequenced
+      // rather than stacked: the backup reminder waits for the expiration
+      // overview to be closed (see onDismiss below).
+      else checkBackupReminder();
     });
   }, [initialized, expirationAlertShown]);
 
@@ -742,8 +748,13 @@ export default function VanMapScreen() {
         visible={startupOverviewVisible}
         categories={["expired", "soon"]}
         title={t("expiration.startup_title")}
-        onDismiss={() => setStartupOverviewVisible(false)}
+        onDismiss={() => {
+          setStartupOverviewVisible(false);
+          checkBackupReminder();
+        }}
       />
+
+      <BackupReminderDialog />
     </View>
   );
 }

@@ -4,31 +4,14 @@ import { Text, Button, Divider, SegmentedButtons, Switch } from "react-native-pa
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { exportAllData, importAllData, isValidGeometry, isValidOutline } from "../src/db/repository";
+import { importAllData, isValidGeometry, isValidOutline } from "../src/db/repository";
 import { getTemplate } from "../src/db/templates";
 import { useAppStore, ThemeMode, SeasonMode } from "../src/store/useAppStore";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
 import { SeasonChangeoverDialog } from "../src/components/dialogs/SeasonChangeoverDialog";
 import { ExpirationOverviewDialog } from "../src/components/dialogs/ExpirationOverviewDialog";
-
-function downloadJsonWeb(data: string, filename: string) {
-  const blob = new Blob([data], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function getBackupFilename() {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `my-inventory-backup-${y}${m}${d}.json`;
-}
+import { runBackupExport } from "../src/utils/backup";
 
 function pickFileWeb(): Promise<string | null> {
   return new Promise((resolve) => {
@@ -47,7 +30,7 @@ function pickFileWeb(): Promise<string | null> {
 const DOUBLE_TAP_WINDOW_MS = 500;
 
 export default function SettingsScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { palette } = useAppTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -69,6 +52,11 @@ export default function SettingsScreen() {
   const setRemindersEnabled = useAppStore((s) => s.setRemindersEnabled);
   const reloadRemindersEnabled = useAppStore((s) => s.reloadRemindersEnabled);
   const syncRemindersIfEnabled = useAppStore((s) => s.syncRemindersIfEnabled);
+  const backupRemindersEnabled = useAppStore((s) => s.backupRemindersEnabled);
+  const setBackupRemindersEnabled = useAppStore((s) => s.setBackupRemindersEnabled);
+  const reloadBackupSettings = useAppStore((s) => s.reloadBackupSettings);
+  const lastBackupAt = useAppStore((s) => s.lastBackupAt);
+  const recordBackupDone = useAppStore((s) => s.recordBackupDone);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [changeoverVisible, setChangeoverVisible] = useState(false);
@@ -98,31 +86,17 @@ export default function SettingsScreen() {
 
   const handleExport = async () => {
     setExporting(true);
-    try {
-      const appVersion = Constants.expoConfig?.version ?? "";
-      const data = JSON.stringify(await exportAllData(appVersion), null, 2);
-      const filename = getBackupFilename();
-
-      if (Platform.OS === "web") {
-        downloadJsonWeb(data, filename);
-      } else {
-        const { File, Paths } = await import("expo-file-system");
-        const Sharing = await import("expo-sharing");
-        const file = new File(Paths.cache, filename);
-        file.write(data);
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(file.uri, {
-            mimeType: "application/json",
-            UTI: "public.json",
-          });
-        } else {
-          Alert.alert(t("settings.export_success_title"), t("settings.export_success"));
-        }
-      }
-    } catch (e) {
-      Alert.alert(t("settings.error"), t("settings.export_error") + " " + (e as Error).message);
-    }
+    const result = await runBackupExport();
     setExporting(false);
+    if (!result.ok) {
+      Alert.alert(t("settings.error"), t("settings.export_error") + " " + result.error);
+      return;
+    }
+    // Stops the reminder from asking again until the data moves on.
+    await recordBackupDone();
+    if (!result.shared) {
+      Alert.alert(t("settings.export_success_title"), t("settings.export_success"));
+    }
   };
 
   const importData = async (content: string) => {
@@ -254,6 +228,11 @@ export default function SettingsScreen() {
         await reloadSeasonMode();
         await reloadRemindersEnabled();
         await syncRemindersIfEnabled();
+        await reloadBackupSettings();
+        // What's on the device now is exactly what's in the file the user just
+        // imported, so there's nothing new to back up — record it as backed up
+        // rather than let the reminder fire on the next launch.
+        await recordBackupDone();
         Alert.alert(t("settings.import_success_title"), t("settings.import_success"));
       } catch (e) {
         Alert.alert(t("settings.error"), t("settings.import_error") + " " + (e as Error).message);
@@ -329,6 +308,22 @@ export default function SettingsScreen() {
         >
           {t("settings.btn_import")}
         </Button>
+        <View style={[styles.switchRow, styles.switchRowSpaced]}>
+          <Text variant="bodyMedium" style={styles.switchLabel}>
+            {t("settings.backup_reminders_enabled")}
+          </Text>
+          <Switch value={backupRemindersEnabled} onValueChange={setBackupRemindersEnabled} />
+        </View>
+        <Text variant="bodySmall" style={{ color: palette.onSurfaceVariant }}>
+          {t("settings.backup_reminders_hint")}
+        </Text>
+        <Text variant="bodySmall" style={[styles.lastBackup, { color: palette.onSurfaceVariant }]}>
+          {lastBackupAt
+            ? t("settings.last_backup", {
+                date: new Date(lastBackupAt).toLocaleDateString(i18n.language),
+              })
+            : t("settings.last_backup_never")}
+        </Text>
       </View>
       <Divider />
       <View style={styles.section}>
@@ -464,4 +459,7 @@ const styles = StyleSheet.create({
   switchRowSpaced: {
     marginTop: 16,
   },
+  // Keeps a long label from pushing the switch off the row.
+  switchLabel: { flex: 1, paddingRight: 12 },
+  lastBackup: { marginTop: 8, fontStyle: "italic" },
 });

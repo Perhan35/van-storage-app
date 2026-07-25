@@ -29,6 +29,10 @@ const MAX_HISTORY = 50;
 // Cap recent searches so the list stays a quick glance, not a full log.
 const MAX_RECENT_SEARCHES = 8;
 
+// How long data may go un-backed-up before the reminder is offered.
+const BACKUP_REMINDER_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 let highlightTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Bumped by every setActiveLocation call so an earlier, slower zone query can't
@@ -128,6 +132,12 @@ type AppState = {
   seasonMode: SeasonMode;
   showMenuHeader: boolean;
   remindersEnabled: boolean;
+  backupRemindersEnabled: boolean;
+  // When the last export completed (ISO), null if this install never exported.
+  lastBackupAt: string | null;
+  // Whether the "time to back up" modal is on screen. Decided once per launch
+  // by checkBackupReminder.
+  backupReminderVisible: boolean;
   expirationAlertShown: boolean;
   tutorialVisible: boolean;
   recentSearches: string[];
@@ -184,6 +194,12 @@ type AppState = {
   reloadSeasonMode: () => Promise<void>;
   setRemindersEnabled: (enabled: boolean) => Promise<boolean>;
   reloadRemindersEnabled: () => Promise<void>;
+  setBackupRemindersEnabled: (enabled: boolean) => Promise<void>;
+  reloadBackupSettings: () => Promise<void>;
+  checkBackupReminder: () => Promise<void>;
+  snoozeBackupReminder: () => Promise<void>;
+  dismissBackupReminder: () => void;
+  recordBackupDone: () => Promise<void>;
   setExpirationAlertShown: (shown: boolean) => void;
   addRecentSearch: (query: string) => Promise<void>;
   removeRecentSearch: (query: string) => Promise<void>;
@@ -255,6 +271,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   seasonMode: "summer",
   showMenuHeader: true,
   remindersEnabled: false,
+  backupRemindersEnabled: true,
+  lastBackupAt: null,
+  backupReminderVisible: false,
   expirationAlertShown: false,
   tutorialVisible: false,
   recentSearches: [],
@@ -275,8 +294,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       await get().reloadShowMenuHeader();
       await get().reloadSeasonMode();
       await get().reloadRemindersEnabled();
+      await get().reloadBackupSettings();
       await get().reloadRecentSearches();
       await get().reloadLocations();
+
+      // The backup reminder measures "how long has it been" from the last
+      // export — an install that never exported has nothing to measure from,
+      // so first launch is recorded as the starting point.
+      if (!(await getPreference("firstLaunchAt"))) {
+        await setPreference("firstLaunchAt", new Date().toISOString());
+      }
 
       // Resolve which location is active: the persisted preference if it
       // still exists, otherwise the first location (e.g. right after the
@@ -506,6 +533,70 @@ export const useAppStore = create<AppState>((set, get) => ({
   reloadRemindersEnabled: async () => {
     const stored = await getPreference("remindersEnabled");
     set({ remindersEnabled: stored === "on" });
+  },
+
+  setBackupRemindersEnabled: async (enabled) => {
+    set({ backupRemindersEnabled: enabled });
+    await setPreference("backupRemindersEnabled", enabled ? "on" : "off");
+  },
+
+  // Mirrors reloadThemeMode for the backup section: absence of a stored
+  // preference means "on" (reminders are opt-out), so only an explicit "off"
+  // disables them.
+  reloadBackupSettings: async () => {
+    const [stored, lastBackupAt] = await Promise.all([
+      getPreference("backupRemindersEnabled"),
+      getPreference("lastBackupAt"),
+    ]);
+    set({ backupRemindersEnabled: stored !== "off", lastBackupAt });
+  },
+
+  // Decides once per launch whether to prompt for a backup. All three of the
+  // conditions must hold: reminders on, nothing exported for a week, and data
+  // that has actually moved since the last export — nagging about a backup
+  // that would be byte-identical to the last one is just noise.
+  checkBackupReminder: async () => {
+    if (!get().backupRemindersEnabled) return;
+
+    // "Remind me tomorrow" parks the prompt until the stored moment passes.
+    const snoozedUntil = await getPreference("backupReminderSnoozeUntil");
+    if (snoozedUntil && Date.now() < Date.parse(snoozedUntil)) return;
+
+    // An install with no items has nothing worth losing yet.
+    const { fingerprint, itemCount } = await repo.getDataFingerprint();
+    if (itemCount === 0) return;
+    if (fingerprint === (await getPreference("lastBackupFingerprint"))) return;
+
+    const reference =
+      (await getPreference("lastBackupAt")) ?? (await getPreference("firstLaunchAt"));
+    const referenceMs = reference ? Date.parse(reference) : NaN;
+    if (Number.isNaN(referenceMs)) return;
+    if (Date.now() - referenceMs < BACKUP_REMINDER_DAYS * DAY_MS) return;
+
+    set({ backupReminderVisible: true });
+  },
+
+  snoozeBackupReminder: async () => {
+    set({ backupReminderVisible: false });
+    await setPreference(
+      "backupReminderSnoozeUntil",
+      new Date(Date.now() + DAY_MS).toISOString()
+    );
+  },
+
+  dismissBackupReminder: () => set({ backupReminderVisible: false }),
+
+  // Records the data as safely exported: the moment, and the fingerprint it had
+  // at that moment, so the reminder stays quiet until something actually
+  // changes. Any pending snooze is cleared — it was about a backup that has
+  // now happened.
+  recordBackupDone: async () => {
+    const now = new Date().toISOString();
+    const { fingerprint } = await repo.getDataFingerprint();
+    set({ lastBackupAt: now, backupReminderVisible: false });
+    await setPreference("lastBackupAt", now);
+    await setPreference("lastBackupFingerprint", fingerprint);
+    await setPreference("backupReminderSnoozeUntil", "");
   },
 
   setExpirationAlertShown: (shown) => set({ expirationAlertShown: shown }),
