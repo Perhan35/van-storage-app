@@ -1,6 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, FlatList, StyleSheet } from "react-native";
-import Animated, { LinearTransition, SlideOutRight, useReducedMotion } from "react-native-reanimated";
+import ReanimatedSwipeable, {
+  SwipeableMethods,
+  SwipeDirection,
+} from "react-native-gesture-handler/ReanimatedSwipeable";
+import Animated, {
+  Extrapolation,
+  LinearTransition,
+  SharedValue,
+  SlideOutRight,
+  interpolate,
+  useAnimatedStyle,
+  useReducedMotion,
+} from "react-native-reanimated";
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
 import { Button, Divider, IconButton, List, SegmentedButtons, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,6 +28,42 @@ import { triggerHaptic } from "../src/utils/haptics";
 
 type OutItem = OutOfVanItem;
 type SeasonFilter = Season | "all";
+
+const ACTION_WIDTH = 64;
+
+// Slides the action button in from its edge as the row is swiped open.
+// Swiping left reveals it, matching the out-of-van toggle direction used
+// elsewhere in the app (zone list, search results).
+function SwipeActionButton({
+  translation,
+  backgroundColor,
+  icon,
+  onPress,
+}: {
+  translation: SharedValue<number>;
+  backgroundColor: string;
+  icon: string;
+  onPress: () => void;
+}) {
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateX: interpolate(
+          translation.value,
+          [-ACTION_WIDTH, 0],
+          [0, ACTION_WIDTH],
+          Extrapolation.CLAMP
+        ),
+      },
+    ],
+  }));
+
+  return (
+    <Animated.View style={[styles.swipeAction, { backgroundColor }, animatedStyle]}>
+      <IconButton icon={icon} iconColor="#fff" size={26} onPress={onPress} />
+    </Animated.View>
+  );
+}
 
 export default function OutOfVanScreen() {
   const router = useRouter();
@@ -45,6 +93,7 @@ export default function OutOfVanScreen() {
   const [zoneMenuAnchor, setZoneMenuAnchor] = useState<DropdownAnchor | null>(null);
   const locationButtonRef = useRef<View>(null);
   const zoneButtonRef = useRef<View>(null);
+  const swipeableRefs = useRef<Map<string, SwipeableMethods>>(new Map());
 
   // Measures the trigger button so the dropdown can open flush beneath it,
   // matching its width (react-native-web's measureInWindow needs a plain View
@@ -176,6 +225,7 @@ export default function OutOfVanScreen() {
   const selectedZone = availableZones.find((z) => z.id === selectedZoneId);
 
   const handlePutBack = async (item: OutItem) => {
+    swipeableRefs.current.get(item.id)?.close();
     await setItemOutOfVan(item.id, false);
     await load();
   };
@@ -260,6 +310,24 @@ export default function OutOfVanScreen() {
             exiting={reducedMotion ? undefined : SlideOutRight.duration(280)}
             layout={reducedMotion ? undefined : LinearTransition.duration(220)}
           >
+          <ReanimatedSwipeable
+            ref={(ref) => {
+              if (ref) swipeableRefs.current.set(item.id, ref);
+              else swipeableRefs.current.delete(item.id);
+            }}
+            overshootRight={false}
+            onSwipeableOpen={(direction) => {
+              if (direction === SwipeDirection.LEFT) handlePutBack(item);
+            }}
+            renderRightActions={(_progress, translation) => (
+              <SwipeActionButton
+                translation={translation}
+                backgroundColor={palette.success}
+                icon={item.location_icon}
+                onPress={() => handlePutBack(item)}
+              />
+            )}
+          >
           <List.Item
             title={item.name}
             description={`📍 ${isGlobalView ? `${item.location_name} • ` : ""}${item.zone_name}${item.notes ? ` • ${item.notes}` : ""}`}
@@ -284,6 +352,7 @@ export default function OutOfVanScreen() {
               />
             )}
           />
+          </ReanimatedSwipeable>
           </Animated.View>
           );
         }}
@@ -358,4 +427,9 @@ const styles = StyleSheet.create({
   filterButton: { borderRadius: 8 },
   filterButtonContent: { flexDirection: "row-reverse" },
   itemIcons: { flexDirection: "row" },
+  swipeAction: {
+    width: ACTION_WIDTH,
+    justifyContent: "center",
+    alignItems: "center",
+  },
 });
