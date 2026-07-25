@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   View,
   Pressable,
@@ -17,8 +17,7 @@ import { RenameLocationDialog } from "./dialogs/RenameLocationDialog";
 import { ContextMenu } from "./ContextMenu";
 import { useAppTheme } from "../theme/useAppTheme";
 import { Rect } from "./locationTransition";
-import * as repo from "../db/repository";
-import { ZoneWithCount, Location } from "../db/database";
+import { Location } from "../db/database";
 import { triggerHaptic } from "../utils/haptics";
 
 type Props = {
@@ -33,12 +32,13 @@ export function LocationsOverview({ onSelectLocation, onCreateNew }: Props) {
   const { t } = useTranslation();
   const { palette } = useAppTheme();
   const locations = useAppStore((s) => s.locations);
+  const zonesByLocation = useAppStore((s) => s.zonesByLocation);
   const renameLocation = useAppStore((s) => s.renameLocation);
   const deleteLocation = useAppStore((s) => s.deleteLocation);
   const setActiveLocation = useAppStore((s) => s.setActiveLocation);
   const enterOutlineEditMode = useAppStore((s) => s.enterOutlineEditMode);
   const reloadLocations = useAppStore((s) => s.reloadLocations);
-  const [zonesByLocation, setZonesByLocation] = useState<Record<string, ZoneWithCount[]>>({});
+  const reloadZonesByLocation = useAppStore((s) => s.reloadZonesByLocation);
   // Long-press context menu, anchored at the touch point (#7).
   const [menu, setMenu] = useState<{ location: Location; x: number; y: number } | null>(null);
   const [renaming, setRenaming] = useState<Location | null>(null);
@@ -47,7 +47,7 @@ export function LocationsOverview({ onSelectLocation, onCreateNew }: Props) {
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
-      await reloadLocations();
+      await Promise.all([reloadLocations(), reloadZonesByLocation()]);
     } catch (err) {
       // A failed reload leaves the list as it was — worth a line in the log,
       // but never worth an unhandled rejection or a spinner left turning.
@@ -56,21 +56,6 @@ export function LocationsOverview({ onSelectLocation, onCreateNew }: Props) {
       setRefreshing(false);
     }
   };
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const entries = await Promise.all(
-        locations.map(
-          async (loc) => [loc.id, await repo.listZonesWithCounts(loc.id)] as const
-        )
-      );
-      if (!cancelled) setZonesByLocation(Object.fromEntries(entries));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [locations]);
 
   // The plan box inside each tile, measured on tap so the map screen knows
   // where to grow from.

@@ -19,6 +19,7 @@ export const MIGRATIONS = [
   );`,
   `CREATE INDEX IF NOT EXISTS idx_items_name ON items(name COLLATE NOCASE);`,
   `CREATE INDEX IF NOT EXISTS idx_items_zone ON items(zone_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_items_out_of_van ON items(out_of_van);`,
   `CREATE TABLE IF NOT EXISTS preferences (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -91,4 +92,16 @@ export const ZONE_COLUMNS_TO_ADD: { name: string; ddl: string }[] = [
     name: "location_id",
     ddl: "ALTER TABLE zones ADD COLUMN location_id TEXT REFERENCES locations(id) ON DELETE CASCADE",
   },
+];
+
+// Indexes on columns that only exist once the *_COLUMNS_TO_ADD above have run
+// (a fresh install's CREATE TABLE doesn't have them yet), so these run after
+// that, not inside MIGRATIONS. IF NOT EXISTS makes them safe to re-run every
+// launch.
+export const POST_COLUMN_INDEXES: string[] = [
+  // The hottest predicate in the app — every zone list, the locations join,
+  // and the MAX(sort_order) lookup on insert — had no index at all.
+  `CREATE INDEX IF NOT EXISTS idx_zones_location ON zones(location_id);`,
+  `CREATE INDEX IF NOT EXISTS idx_items_expiration ON items(expiration_date);`,
+  `CREATE INDEX IF NOT EXISTS idx_items_season ON items(season);`,
 ];

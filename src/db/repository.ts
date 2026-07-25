@@ -61,11 +61,14 @@ function queryZonesWithCounts<T extends ZoneWithCount = ZoneWithCount>(
   params: string[]
 ): Promise<T[]> {
   return withDb(async (db) => {
+    // A correlated scalar subquery instead of a LEFT JOIN against a
+    // "GROUP BY zone_id over every item in the database" derived table: the
+    // old form aggregated the whole items table even when joinAndWhere
+    // restricts z to one location. This scopes the count to each selected
+    // zone and rides idx_items_zone.
     const rows = await db.getAllAsync<T & { geometry: string }>(
-      `SELECT z.*, COALESCE(c.cnt, 0) as item_count${extraSelect}
+      `SELECT z.*, (SELECT COUNT(*) FROM items i WHERE i.zone_id = z.id) as item_count${extraSelect}
        FROM zones z
-       LEFT JOIN (SELECT zone_id, COUNT(*) as cnt FROM items GROUP BY zone_id) c
-       ON z.id = c.zone_id
        ${joinAndWhere}
        ORDER BY z.sort_order`,
       params
