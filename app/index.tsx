@@ -53,6 +53,7 @@ import { Season, LabelSide, LabelDef } from "../src/db/database";
 import { listItemsWithExpiration } from "../src/db/repository";
 import { getExpirationStatus } from "../src/utils/expiration";
 import { DEFAULT_CANVAS_H } from "../src/components/layoutConstants";
+import { triggerHaptic } from "../src/utils/haptics";
 
 const DIVE_FADE_PEAK = 0.5;
 // A startup still unfinished after this long isn't slow, it's stuck — a
@@ -78,6 +79,7 @@ export default function VanMapScreen() {
   const addZone = useAppStore((s) => s.addZone);
   const addItem = useAppStore((s) => s.addItem);
   const editMode = useAppStore((s) => s.editMode);
+  const toggleEditMode = useAppStore((s) => s.toggleEditMode);
   const requestDiscard = useAppStore((s) => s.requestDiscard);
   const expirationAlertShown = useAppStore((s) => s.expirationAlertShown);
   const setExpirationAlertShown = useAppStore((s) => s.setExpirationAlertShown);
@@ -600,6 +602,15 @@ export default function VanMapScreen() {
     [zones, router, diveOpacity]
   );
 
+  // A deliberate hold anywhere on the map drops into edit mode to move/resize
+  // its zones (reshaping the outline itself is reached from the locations
+  // overview menu). Recognized by the canvas' own gesture composition rather
+  // than a detector nested inside it — see ZoomableContainer's `composed`.
+  const handleCanvasLongPress = useCallback(() => {
+    triggerHaptic();
+    toggleEditMode();
+  }, [toggleEditMode]);
+
   // Watches for a startup that never lands. Re-armed on every attempt, and
   // stood down the moment the data is in, so it only ever speaks up when this
   // screen would otherwise be showing nothing at all.
@@ -786,7 +797,12 @@ export default function VanMapScreen() {
           {/* One-finger pan works in edit mode too now that moving a zone requires
               a press-and-hold to pick it up first (the canvas stands down while a
               zone is grabbed). */}
-          <ZoomableContainer ref={zoomRef} panMinPointers={1}>
+          <ZoomableContainer
+            ref={zoomRef}
+            panMinPointers={1}
+            onLongPress={handleCanvasLongPress}
+            longPressEnabled={!editMode}
+          >
             <VanLayoutSVG onZonePress={handleZonePress} onEditInscription={setEditingSide} />
           </ZoomableContainer>
         </Animated.View>

@@ -1,8 +1,7 @@
 import React, { useState, useCallback, useEffect, useMemo } from "react";
 import { View, LayoutChangeEvent, StyleSheet, Pressable } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Svg, { Text as SvgText, G } from "react-native-svg";
-import { useSharedValue, runOnJS } from "react-native-reanimated";
+import { useSharedValue } from "react-native-reanimated";
 import { LocationOutline } from "./LocationOutline";
 import { ZoneOverlay } from "./ZoneOverlay";
 import { ZoneEditOverlay } from "./ZoneEditOverlay";
@@ -21,7 +20,6 @@ import {
   ZONES_FIT_PADDING,
   getZoneBounds,
 } from "./layoutConstants";
-import { triggerHaptic } from "../utils/haptics";
 
 const INSCRIPTION_SIDES: LabelSide[] = ["front", "rear", "left", "right"];
 // Read-mode inscription color (unchanged from the original hard-coded labels).
@@ -115,7 +113,6 @@ export function VanLayoutSVG({ onZonePress, onEditInscription }: Props) {
   const updateZoneGeometry = useAppStore((s) => s.updateZoneGeometry);
   const updateLocationOutline = useAppStore((s) => s.updateLocationOutline);
   const updateLocationLabel = useAppStore((s) => s.updateLocationLabel);
-  const toggleEditMode = useAppStore((s) => s.toggleEditMode);
   const { palette } = useAppTheme();
 
   // Inscriptions are edited while reshaping the layout (outline-edit), not while
@@ -285,37 +282,14 @@ export function VanLayoutSVG({ onZonePress, onEditInscription }: Props) {
     if (!outlineEditMode) setOutlineDraft(null);
   }, [outlineEditMode]);
 
-  // Long-press anywhere on a location's map drops into edit mode to move/resize
-  // its zones (editing the outline itself is reached from the locations
-  // overview menu). Only armed in the normal view — once editing, the canvas'
-  // own drag handles own the touch.
-  //
-  // Constrained so it can't be mistaken for the canvas' own navigation:
-  //   - numberOfPointers(1): a two-finger pinch-to-zoom never counts as a hold.
-  //   - maxDistance(10): matches the pan's minDistance, so the moment a drag
-  //     travels far enough to pan, the hold fails instead of firing.
-  // What's left is a deliberate one-finger, stationary press.
-  //
-  // Deliberately NOT memoized (unlike ZoomableContainer's pinch/pan/doubleTap):
-  // this gesture lives in a GestureDetector nested *inside* ZoomableContainer's
-  // own, and making it persist across renders alongside that outer memoized
-  // gesture produced an intermittent bug — after diving into a zone and back,
-  // the canvas's pinch/pan (and, cascading from a stuck transition state, the
-  // header's back-to-overview control) would stop responding. Reverted to
-  // rebuilding it every render, which is the combination this app actually
-  // shipped and was tested with.
-  const longPressEdit = Gesture.LongPress()
-    .minDuration(450)
-    .numberOfPointers(1)
-    .maxDistance(10)
-    .enabled(!editMode)
-    .onStart(() => {
-      runOnJS(triggerHaptic)();
-      runOnJS(toggleEditMode)();
-    });
+  // Long-press-anywhere-to-edit is *not* handled here. It used to be, in a
+  // GestureDetector nested inside ZoomableContainer's own — with no relation
+  // declared between the two, which left the canvas' pinch/pan wedged after
+  // returning from a zone. It now lives in ZoomableContainer's single gesture
+  // composition (see the comment on `composed` there); the screen wires it up
+  // via that component's `onLongPress` prop.
 
   return (
-    <GestureDetector gesture={longPressEdit}>
     <View style={styles.container} onLayout={onLayout}>
       <Svg
         viewBox={`${viewBoxMinX} ${viewBoxMinY} ${viewBoxW} ${viewBoxH}`}
@@ -449,7 +423,6 @@ export function VanLayoutSVG({ onZonePress, onEditInscription }: Props) {
           );
         })}
     </View>
-    </GestureDetector>
   );
 }
 
