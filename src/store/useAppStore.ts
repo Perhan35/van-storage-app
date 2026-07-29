@@ -14,7 +14,7 @@ import { getPreference, setPreference } from "../db/preferences";
 import * as repo from "../db/repository";
 import { cancelAllReminders, requestNotificationPermissions, syncReminders } from "../notifications/reminders";
 import { getTemplate, Outline } from "../db/templates";
-import i18n from "../i18n";
+import i18n, { applyLanguage, isLanguagePreference, LanguagePreference } from "../i18n";
 
 export type ThemeMode = "auto" | "light" | "dark";
 export type SeasonMode = "summer" | "winter";
@@ -136,6 +136,9 @@ type AppState = {
   themeMode: ThemeMode;
   seasonMode: SeasonMode;
   showMenuHeader: boolean;
+  // The user's choice, not the language actually in effect — "system" means
+  // "whatever the device is set to". Read i18n.language for the resolved one.
+  languagePreference: LanguagePreference;
   remindersEnabled: boolean;
   backupRemindersEnabled: boolean;
   // When the last export completed (ISO), null if this install never exported.
@@ -205,6 +208,8 @@ type AppState = {
   reloadThemeMode: () => Promise<void>;
   setShowMenuHeader: (show: boolean) => Promise<void>;
   reloadShowMenuHeader: () => Promise<void>;
+  setLanguagePreference: (preference: LanguagePreference) => Promise<void>;
+  reloadLanguagePreference: () => Promise<void>;
   setSeasonMode: (mode: SeasonMode) => Promise<void>;
   reloadSeasonMode: () => Promise<void>;
   setRemindersEnabled: (enabled: boolean) => Promise<boolean>;
@@ -303,6 +308,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   themeMode: "auto",
   seasonMode: "summer",
   showMenuHeader: true,
+  languagePreference: "system",
   remindersEnabled: false,
   backupRemindersEnabled: true,
   lastBackupAt: null,
@@ -329,6 +335,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ initError: null });
       try {
         await getDb();
+        // First, so everything loaded below — and any string this pass writes
+        // to the database — sees the language the user actually chose. On a
+        // fresh install there's no stored preference yet, which resolves to
+        // the device language, matching what getDb() just seeded.
+        await get().reloadLanguagePreference();
         await get().reloadThemeMode();
         await get().reloadShowMenuHeader();
         await get().reloadSeasonMode();
@@ -613,6 +624,23 @@ export const useAppStore = create<AppState>((set, get) => ({
   reloadShowMenuHeader: async () => {
     const stored = await getPreference("showMenuHeader");
     set({ showMenuHeader: stored !== "off" });
+  },
+
+  setLanguagePreference: async (preference) => {
+    set({ languagePreference: preference });
+    await applyLanguage(preference);
+    await setPreference("language", preference);
+  },
+
+  // Mirrors reloadThemeMode, plus the side effect of actually switching i18n:
+  // the app renders in the device language until this runs (the preference
+  // lives in SQLite, which isn't open yet at i18n init), so startup and
+  // post-import both need it to apply the stored choice, not just record it.
+  reloadLanguagePreference: async () => {
+    const stored = await getPreference("language");
+    const preference: LanguagePreference = isLanguagePreference(stored) ? stored : "system";
+    set({ languagePreference: preference });
+    await applyLanguage(preference);
   },
 
   setSeasonMode: async (mode) => {

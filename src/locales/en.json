@@ -221,6 +221,10 @@
   "settings.desc_help": "New here? Replay the guided tour of the app.",
   "settings.btn_tutorial": "Replay the tutorial",
 
+  "settings.title_language": "Language",
+  "settings.desc_language": "Choose the language the app is displayed in.",
+  "settings.language_system": "System",
+
   "tutorial.skip": "Skip",
   "tutorial.back": "Back",
   "tutorial.next": "Next",
