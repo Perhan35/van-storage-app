@@ -840,8 +840,8 @@ export default function VanMapScreen() {
         fabStyle={[
           tagFabStyle(palette.secondary),
           {
-            backgroundColor: palette.primary,
-            shadowColor: palette.primary,
+            backgroundColor: palette.headerBackground,
+            shadowColor: palette.headerBackground,
             shadowOpacity: 0.35,
             shadowOffset: { width: 0, height: 4 },
             shadowRadius: 8,
