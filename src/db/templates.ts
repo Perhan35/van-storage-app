@@ -11,7 +11,11 @@ export type Outline = { w: number; h: number; points: OutlinePoint[] };
 
 export type SeedZone = {
   id: string;
-  name: string;
+  // Translation key, resolved once at the moment the zone is inserted. What
+  // lands in the database is plain text in the language active right then —
+  // from that point on it's the user's name to rename or keep, and no later
+  // language switch touches it.
+  nameKey: string;
   color: string;
   geometry: { type: "rect"; x: number; y: number; w: number; h: number };
   sort_order: number;
@@ -66,49 +70,49 @@ function rectOutline(w: number, h: number): Outline {
 const VAN_ZONES: SeedZone[] = [
   {
     id: "cabine",
-    name: "Cabine",
+    nameKey: "template.zone_van_cab",
     color: "#78909C",
     geometry: { type: "rect", x: 10, y: 10, w: 280, h: 80 },
     sort_order: 0,
   },
   {
     id: "cuisine",
-    name: "Cuisine / Plan de travail",
+    nameKey: "template.zone_van_kitchen",
     color: "#FF8A65",
     geometry: { type: "rect", x: 10, y: 110, w: 130, h: 120 },
     sort_order: 1,
   },
   {
     id: "rangement-haut",
-    name: "Rangement Haut (droite)",
+    nameKey: "template.zone_van_upper_storage",
     color: "#4DB6AC",
     geometry: { type: "rect", x: 160, y: 110, w: 130, h: 120 },
     sort_order: 2,
   },
   {
     id: "sous-lit",
-    name: "Rangement Sous-lit (gauche)",
+    nameKey: "template.zone_van_under_bed",
     color: "#7986CB",
     geometry: { type: "rect", x: 10, y: 250, w: 130, h: 120 },
     sort_order: 3,
   },
   {
     id: "placard-lateral",
-    name: "Placard Latéral (droit)",
+    nameKey: "template.zone_van_side_cupboard",
     color: "#AED581",
     geometry: { type: "rect", x: 160, y: 250, w: 130, h: 120 },
     sort_order: 4,
   },
   {
     id: "coffre",
-    name: "Lit / Coffre arrière",
+    nameKey: "template.zone_van_rear_trunk",
     color: "#FFD54F",
     geometry: { type: "rect", x: 10, y: 390, w: 280, h: 100 },
     sort_order: 5,
   },
   {
     id: "portes-arriere",
-    name: "Portes arrière",
+    nameKey: "template.zone_van_rear_doors",
     color: "#F48FB1",
     geometry: { type: "rect", x: 10, y: 510, w: 280, h: 70 },
     sort_order: 6,
@@ -137,35 +141,35 @@ const VAN_OUTLINE: Outline = {
 const APARTMENT_ZONES: SeedZone[] = [
   {
     id: "salon",
-    name: "Salon",
+    nameKey: "template.zone_apartment_living_room",
     color: "#4DB6AC",
     geometry: { type: "rect", x: 10, y: 10, w: 300, h: 140 },
     sort_order: 0,
   },
   {
     id: "cuisine-appt",
-    name: "Cuisine",
+    nameKey: "template.zone_apartment_kitchen",
     color: "#FF8A65",
     geometry: { type: "rect", x: 10, y: 160, w: 145, h: 130 },
     sort_order: 1,
   },
   {
     id: "chambre",
-    name: "Chambre",
+    nameKey: "template.zone_apartment_bedroom",
     color: "#7986CB",
     geometry: { type: "rect", x: 165, y: 160, w: 145, h: 130 },
     sort_order: 2,
   },
   {
     id: "salle-de-bain",
-    name: "Salle de bain",
+    nameKey: "template.zone_apartment_bathroom",
     color: "#4A90D9",
     geometry: { type: "rect", x: 10, y: 300, w: 145, h: 100 },
     sort_order: 3,
   },
   {
     id: "rangement-appt",
-    name: "Rangement",
+    nameKey: "template.zone_apartment_storage",
     color: "#AED581",
     geometry: { type: "rect", x: 165, y: 300, w: 145, h: 100 },
     sort_order: 4,
@@ -175,28 +179,28 @@ const APARTMENT_ZONES: SeedZone[] = [
 const KITCHEN_ZONES: SeedZone[] = [
   {
     id: "frigo",
-    name: "Réfrigérateur",
+    nameKey: "template.zone_kitchen_fridge",
     color: "#4A90D9",
     geometry: { type: "rect", x: 10, y: 10, w: 130, h: 130 },
     sort_order: 0,
   },
   {
     id: "garde-manger",
-    name: "Garde-manger",
+    nameKey: "template.zone_kitchen_pantry",
     color: "#FFD54F",
     geometry: { type: "rect", x: 160, y: 10, w: 130, h: 130 },
     sort_order: 1,
   },
   {
     id: "placards",
-    name: "Placards",
+    nameKey: "template.zone_kitchen_cupboards",
     color: "#AED581",
     geometry: { type: "rect", x: 10, y: 160, w: 130, h: 130 },
     sort_order: 2,
   },
   {
     id: "tiroirs",
-    name: "Tiroirs",
+    nameKey: "template.zone_kitchen_drawers",
     color: "#F48FB1",
     geometry: { type: "rect", x: 160, y: 160, w: 130, h: 130 },
     sort_order: 3,
