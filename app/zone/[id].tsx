@@ -84,6 +84,7 @@ export default function ZoneDetailScreen() {
   const updateZone = useAppStore((s) => s.updateZone);
   const deleteZone = useAppStore((s) => s.deleteZone);
   const splitZone = useAppStore((s) => s.splitZone);
+  const zoneColorFullScreen = useAppStore((s) => s.zoneColorFullScreen);
 
   const [items, setItems] = useState<Item[]>([]);
   const [addItemVisible, setAddItemVisible] = useState(false);
@@ -489,8 +490,10 @@ export default function ZoneDetailScreen() {
     .filter((z) => z.id !== id)
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
+  const screenBackground = zoneColorFullScreen ? zone.color + "26" : palette.surface;
+
   return (
-    <View style={[styles.container, { backgroundColor: zone.color + "26" }]}>
+    <View style={[styles.container, { backgroundColor: screenBackground }]}>
       {/* Items list */}
       <Animated.FlatList
         ref={listRef}
@@ -602,9 +605,11 @@ export default function ZoneDetailScreen() {
         }
       />
 
-      {/* Painted in the zone's own color like the header above it, so the add
-          button reads as belonging to this zone rather than to the app chrome.
-          It therefore borrows the header's derived tint for the "+" glyph. */}
+      {/* Always painted in the zone's own color like the header above it, so
+          the add button reads as belonging to this zone rather than to the
+          app chrome — independent of zoneColorFullScreen, which only governs
+          the screen background. It therefore borrows the header's derived
+          tint for the "+" glyph. */}
       <FAB
         icon={plusIcon}
         color={zoneHeaderTint}

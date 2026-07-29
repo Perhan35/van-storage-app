@@ -94,6 +94,7 @@
   "settings.theme_light": "Hell",
   "settings.theme_dark": "Dunkel",
   "settings.menu_header_label": "Menükopf anzeigen",
+  "settings.zone_color_full_screen_label": "Zonenfarbe füllt den ganzen Bildschirm",
   "settings.title_season": "Jahreszeit",
   "settings.desc_season": "Wechsle zwischen Sommer- und Wintermodus, um zu sehen, was du an diesem Ort ausräumen oder wieder einräumen musst.",
   "settings.season_summer": "Sommer",

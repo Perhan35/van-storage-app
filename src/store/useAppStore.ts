@@ -136,6 +136,9 @@ type AppState = {
   themeMode: ThemeMode;
   seasonMode: SeasonMode;
   showMenuHeader: boolean;
+  // Whether a zone's color washes the whole zone-detail screen (true, the
+  // default) or is confined to its header (false).
+  zoneColorFullScreen: boolean;
   // The user's choice, not the language actually in effect — "system" means
   // "whatever the device is set to". Read i18n.language for the resolved one.
   languagePreference: LanguagePreference;
@@ -208,6 +211,8 @@ type AppState = {
   reloadThemeMode: () => Promise<void>;
   setShowMenuHeader: (show: boolean) => Promise<void>;
   reloadShowMenuHeader: () => Promise<void>;
+  setZoneColorFullScreen: (full: boolean) => Promise<void>;
+  reloadZoneColorFullScreen: () => Promise<void>;
   setLanguagePreference: (preference: LanguagePreference) => Promise<void>;
   reloadLanguagePreference: () => Promise<void>;
   setSeasonMode: (mode: SeasonMode) => Promise<void>;
@@ -308,6 +313,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   themeMode: "auto",
   seasonMode: "summer",
   showMenuHeader: true,
+  zoneColorFullScreen: true,
   languagePreference: "system",
   remindersEnabled: false,
   backupRemindersEnabled: true,
@@ -342,6 +348,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         await get().reloadLanguagePreference();
         await get().reloadThemeMode();
         await get().reloadShowMenuHeader();
+        await get().reloadZoneColorFullScreen();
         await get().reloadSeasonMode();
         await get().reloadRemindersEnabled();
         await get().reloadBackupSettings();
@@ -632,6 +639,18 @@ export const useAppStore = create<AppState>((set, get) => ({
   reloadShowMenuHeader: async () => {
     const stored = await getPreference("showMenuHeader");
     set({ showMenuHeader: stored !== "off" });
+  },
+
+  setZoneColorFullScreen: async (full) => {
+    set({ zoneColorFullScreen: full });
+    await setPreference("zoneColorFullScreen", full ? "on" : "off");
+  },
+
+  // Mirrors reloadShowMenuHeader. Absence of a stored preference means "on"
+  // (the default), so only an explicit "off" flips it.
+  reloadZoneColorFullScreen: async () => {
+    const stored = await getPreference("zoneColorFullScreen");
+    set({ zoneColorFullScreen: stored !== "off" });
   },
 
   setLanguagePreference: async (preference) => {
