@@ -26,6 +26,16 @@ import { HighlightFlashRow } from "./HighlightFlashRow";
 
 const ACTION_WIDTH = 64;
 
+// Non-checklist rows have no renderLeftActions, but ReanimatedSwipeable's
+// pan gesture still claims any rightward drag past its default 10px
+// threshold (see activeOffsetX in the library source) even with nothing to
+// reveal — which steals the touch from the native swipe-back gesture before
+// it can recognize it. Pushing the threshold far past any real swipe lets
+// the row's own gesture never activate rightward, so the touch falls
+// through to the stack's back gesture instead (same as swiping over the
+// screen's empty background, where no gesture competes for it at all).
+const DISABLE_RIGHTWARD_DRAG = 100000;
+
 // Slides the action button in from its edge as the row is swiped open.
 // `translation` mirrors the legacy Swipeable's `drag` value: positive while
 // revealing a left action, negative while revealing a right action.
@@ -117,6 +127,7 @@ function ItemRowInner({
     <ReanimatedSwipeable
       ref={(ref) => onSwipeableRef(item.id, ref)}
       overshootRight={false}
+      dragOffsetFromLeftEdge={zoneChecklist ? undefined : DISABLE_RIGHTWARD_DRAG}
       onSwipeableOpen={(direction) => {
         // ReanimatedSwipeable's SwipeDirection is inverted relative to the
         // legacy Swipeable: LEFT means the row moved left, revealing the
