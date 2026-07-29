@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { View, StyleSheet } from "react-native";
+import { StyleSheet } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
@@ -14,7 +14,10 @@ import { triggerHaptic } from "../utils/haptics";
 
 const VERTEX_SIZE = 22;
 const MIDPOINT_SIZE = 20;
+const HANDLE_BORDER = 2;
 const MIN_POINTS = 3;
+// Extra size while a handle is held, as visible "I've got it" feedback.
+const GRAB_LIFT = 0.35;
 
 type Point = { x: number; y: number };
 
@@ -246,20 +249,27 @@ function VertexHandle({
 
   const composed = Gesture.Race(dragGesture, tapGesture);
 
-  const style = useAnimatedStyle(() => ({
-    position: "absolute" as const,
-    left: svgX.value * fitScale + offsetX - VERTEX_SIZE / 2,
-    top: svgY.value * fitScale + offsetY - VERTEX_SIZE / 2,
-    width: VERTEX_SIZE,
-    height: VERTEX_SIZE,
-    transform: [{ scale: 1 + active.value * 0.35 }],
-  }));
+  // Dividing every dimension by the live zoom keeps the handle a constant size
+  // on screen at any zoom level, and the grab lift rides along in the same
+  // factor. Sized in layout rather than via `transform: scale` on purpose -
+  // see the note in ZoneEditOverlay: a shrinking scale gets rasterised at the
+  // shrunken size and blown back up by the canvas, which looks pixelated.
+  const style = useAnimatedStyle(() => {
+    const size = (VERTEX_SIZE * (1 + active.value * GRAB_LIFT)) / zoomScale.value;
+    return {
+      position: "absolute" as const,
+      left: svgX.value * fitScale + offsetX - size / 2,
+      top: svgY.value * fitScale + offsetY - size / 2,
+      width: size,
+      height: size,
+      borderRadius: size / 2,
+      borderWidth: HANDLE_BORDER / zoomScale.value,
+    };
+  });
 
   return (
     <GestureDetector gesture={composed}>
-      <Animated.View style={style}>
-        <View style={[styles.vertex, { backgroundColor: color }]} />
-      </Animated.View>
+      <Animated.View style={[styles.vertex, { backgroundColor: color }, style]} />
     </GestureDetector>
   );
 }
@@ -344,24 +354,45 @@ function EdgeHandle({
 
   const composed = Gesture.Race(dragGesture, longPressGesture, tapGesture);
 
-  const style = useAnimatedStyle(() => ({
-    position: "absolute" as const,
-    left: svgX.value * fitScale + offsetX - MIDPOINT_SIZE / 2,
-    top: svgY.value * fitScale + offsetY - MIDPOINT_SIZE / 2,
-    width: MIDPOINT_SIZE,
-    height: MIDPOINT_SIZE,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    transform: [{ scale: 1 + active.value * 0.35 }],
-  }));
+  // Same zoom compensation as the vertex handles above: the touch box and the
+  // diamond drawn inside it are both sized in layout, so they hold a constant
+  // on-screen size without a scale transform to rasterise them small.
+  const style = useAnimatedStyle(() => {
+    const size = (MIDPOINT_SIZE * (1 + active.value * GRAB_LIFT)) / zoomScale.value;
+    return {
+      position: "absolute" as const,
+      left: svgX.value * fitScale + offsetX - size / 2,
+      top: svgY.value * fitScale + offsetY - size / 2,
+      width: size,
+      height: size,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+    };
+  });
+
+  // The diamond is a fraction of the touch box, tilted 45deg. Rotation alone
+  // doesn't change how the shape is rasterised, so it stays a transform.
+  const diamondStyle = useAnimatedStyle(() => {
+    const inner = curved ? 0.5 : 0.55;
+    const size =
+      (MIDPOINT_SIZE * inner * (1 + active.value * GRAB_LIFT)) / zoomScale.value;
+    return {
+      width: size,
+      height: size,
+      borderWidth: HANDLE_BORDER / zoomScale.value,
+      borderRadius: 4 / zoomScale.value,
+      transform: [{ rotate: "45deg" }],
+    };
+  });
 
   return (
     <GestureDetector gesture={composed}>
       <Animated.View style={style}>
-        <View
+        <Animated.View
           style={[
             curved ? styles.midpointCurved : styles.midpoint,
             { borderColor: color, backgroundColor: curved ? color : "transparent" },
+            diamondStyle,
           ]}
         />
       </Animated.View>
@@ -369,31 +400,19 @@ function EdgeHandle({
   );
 }
 
+// Sizes, radii and border widths are zoom-compensated in the animated styles
+// above; only the non-scaling traits live here.
 const styles = StyleSheet.create({
   vertex: {
-    flex: 1,
-    borderRadius: VERTEX_SIZE / 2,
-    borderWidth: 2,
     borderColor: "#FFFFFF",
-    opacity: 0.95,
   },
   midpoint: {
-    width: MIDPOINT_SIZE * 0.55,
-    height: MIDPOINT_SIZE * 0.55,
-    borderWidth: 2,
     borderStyle: "dashed",
-    borderRadius: 4,
-    transform: [{ rotate: "45deg" }],
     opacity: 0.6,
   },
   // A curved edge's handle is a filled diamond, so it reads as "active curve".
   midpointCurved: {
-    width: MIDPOINT_SIZE * 0.5,
-    height: MIDPOINT_SIZE * 0.5,
-    borderWidth: 2,
     borderColor: "#FFFFFF",
-    borderRadius: 4,
-    transform: [{ rotate: "45deg" }],
     opacity: 0.95,
   },
 });

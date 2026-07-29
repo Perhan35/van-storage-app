@@ -14,6 +14,7 @@ import { ZONE_SNAP_THRESHOLD_PX, ZONE_SNAP_GAP_SVG } from "./layoutConstants";
 import { triggerHaptic } from "../utils/haptics";
 
 const HANDLE_SIZE = 24;
+const HANDLE_BORDER = 2;
 const MIN_ZONE_SIZE_SVG = 30;
 
 // --- Edge-snapping helpers (run on the UI thread inside gesture worklets) ---
@@ -393,25 +394,46 @@ function ZoneEditOverlayInner({
     opacity: dragActive.value,
   }));
 
+  // The handles sit inside the zoomed canvas, so every dimension is divided by
+  // the live zoom: the dot then keeps a constant on-screen size (and touch
+  // target) at any zoom level, instead of a 24pt circle rendering at 96pt at
+  // max zoom and swallowing the very corner it's meant to grab.
+  //
+  // Deliberately done with real layout dimensions rather than an inverse
+  // `transform: [{ scale: 1 / zoom }]`: a layer that carries a shrinking scale
+  // is rasterised at its shrunken size and then blown back up by the canvas
+  // transform, so at 4x zoom the dot was drawn from ~6pt of source and looked
+  // like a pixelated blob. Sizing the box for real leaves the circle on the
+  // compositor's analytic path (the same one that keeps the solid zone borders
+  // sharp when zoomed), so it stays crisp.
+
   // Bottom-right handle
-  const brHandleStyle = useAnimatedStyle(() => ({
-    position: "absolute" as const,
-    left:
-      (svgX.value + svgW.value) * fitScale + offsetX - HANDLE_SIZE / 2,
-    top:
-      (svgY.value + svgH.value) * fitScale + offsetY - HANDLE_SIZE / 2,
-    width: HANDLE_SIZE,
-    height: HANDLE_SIZE,
-  }));
+  const brHandleStyle = useAnimatedStyle(() => {
+    const size = HANDLE_SIZE / zoomScale.value;
+    return {
+      position: "absolute" as const,
+      left: (svgX.value + svgW.value) * fitScale + offsetX - size / 2,
+      top: (svgY.value + svgH.value) * fitScale + offsetY - size / 2,
+      width: size,
+      height: size,
+      borderRadius: size / 2,
+      borderWidth: HANDLE_BORDER / zoomScale.value,
+    };
+  });
 
   // Top-left handle
-  const tlHandleStyle = useAnimatedStyle(() => ({
-    position: "absolute" as const,
-    left: svgX.value * fitScale + offsetX - HANDLE_SIZE / 2,
-    top: svgY.value * fitScale + offsetY - HANDLE_SIZE / 2,
-    width: HANDLE_SIZE,
-    height: HANDLE_SIZE,
-  }));
+  const tlHandleStyle = useAnimatedStyle(() => {
+    const size = HANDLE_SIZE / zoomScale.value;
+    return {
+      position: "absolute" as const,
+      left: svgX.value * fitScale + offsetX - size / 2,
+      top: svgY.value * fitScale + offsetY - size / 2,
+      width: size,
+      height: size,
+      borderRadius: size / 2,
+      borderWidth: HANDLE_BORDER / zoomScale.value,
+    };
+  });
 
   return (
     <>
@@ -426,18 +448,20 @@ function ZoneEditOverlayInner({
         </Animated.View>
       </GestureDetector>
 
-      {/* Top-left resize handle */}
+      {/* Top-left resize handle. The gesture target *is* the dot: a nested
+          fixed-size child would need its own zoom-compensated dimensions for
+          no benefit. */}
       <GestureDetector gesture={resizeTLGesture}>
-        <Animated.View style={tlHandleStyle}>
-          <View style={[styles.handle, { backgroundColor: zone.color }]} />
-        </Animated.View>
+        <Animated.View
+          style={[styles.handle, { backgroundColor: zone.color }, tlHandleStyle]}
+        />
       </GestureDetector>
 
       {/* Bottom-right resize handle */}
       <GestureDetector gesture={resizeGesture}>
-        <Animated.View style={brHandleStyle}>
-          <View style={[styles.handle, { backgroundColor: zone.color }]} />
-        </Animated.View>
+        <Animated.View
+          style={[styles.handle, { backgroundColor: zone.color }, brHandleStyle]}
+        />
       </GestureDetector>
     </>
   );
@@ -475,12 +499,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 10,
   },
+  // Size, radius and border width are zoom-compensated in the animated style;
+  // only the colour lives here. No `opacity`: a translucent layer can be
+  // composited off-screen, which is exactly the bitmap round-trip the sizing
+  // above avoids, and 0.9 vs 1.0 on a solid dot isn't worth it.
   handle: {
-    width: HANDLE_SIZE,
-    height: HANDLE_SIZE,
-    borderRadius: HANDLE_SIZE / 2,
-    borderWidth: 2,
     borderColor: "#FFFFFF",
-    opacity: 0.9,
   },
 });
