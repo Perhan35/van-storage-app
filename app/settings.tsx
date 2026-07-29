@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { View, StyleSheet, Alert, ScrollView, Platform } from "react-native";
+import { View, StyleSheet, Alert, ScrollView, Platform, ActionSheetIOS } from "react-native";
 import { Text, Button, Divider, SegmentedButtons, Switch } from "react-native-paper";
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
@@ -8,7 +8,9 @@ import { importAllData, isValidGeometry, isValidOutline } from "../src/db/reposi
 import { getTemplate } from "../src/db/templates";
 import { useAppStore, ThemeMode, SeasonMode } from "../src/store/useAppStore";
 import { useTranslation } from "react-i18next";
+import { APP_LANGUAGES, LANGUAGE_LABELS, LanguagePreference } from "../src/i18n";
 import { useAppTheme } from "../src/theme/useAppTheme";
+import { ContextMenu } from "../src/components/ContextMenu";
 import { SeasonChangeoverDialog } from "../src/components/dialogs/SeasonChangeoverDialog";
 import { ExpirationOverviewDialog } from "../src/components/dialogs/ExpirationOverviewDialog";
 import { runBackupExport } from "../src/utils/backup";
@@ -29,9 +31,12 @@ function pickFileWeb(): Promise<string | null> {
 
 const DOUBLE_TAP_WINDOW_MS = 500;
 
+// "System" first, then each language named in itself — see LANGUAGE_LABELS.
+const LANGUAGE_OPTIONS: LanguagePreference[] = ["system", ...APP_LANGUAGES];
+
 export default function SettingsScreen() {
   const { t, i18n } = useTranslation();
-  const { palette } = useAppTheme();
+  const { palette, mode } = useAppTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const lastVersionTapRef = useRef(0);
@@ -45,6 +50,9 @@ export default function SettingsScreen() {
   const showMenuHeader = useAppStore((s) => s.showMenuHeader);
   const setShowMenuHeader = useAppStore((s) => s.setShowMenuHeader);
   const reloadShowMenuHeader = useAppStore((s) => s.reloadShowMenuHeader);
+  const languagePreference = useAppStore((s) => s.languagePreference);
+  const setLanguagePreference = useAppStore((s) => s.setLanguagePreference);
+  const reloadLanguagePreference = useAppStore((s) => s.reloadLanguagePreference);
   const seasonMode = useAppStore((s) => s.seasonMode);
   const setSeasonMode = useAppStore((s) => s.setSeasonMode);
   const reloadSeasonMode = useAppStore((s) => s.reloadSeasonMode);
@@ -61,6 +69,43 @@ export default function SettingsScreen() {
   const [importing, setImporting] = useState(false);
   const [changeoverVisible, setChangeoverVisible] = useState(false);
   const [overviewVisible, setOverviewVisible] = useState(false);
+  // Android only: the measured rect of the language button, so the dropdown
+  // can open flush beneath it. iOS and web use their own native pickers.
+  const [languageAnchor, setLanguageAnchor] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const languageButtonRef = useRef<View>(null);
+
+  const languageLabel = (preference: LanguagePreference) =>
+    preference === "system" ? t("settings.language_system") : LANGUAGE_LABELS[preference];
+
+  const openLanguagePicker = () => {
+    if (Platform.OS === "ios") {
+      const labels = LANGUAGE_OPTIONS.map(languageLabel);
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: t("settings.title_language"),
+          options: [...labels, t("map.cancel")],
+          cancelButtonIndex: labels.length,
+          userInterfaceStyle: mode,
+        },
+        (index) => {
+          const picked = LANGUAGE_OPTIONS[index];
+          if (picked) setLanguagePreference(picked);
+        }
+      );
+      return;
+    }
+    // Measures the trigger so the dropdown matches its width (react-native-web's
+    // measureInWindow needs a plain View ref — Paper's Button ref isn't
+    // guaranteed to support it).
+    languageButtonRef.current?.measureInWindow((x, y, width, height) => {
+      setLanguageAnchor({ x, y, width, height });
+    });
+  };
 
   const handleToggleReminders = async (value: boolean) => {
     const granted = await setRemindersEnabled(value);
@@ -223,6 +268,10 @@ export default function SettingsScreen() {
           const first = useAppStore.getState().locations[0];
           if (first) await setActiveLocation(first.id);
         }
+        // The backup carries every preference row, the language among them, so
+        // importing one made on a device set to Italian switches the app to
+        // Italian here rather than on the next launch.
+        await reloadLanguagePreference();
         await reloadThemeMode();
         await reloadShowMenuHeader();
         await reloadSeasonMode();
@@ -416,6 +465,55 @@ export default function SettingsScreen() {
       <Divider />
       <View style={styles.section}>
         <Text variant="titleMedium" style={styles.sectionTitle}>
+          {t("settings.title_language")}
+        </Text>
+        <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
+          {t("settings.desc_language")}
+        </Text>
+        {/* The trigger looks the same everywhere; what it opens is the
+            platform's own picker — an action sheet on iOS, the browser's
+            select on web, the app's Material dropdown on Android. */}
+        <View ref={languageButtonRef} style={styles.languageTrigger}>
+          <Button
+            mode="outlined"
+            icon="translate"
+            onPress={Platform.OS === "web" ? undefined : openLanguagePicker}
+          >
+            {languageLabel(languagePreference)}
+          </Button>
+          {Platform.OS === "web" &&
+            // Invisible native <select> stacked over the Paper Button so the
+            // browser's own dropdown opens on click, while the visible control
+            // still matches the rest of the screen. Mirrors the date input in
+            // ExpirationField.
+            React.createElement(
+              "select",
+              {
+                value: languagePreference,
+                onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
+                  setLanguagePreference(e.target.value as LanguagePreference),
+                style: {
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  width: "100%",
+                  height: "100%",
+                  opacity: 0,
+                  cursor: "pointer",
+                  border: "none",
+                },
+              },
+              LANGUAGE_OPTIONS.map((option) =>
+                React.createElement("option", { key: option, value: option }, languageLabel(option))
+              )
+            )}
+        </View>
+      </View>
+      <Divider />
+      <View style={styles.section}>
+        <Text variant="titleMedium" style={styles.sectionTitle}>
           {t("settings.title_about")}
         </Text>
         <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
@@ -440,6 +538,21 @@ export default function SettingsScreen() {
         title={t("expiration.overview_title")}
         onDismiss={() => setOverviewVisible(false)}
       />
+      {/* Android's language picker: the app's own Material dropdown, since
+          React Native exposes no native spinner. Never opened on iOS or web,
+          which have their own pickers above. */}
+      <ContextMenu
+        visible={!!languageAnchor}
+        onDismiss={() => setLanguageAnchor(null)}
+        anchor={languageAnchor ?? { x: 0, y: 0 }}
+        dropdown
+        items={LANGUAGE_OPTIONS.map((option) => ({
+          icon: option === "system" ? "cellphone-cog" : "translate",
+          label: languageLabel(option),
+          selected: languagePreference === option,
+          onPress: () => setLanguagePreference(option),
+        }))}
+      />
     </ScrollView>
   );
 }
@@ -459,6 +572,8 @@ const styles = StyleSheet.create({
   switchRowSpaced: {
     marginTop: 16,
   },
+  // Relative so the web <select> overlay can cover the button exactly.
+  languageTrigger: { position: "relative" },
   // Keeps a long label from pushing the switch off the row.
   switchLabel: { flex: 1, paddingRight: 12 },
   lastBackup: { marginTop: 8, fontStyle: "italic" },

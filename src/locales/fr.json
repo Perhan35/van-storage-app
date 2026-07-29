@@ -221,6 +221,10 @@
   "settings.desc_help": "Nouveau ici ? Relancez la visite guidée de l'application.",
   "settings.btn_tutorial": "Revoir le tutoriel",
 
+  "settings.title_language": "Langue",
+  "settings.desc_language": "Choisissez la langue d'affichage de l'application.",
+  "settings.language_system": "Système",
+
   "tutorial.skip": "Passer",
   "tutorial.back": "Retour",
   "tutorial.next": "Suivant",
