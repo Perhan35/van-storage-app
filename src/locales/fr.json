@@ -158,7 +158,7 @@
   "zone.empty": "Aucun objet dans cette zone",
   "zone.edit_item": "Modifier l'objet",
   "zone.name": "Nom",
-  "zone.notes": "Notes (optionnel)",
+  "zone.notes": "Notes",
   "zone.save": "Enregistrer",
   "zone.move_to": "Déplacer vers...",
   "zone.edit_zone": "Modifier la zone",

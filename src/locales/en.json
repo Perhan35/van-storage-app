@@ -158,7 +158,7 @@
   "zone.empty": "No item in this zone",
   "zone.edit_item": "Edit item",
   "zone.name": "Name",
-  "zone.notes": "Notes (optional)",
+  "zone.notes": "Notes",
   "zone.save": "Save",
   "zone.move_to": "Move to...",
   "zone.edit_zone": "Edit zone",
