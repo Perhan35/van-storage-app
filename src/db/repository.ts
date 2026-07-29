@@ -558,6 +558,7 @@ export function getDataFingerprint(): Promise<DataFingerprint> {
 
 export type ExportedData = {
   appVersion: string;
+  exportedAt: string;
   locations: unknown[];
   zones: unknown[];
   items: unknown[];
@@ -574,7 +575,7 @@ export function exportAllData(appVersion: string): Promise<ExportedData> {
     const preferences = (
       await db.getAllAsync<{ key: string; value: string }>("SELECT * FROM preferences")
     ).filter((p) => p.key !== "activeLocationId");
-    return { appVersion, locations, zones, items, preferences };
+    return { appVersion, exportedAt: new Date().toISOString(), locations, zones, items, preferences };
   });
 }
 

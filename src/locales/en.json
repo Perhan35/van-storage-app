@@ -110,6 +110,8 @@
   "settings.import_invalid_format": "Invalid file format. The file must contain zones and items.",
   "settings.import_orphan_items": "Invalid file: some items reference a zone that isn't included in the file.",
   "settings.import_confirm_title": "Import",
+  "settings.import_backup_info": "Backup from {{date}} — v{{version}}",
+  "settings.import_backup_info_version_only": "Backup: v{{version}}",
   "settings.import_confirm_text": "Import {{locationsCount}} locations, {{zonesCount}} zones and {{itemsCount}} items?\n\nCurrent data will be replaced.",
   "settings.import_zones_count_one": "{{count}} zone",
   "settings.import_zones_count_other": "{{count}} zones",
