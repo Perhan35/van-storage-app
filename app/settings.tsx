@@ -546,12 +546,22 @@ export default function SettingsScreen() {
         onDismiss={() => setLanguageAnchor(null)}
         anchor={languageAnchor ?? { x: 0, y: 0 }}
         dropdown
-        items={LANGUAGE_OPTIONS.map((option) => ({
-          icon: option === "system" ? "cellphone-cog" : "translate",
-          label: languageLabel(option),
-          selected: languagePreference === option,
-          onPress: () => setLanguagePreference(option),
-        }))}
+        items={[
+          ...LANGUAGE_OPTIONS.map((option, index) => ({
+            icon: option === "system" ? "cellphone-cog" : "translate",
+            label: languageLabel(option),
+            selected: languagePreference === option,
+            onPress: () => setLanguagePreference(option),
+            // Separates "System" from the language list below it.
+            dividerBefore: index === 1,
+          })),
+          {
+            icon: "close",
+            label: t("map.cancel"),
+            onPress: () => {},
+            dividerBefore: true,
+          },
+        ]}
       />
     </ScrollView>
   );
