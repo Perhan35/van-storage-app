@@ -118,6 +118,8 @@
   "settings.import_success_title": "Listo",
   "settings.import_success": "¡Datos importados correctamente!",
   "settings.import_error": "La importación ha fallado:",
+  "settings.import_newer_version_warning": "⚠️ Esta copia de seguridad se creó con una versión de la app (v{{version}}) más reciente que la instalada. Es posible que algunos ajustes no se restauren correctamente.",
+  "settings.ok": "OK",
   "settings.backup_reminders_enabled": "Activar los avisos de copia de seguridad",
   "settings.backup_reminders_hint": "Si pasa una semana con cambios sin guardar, la aplicación te ofrecerá hacer una copia al iniciarse.",
   "settings.last_backup": "Última copia: {{date}}",
