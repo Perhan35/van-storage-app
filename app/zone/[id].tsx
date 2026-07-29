@@ -602,15 +602,18 @@ export default function ZoneDetailScreen() {
         }
       />
 
+      {/* Painted in the zone's own color like the header above it, so the add
+          button reads as belonging to this zone rather than to the app chrome.
+          It therefore borrows the header's derived tint for the "+" glyph. */}
       <FAB
         icon={plusIcon}
-        color={palette.headerTint}
+        color={zoneHeaderTint}
         style={[
           styles.fab,
           tagFabStyle(palette.secondary),
           {
-            backgroundColor: palette.primary,
-            shadowColor: palette.primary,
+            backgroundColor: zone.color,
+            shadowColor: zone.color,
             shadowOpacity: 0.35,
             shadowOffset: { width: 0, height: 4 },
             shadowRadius: 8,
