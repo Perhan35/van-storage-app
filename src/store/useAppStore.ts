@@ -186,7 +186,7 @@ type AppState = {
   // the zone set for a location other than the active one may have changed.
   reloadZonesByLocation: () => Promise<void>;
   setOverviewMode: (overview: boolean) => void;
-  setActiveLocation: (locationId: string) => Promise<void>;
+  setActiveLocation: (locationId: string, options?: { keepOverviewMode?: boolean }) => Promise<void>;
   addLocation: (name: string, templateId: string, icon: string) => Promise<string>;
   renameLocation: (locationId: string, name: string, icon: string) => Promise<void>;
   deleteLocation: (locationId: string) => Promise<void>;
@@ -427,9 +427,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setOverviewMode: (overview) => set({ overviewMode: overview }),
 
-  setActiveLocation: async (locationId) => {
+  setActiveLocation: async (locationId, options) => {
     const seq = ++activeLocationSeq;
     const cached = get().zonesByLocation[locationId];
+    // Deletion switches the active location while staying on the overview —
+    // touching overviewMode there would flip it false and back on separate
+    // renders, flashing the location view in between (#deleteLocation).
+    const overviewPatch = options?.keepOverviewMode ? {} : { overviewMode: false };
 
     if (cached) {
       // Cache hit: switch synchronously, on the same tick as the tap, so a
@@ -438,7 +442,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // still land in one set() — the invariant that guards against a frame of
       // the new outline over stale zones (see the fallback path below) holds
       // here too, since both come from the same cache entry.
-      set({ activeLocationId: locationId, zones: cached, overviewMode: false });
+      set({ activeLocationId: locationId, zones: cached, ...overviewPatch });
       // Reconcile against the DB in the background in case the cache is stale
       // (e.g. another device's export just got restored). Silently dropped if
       // a newer switch has since taken over, or if it fails outright — the
@@ -471,7 +475,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       activeLocationId: locationId,
       zones,
-      overviewMode: false,
+      ...overviewPatch,
       zonesByLocation: { ...s.zonesByLocation, [locationId]: zones },
     }));
     await setPreference("activeLocationId", locationId);
@@ -507,7 +511,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     if (activeLocationId === locationId) {
       const next = get().locations[0];
-      if (next) await get().setActiveLocation(next.id);
+      // Deletion is only ever triggered from the all-locations overview —
+      // stay there rather than following setActiveLocation into the deleted
+      // location's replacement (keepOverviewMode avoids even a one-frame
+      // flash of the location view while switching).
+      if (next) await get().setActiveLocation(next.id, { keepOverviewMode: true });
     }
   },
 
