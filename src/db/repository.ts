@@ -569,7 +569,11 @@ export function exportAllData(appVersion: string): Promise<ExportedData> {
     const locations = await db.getAllAsync("SELECT * FROM locations ORDER BY sort_order");
     const zones = await db.getAllAsync("SELECT * FROM zones ORDER BY sort_order");
     const items = await db.getAllAsync("SELECT * FROM items ORDER BY name");
-    const preferences = await db.getAllAsync("SELECT * FROM preferences");
+    // activeLocationId is which location this device happens to have open —
+    // session state, not a setting worth carrying into another device/backup.
+    const preferences = (
+      await db.getAllAsync<{ key: string; value: string }>("SELECT * FROM preferences")
+    ).filter((p) => p.key !== "activeLocationId");
     return { appVersion, locations, zones, items, preferences };
   });
 }
@@ -585,6 +589,12 @@ export function importAllData(
       await db.runAsync("DELETE FROM items");
       await db.runAsync("DELETE FROM zones");
       await db.runAsync("DELETE FROM locations");
+      // Preferences whose value equals the app's default are never written to
+      // the DB (see reloadShowMenuHeader etc.), so a backup made without ever
+      // touching a setting simply omits that key. Without clearing first,
+      // INSERT OR REPLACE below would leave the device's own stale value in
+      // place instead of falling back to the default the backup implies.
+      await db.runAsync("DELETE FROM preferences");
 
       for (const location of rawLocations) {
         await db.runAsync(

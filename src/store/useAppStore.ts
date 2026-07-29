@@ -675,13 +675,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     await setPreference("seasonMode", mode);
   },
 
-  // Mirrors reloadThemeMode: reads the persisted seasonMode into in-memory
-  // state without writing back, for startup and post-import refresh.
+  // Mirrors reloadShowMenuHeader: absence of a stored preference means the
+  // default ("summer"), so this always sets a value rather than leaving
+  // whatever was in memory before the read — important after an import,
+  // where the preferences table was just cleared and re-seeded from the
+  // backup (see importAllData).
   reloadSeasonMode: async () => {
     const storedMode = await getPreference("seasonMode");
-    if (storedMode === "summer" || storedMode === "winter") {
-      set({ seasonMode: storedMode });
-    }
+    set({ seasonMode: storedMode === "winter" ? "winter" : "summer" });
   },
 
   setRemindersEnabled: async (enabled) => {

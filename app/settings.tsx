@@ -34,6 +34,18 @@ const DOUBLE_TAP_WINDOW_MS = 500;
 // "System" first, then each language named in itself — see LANGUAGE_LABELS.
 const LANGUAGE_OPTIONS: LanguagePreference[] = ["system", ...APP_LANGUAGES];
 
+// Compares dotted version strings numerically (so "1.10.0" > "1.9.0"),
+// unlike a plain string comparison. Missing/non-numeric segments count as 0.
+function compareVersions(a: string, b: string): number {
+  const partsA = a.split(".").map((n) => parseInt(n, 10) || 0);
+  const partsB = b.split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+    const diff = (partsA[i] ?? 0) - (partsB[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
 export default function SettingsScreen() {
   const { t, i18n } = useTranslation();
   const { palette, mode } = useAppTheme();
@@ -68,6 +80,7 @@ export default function SettingsScreen() {
   const reloadBackupSettings = useAppStore((s) => s.reloadBackupSettings);
   const lastBackupAt = useAppStore((s) => s.lastBackupAt);
   const recordBackupDone = useAppStore((s) => s.recordBackupDone);
+  const reloadRecentSearches = useAppStore((s) => s.reloadRecentSearches);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [changeoverVisible, setChangeoverVisible] = useState(false);
@@ -148,7 +161,13 @@ export default function SettingsScreen() {
   };
 
   const importData = async (content: string) => {
-    let data: { locations?: unknown[]; zones?: unknown[]; items?: unknown[]; preferences?: unknown[] };
+    let data: {
+      appVersion?: unknown;
+      locations?: unknown[];
+      zones?: unknown[];
+      items?: unknown[];
+      preferences?: unknown[];
+    };
     try {
       data = JSON.parse(content);
     } catch {
@@ -252,6 +271,16 @@ export default function SettingsScreen() {
       return;
     }
 
+    // Informational only: the backup's own format hasn't changed between
+    // versions so far, so a newer-version backup just gets a heads-up in the
+    // confirm dialog rather than being blocked or migrated.
+    const backupVersion = typeof data.appVersion === "string" ? data.appVersion : "";
+    const currentVersion = Constants.expoConfig?.version ?? "";
+    const backupIsNewer =
+      backupVersion !== "" &&
+      currentVersion !== "" &&
+      compareVersions(backupVersion, currentVersion) > 0;
+
     const doImport = async () => {
       setImporting(true);
       try {
@@ -282,24 +311,46 @@ export default function SettingsScreen() {
         await reloadRemindersEnabled();
         await syncRemindersIfEnabled();
         await reloadBackupSettings();
+        await reloadRecentSearches();
         // What's on the device now is exactly what's in the file the user just
         // imported, so there's nothing new to back up — record it as backed up
         // rather than let the reminder fire on the next launch.
         await recordBackupDone();
-        Alert.alert(t("settings.import_success_title"), t("settings.import_success"));
+        Alert.alert(
+          t("settings.import_success_title"),
+          t("settings.import_success"),
+          [
+            {
+              text: t("settings.ok"),
+              onPress: () => {
+                // Data was replaced wholesale, so land back on the all-locations
+                // overview rather than leaving the app pointed at whatever
+                // single-location map happened to be showing before import.
+                useAppStore.getState().setOverviewMode(true);
+                router.replace("/");
+              },
+            },
+          ]
+        );
       } catch (e) {
         Alert.alert(t("settings.error"), t("settings.import_error") + " " + (e as Error).message);
       }
       setImporting(false);
     };
 
-    Alert.alert(
-      t("settings.import_confirm_title"),
+    const confirmText =
       t("settings.import_confirm_text", {
         locationsCount: rawLocations.length,
         zonesCount: rawZones.length,
         itemsCount: rawItems.length,
-      }),
+      }) +
+      (backupIsNewer
+        ? "\n\n" + t("settings.import_newer_version_warning", { version: backupVersion })
+        : "");
+
+    Alert.alert(
+      t("settings.import_confirm_title"),
+      confirmText,
       [
         { text: t("map.cancel"), style: "cancel" },
         { text: t("settings.import_confirm_title"), style: "destructive", onPress: doImport },

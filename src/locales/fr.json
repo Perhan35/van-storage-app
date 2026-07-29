@@ -118,6 +118,8 @@
   "settings.import_success_title": "Succès",
   "settings.import_success": "Données importées avec succès !",
   "settings.import_error": "Import échoué: ",
+  "settings.import_newer_version_warning": "⚠️ Cette sauvegarde a été créée avec une version plus récente de l'application (v{{version}}) que celle installée. Certains réglages pourraient ne pas être restaurés correctement.",
+  "settings.ok": "OK",
   "settings.backup_reminders_enabled": "Activer les rappels de sauvegarde",
   "settings.backup_reminders_hint": "Si une semaine passe avec des changements non sauvegardés, l'application propose une sauvegarde au démarrage.",
   "settings.last_backup": "Dernière sauvegarde : {{date}}",

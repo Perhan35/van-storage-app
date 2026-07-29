@@ -118,6 +118,8 @@
   "settings.import_success_title": "Success",
   "settings.import_success": "Data imported successfully!",
   "settings.import_error": "Import failed:",
+  "settings.import_newer_version_warning": "⚠️ This backup was made with a newer version of the app (v{{version}}) than the one installed. Some settings may not be restored correctly.",
+  "settings.ok": "OK",
   "settings.backup_reminders_enabled": "Enable backup reminders",
   "settings.backup_reminders_hint": "If a week goes by with unsaved changes, the app offers to back up at launch.",
   "settings.last_backup": "Last backup: {{date}}",

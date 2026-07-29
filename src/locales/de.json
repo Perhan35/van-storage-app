@@ -118,6 +118,8 @@
   "settings.import_success_title": "Erfolgreich",
   "settings.import_success": "Daten erfolgreich importiert!",
   "settings.import_error": "Import fehlgeschlagen:",
+  "settings.import_newer_version_warning": "⚠️ Diese Sicherung wurde mit einer neueren App-Version (v{{version}}) erstellt als der installierten. Einige Einstellungen werden möglicherweise nicht korrekt wiederhergestellt.",
+  "settings.ok": "OK",
   "settings.backup_reminders_enabled": "Sicherungserinnerungen aktivieren",
   "settings.backup_reminders_hint": "Vergeht eine Woche mit ungesicherten Änderungen, bietet die App beim Start eine Sicherung an.",
   "settings.last_backup": "Letzte Sicherung: {{date}}",
