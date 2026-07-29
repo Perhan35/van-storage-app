@@ -110,6 +110,8 @@
   "settings.import_invalid_format": "Ungültiges Dateiformat. Die Datei muss Zonen und Gegenstände enthalten.",
   "settings.import_orphan_items": "Ungültige Datei: Einige Gegenstände verweisen auf eine Zone, die nicht in der Datei enthalten ist.",
   "settings.import_confirm_title": "Importieren",
+  "settings.import_backup_info": "Sicherung vom {{date}} — v{{version}}",
+  "settings.import_backup_info_version_only": "Sicherung: v{{version}}",
   "settings.import_confirm_text": "{{locationsCount}} Orte, {{zonesCount}} Zonen und {{itemsCount}} Gegenstände importieren?\n\nDie aktuellen Daten werden ersetzt.",
   "settings.import_zones_count_one": "{{count}} Zone",
   "settings.import_zones_count_other": "{{count}} Zonen",

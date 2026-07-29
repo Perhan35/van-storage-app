@@ -163,6 +163,7 @@ export default function SettingsScreen() {
   const importData = async (content: string) => {
     let data: {
       appVersion?: unknown;
+      exportedAt?: unknown;
       locations?: unknown[];
       zones?: unknown[];
       items?: unknown[];
@@ -275,11 +276,27 @@ export default function SettingsScreen() {
     // versions so far, so a newer-version backup just gets a heads-up in the
     // confirm dialog rather than being blocked or migrated.
     const backupVersion = typeof data.appVersion === "string" ? data.appVersion : "";
+    const backupExportedAt = typeof data.exportedAt === "string" ? data.exportedAt : "";
     const currentVersion = Constants.expoConfig?.version ?? "";
     const backupIsNewer =
       backupVersion !== "" &&
       currentVersion !== "" &&
       compareVersions(backupVersion, currentVersion) > 0;
+
+    // Backups made before `exportedAt` existed only carry a version, so this
+    // degrades gracefully: full "date — version" line, version-only, or
+    // nothing at all for very old backups with neither field.
+    const exportedDate = backupExportedAt ? new Date(backupExportedAt) : null;
+    const hasValidDate = !!exportedDate && !isNaN(exportedDate.getTime());
+    let backupInfoLine = "";
+    if (backupVersion && hasValidDate) {
+      backupInfoLine = t("settings.import_backup_info", {
+        date: exportedDate!.toLocaleDateString(i18n.language),
+        version: backupVersion,
+      });
+    } else if (backupVersion) {
+      backupInfoLine = t("settings.import_backup_info_version_only", { version: backupVersion });
+    }
 
     const doImport = async () => {
       setImporting(true);
@@ -339,6 +356,7 @@ export default function SettingsScreen() {
     };
 
     const confirmText =
+      (backupInfoLine ? backupInfoLine + "\n\n" : "") +
       t("settings.import_confirm_text", {
         locationsCount: rawLocations.length,
         zonesCount: rawZones.length,
