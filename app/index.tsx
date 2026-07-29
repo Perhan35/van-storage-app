@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { View, StyleSheet, Pressable, BackHandler, AppState, InteractionManager } from "react-native";
+import { View, StyleSheet, Pressable, BackHandler, AppState } from "react-native";
 import { useRouter, useNavigation, useFocusEffect } from "expo-router";
 import { FAB, Text, Button, IconButton } from "react-native-paper";
 import Animated, {
@@ -629,7 +629,7 @@ export default function VanMapScreen() {
   // Shown once per app launch: surfaces items that are already expired or
   // expiring soon, right after the data has finished loading.
   //
-  // Deferred behind runAfterInteractions so this query doesn't compete with
+  // Deferred behind requestIdleCallback so this query doesn't compete with
   // the first screen's own startup queries on the serialized DB queue (see
   // withDb) — the first paint happens sooner, and this alert (a one-per-
   // launch nicety, not something the user is waiting on) arrives a beat
@@ -637,7 +637,7 @@ export default function VanMapScreen() {
   useEffect(() => {
     if (!initialized || expirationAlertShown) return;
     setExpirationAlertShown(true);
-    const task = InteractionManager.runAfterInteractions(() => {
+    const handle = requestIdleCallback(() => {
       listItemsWithExpiration().then((items) => {
         const hasUrgent = items.some(
           (item) => getExpirationStatus(item.expiration_date as string, item.reminder_days) !== "ok"
@@ -649,7 +649,7 @@ export default function VanMapScreen() {
         else checkBackupReminder();
       });
     });
-    return () => task.cancel();
+    return () => cancelIdleCallback(handle);
   }, [initialized, expirationAlertShown]);
 
   // Edit mode and the overview both hide the FAB; close it too, for two
