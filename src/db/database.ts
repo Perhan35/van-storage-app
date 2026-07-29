@@ -131,7 +131,14 @@ async function openAndMigrate(): Promise<SQLite.SQLiteDatabase> {
       for (const zone of template.zones) {
         await db.runAsync(
           "INSERT INTO zones (id, name, color, geometry, sort_order, location_id) VALUES (?, ?, ?, ?, ?, ?)",
-          [zone.id, zone.name, zone.color, JSON.stringify(zone.geometry), zone.sort_order, locationId]
+          [
+            zone.id,
+            i18n.t(zone.nameKey),
+            zone.color,
+            JSON.stringify(zone.geometry),
+            zone.sort_order,
+            locationId,
+          ]
         );
       }
     } else {

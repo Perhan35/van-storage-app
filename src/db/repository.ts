@@ -1,5 +1,6 @@
 import { withDb, Zone, Item, ZoneWithCount, Season, Location, LocationLabels } from "./database";
 import { DEFAULT_LOCATION_ICON, LayoutTemplate, Outline } from "./templates";
+import i18n from "../i18n";
 
 export const DEFAULT_FILL_OPACITY = 0.4;
 
@@ -496,9 +497,18 @@ export function instantiateTemplate(
     await db.withTransactionAsync(async () => {
       for (const zone of template.zones) {
         const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        // Resolved here, once: the name is stored as plain text, so renaming a
+        // zone later — or switching the app's language — leaves it alone.
         await db.runAsync(
           "INSERT INTO zones (id, name, color, geometry, sort_order, location_id) VALUES (?, ?, ?, ?, ?, ?)",
-          [id, zone.name, zone.color, JSON.stringify(zone.geometry), zone.sort_order, locationId]
+          [
+            id,
+            i18n.t(zone.nameKey),
+            zone.color,
+            JSON.stringify(zone.geometry),
+            zone.sort_order,
+            locationId,
+          ]
         );
       }
     });
