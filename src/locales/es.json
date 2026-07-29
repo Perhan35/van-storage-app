@@ -94,6 +94,7 @@
   "settings.theme_light": "Claro",
   "settings.theme_dark": "Oscuro",
   "settings.menu_header_label": "Mostrar la cabecera de los menús",
+  "settings.zone_color_full_screen_label": "El color de la zona llena toda la pantalla",
   "settings.title_season": "Temporada",
   "settings.desc_season": "Cambia entre el modo verano e invierno para ver qué sacar o volver a guardar en este lugar.",
   "settings.season_summer": "Verano",

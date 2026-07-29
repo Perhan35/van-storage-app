@@ -94,6 +94,7 @@
   "settings.theme_light": "Clair",
   "settings.theme_dark": "Sombre",
   "settings.menu_header_label": "Afficher l'en-tête des menus",
+  "settings.zone_color_full_screen_label": "La couleur de zone remplit tout l'écran",
   "settings.title_season": "Saison",
   "settings.desc_season": "Basculez entre le mode été et hiver pour savoir quoi sortir ou remettre en place pour ce lieu.",
   "settings.season_summer": "Été",

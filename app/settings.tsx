@@ -50,6 +50,9 @@ export default function SettingsScreen() {
   const showMenuHeader = useAppStore((s) => s.showMenuHeader);
   const setShowMenuHeader = useAppStore((s) => s.setShowMenuHeader);
   const reloadShowMenuHeader = useAppStore((s) => s.reloadShowMenuHeader);
+  const zoneColorFullScreen = useAppStore((s) => s.zoneColorFullScreen);
+  const setZoneColorFullScreen = useAppStore((s) => s.setZoneColorFullScreen);
+  const reloadZoneColorFullScreen = useAppStore((s) => s.reloadZoneColorFullScreen);
   const languagePreference = useAppStore((s) => s.languagePreference);
   const setLanguagePreference = useAppStore((s) => s.setLanguagePreference);
   const reloadLanguagePreference = useAppStore((s) => s.reloadLanguagePreference);
@@ -274,6 +277,7 @@ export default function SettingsScreen() {
         await reloadLanguagePreference();
         await reloadThemeMode();
         await reloadShowMenuHeader();
+        await reloadZoneColorFullScreen();
         await reloadSeasonMode();
         await reloadRemindersEnabled();
         await syncRemindersIfEnabled();
@@ -394,6 +398,10 @@ export default function SettingsScreen() {
         <View style={[styles.switchRow, styles.switchRowSpaced]}>
           <Text variant="bodyMedium">{t("settings.menu_header_label")}</Text>
           <Switch value={showMenuHeader} onValueChange={setShowMenuHeader} />
+        </View>
+        <View style={[styles.switchRow, styles.switchRowSpaced]}>
+          <Text variant="bodyMedium">{t("settings.zone_color_full_screen_label")}</Text>
+          <Switch value={zoneColorFullScreen} onValueChange={setZoneColorFullScreen} />
         </View>
       </View>
       <Divider />
