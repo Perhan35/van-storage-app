@@ -1,5 +1,13 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { View, StyleSheet, Alert, ScrollView, FlatList } from "react-native";
+import {
+  View,
+  StyleSheet,
+  Alert,
+  ScrollView,
+  FlatList,
+  Platform,
+  useWindowDimensions,
+} from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import Animated, { LinearTransition } from "react-native-reanimated";
 import { useLocalSearchParams, useRouter, useNavigation } from "expo-router";
@@ -37,6 +45,23 @@ const COMPLETED_HEADER_ID = "__completed_header__";
 type CompletedHeaderRow = { __header: true; id: string; count: number };
 type ListRow = Item | CompletedHeaderRow;
 
+// iOS nav-bar geometry, used to size the custom header title to the space the
+// bar button items leave free (see the headerTitle comment below): the native
+// back button on the left, the header action buttons on the right.
+//
+// These are deliberate over-estimates. UIKit centers the title view in the
+// free space, so a box *wider* than that space overhangs on both sides and
+// slides back under the back button — the failure mode this went through
+// several times. Erring high instead costs a few points of gap on the left,
+// which is the harmless direction. BACK_BUTTON_WIDTH is the one to nudge if
+// the title ever needs to sit tighter to the chevron: UIKit does not expose
+// the real width, and on iOS 26 the back button is a circular "liquid glass"
+// pill considerably wider than the old bare chevron.
+const BACK_BUTTON_WIDTH = 80;
+const HEADER_ICON_WIDTH = 44; // split + pencil, size 20
+const RESET_ICON_WIDTH = 48; // reset checklist, default size
+const HEADER_TRAILING_INSET = 12;
+
 export default function ZoneDetailScreen() {
   const { id, highlightItemId } = useLocalSearchParams<{ id: string; highlightItemId?: string }>();
   const router = useRouter();
@@ -44,6 +69,7 @@ export default function ZoneDetailScreen() {
   const { t } = useTranslation();
   const { palette } = useAppTheme();
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const zones = useAppStore((s) => s.zones);
   const activeLocationIcon = useAppStore(
     (s) => s.locations.find((l) => l.id === s.activeLocationId)?.icon ?? DEFAULT_LOCATION_ICON
@@ -204,8 +230,35 @@ export default function ZoneDetailScreen() {
       title: zone.name,
       headerStyle: { backgroundColor: zone.color },
       headerTintColor: zoneHeaderTint,
+      // On iOS the custom headerTitle is handed to UIKit as the nav bar's
+      // `titleView`, which is always centered — `headerTitleAlign` is a
+      // documented no-op there. Its width comes from Yoga, and UIKit centers
+      // it inside the space left free by the bar button items *without*
+      // clamping it: left = BACK_BUTTON_WIDTH + (available - W) / 2. So a
+      // short zone name sat in the middle, and anything wider than the free
+      // space (a long name, or an over-wide box) spilled back under the
+      // chevron.
+      //
+      // Sizing the box to that free space is what makes its centered position
+      // land against the chevron, with its far edge stopping where the action
+      // buttons start. The widths above are rounded up rather than down, so
+      // the box stays narrower than the gap and can never slide back under the
+      // chevron. Android left-aligns the title itself.
+      headerTitleAlign: "left",
       headerTitle: () => (
-        <View style={styles.headerTitleContainer}>
+        <View
+          style={[
+            styles.headerTitleContainer,
+            Platform.OS === "ios" && {
+              width:
+                windowWidth -
+                BACK_BUTTON_WIDTH -
+                2 * HEADER_ICON_WIDTH -
+                (hasChecked ? RESET_ICON_WIDTH : 0) -
+                HEADER_TRAILING_INSET,
+            },
+          ]}
+        >
           <Text
             variant="titleMedium"
             style={{ color: zoneHeaderTint, fontWeight: "bold" }}
@@ -254,6 +307,7 @@ export default function ZoneDetailScreen() {
     hasChecked,
     navigation,
     palette,
+    windowWidth,
     t,
     zoneHeaderTint,
     handleResetChecklist,
@@ -632,7 +686,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 32,
   },
-  headerTitleContainer: { alignItems: "center" },
+  headerTitleContainer: { alignItems: "flex-start" },
   headerActions: { flexDirection: "row", alignItems: "center" },
   listContent: { paddingBottom: 120 },
   completedHeader: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 6 },
