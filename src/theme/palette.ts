@@ -7,7 +7,33 @@ export type Palette = {
   surface: string;
   surfaceVariant: string;
   headerBackground: string;
+  // Header icons come in four states — headerTint (available),
+  // headerTintMuted (unavailable), headerDanger and headerSuccess (the actions
+  // that end an edit session) — each measured against headerBackground. How
+  // much separation is available depends on how deep the bar is: the dark bar
+  // has room for a graduated scale that clears WCAG's 3:1 floor throughout, the
+  // light one only for a polarity flip. Re-measure before changing any of these.
   headerTint: string;
+  headerTintMuted: string;
+  headerDanger: string;
+  headerSuccess: string;
+  // Undo/redo's own available/unavailable pair, separate from headerTint —
+  // that token also colors the header's title text and back button via
+  // navigation's headerTintColor, so repainting it to signal "available" was
+  // repainting the whole header. Dark mode already reads fine with the shared
+  // tokens (a light bar gives it a wide enough scale), so these only diverge
+  // from headerTint/headerTintMuted in light mode.
+  headerActionTint: string;
+  headerActionTintMuted: string;
+  // The header's other primary actions (out-of-van, search, entering edit
+  // mode) are meant to draw the eye — the opposite intent of headerUtility
+  // below — so these are picked for hue identity, not for receding.
+  headerOutOfVan: string;
+  headerSearch: string;
+  // Separate from headerTintMuted: that token means "unavailable right now",
+  // this one means "a lower-priority action" (settings) — same icon whether
+  // it's usable or not, so it must never look disabled.
+  headerUtility: string;
   onSurface: string;
   onSurfaceVariant: string;
   divider: string;
@@ -25,8 +51,26 @@ export const lightPalette: Palette = {
   background: "#F5F5F5",
   surface: "#FFFFFF",
   surfaceVariant: "#EEEEEE",
+  // A mid-tone bar caps white at 3.34:1, so the states that need contrast have
+  // to go darker than the bar rather than lighter — hence the navy disabled
+  // ink. Cancel/confirm keep the app's familiar red and green by request; both
+  // sit near 1.5:1 here, so their hue, not their contrast, is what identifies
+  // them. Deepening headerBackground is what would buy them room.
   headerBackground: "#4A90D9",
-  headerTint: "#FFFFFF",
+  headerTint: "#FFFFFF", // 3.34:1
+  headerTintMuted: "#1F3F63", // 3.22:1
+  headerActionTint: "#463b0f", // 3.00:1 — warm cream, reads as a color, not white
+  headerActionTintMuted: "#C0C0C0", // 1.84:1 — neutral light gray, quieter than headerActionTint
+  headerDanger: "#D32F2F", // 1.49:1 — chosen for hue, not contrast
+  headerSuccess: "#2E7D32", // 1.53:1 — chosen for hue, not contrast
+  headerOutOfVan: "#DE9509", // 1.34:1 — warm gold, a shade darker than dark mode's
+  headerSearch: "#1898A8", // 1.03:1 — teal, a shade darker than dark mode's
+  // Deliberately low-contrast: this icon should recede into the bar rather
+  // than compete with the others, so unlike every other header token here it
+  // is not pushed toward the 3:1 floor. A darker ink (anthracite, ~3-4:1) reads
+  // as bold against this saturated blue — contrast itself draws the eye — so
+  // going closer to the bar's own tone is what makes it sit quietly.
+  headerUtility: "#7a7a7a", // 2.00:1 — intentionally low, reads as quiet not disabled
   onSurface: "#000000",
   onSurfaceVariant: "#757575",
   divider: "#E0E0E0",
@@ -44,8 +88,16 @@ export const darkPalette: Palette = {
   background: "#121212",
   surface: "#1E1E1E",
   surfaceVariant: "#2A2A2A",
-  headerBackground: "#1F4A73",
+  headerBackground: "#15334E", // 13.00:1 against headerTint
   headerTint: "#FFFFFF",
+  headerTintMuted: "#8CA5BF", // 5.11:1
+  headerActionTint: "#FFFFFF", // same as headerTint — dark mode's white already reads as available
+  headerActionTintMuted: "#8CA5BF", // same as headerTintMuted — already reads as unavailable
+  headerDanger: "#FF8A80", // 5.69:1
+  headerSuccess: "#A5D6A7", // 7.91:1
+  headerOutOfVan: "#F5A623", // 6.41:1 — warm gold
+  headerSearch: "#26C6DA", // 6.30:1 — teal
+  headerUtility: "#94A0AB", // 4.88:1 — cool steel-gray, reads as quiet not disabled
   onSurface: "#FFFFFF",
   onSurfaceVariant: "#B0B0B0",
   divider: "#2F2F2F",

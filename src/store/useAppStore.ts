@@ -1,9 +1,20 @@
 import { create } from "zustand";
-import { getDb, Zone, ZoneWithCount, Season } from "../db/database";
+import {
+  getDb,
+  resetDbConnection,
+  Zone,
+  ZoneWithCount,
+  Season,
+  Location,
+  LabelSide,
+  LabelDef,
+  LocationLabels,
+} from "../db/database";
 import { getPreference, setPreference } from "../db/preferences";
 import * as repo from "../db/repository";
 import { cancelAllReminders, requestNotificationPermissions, syncReminders } from "../notifications/reminders";
-import i18n from "../i18n";
+import { getTemplate, Outline } from "../db/templates";
+import i18n, { applyLanguage, isLanguagePreference, LanguagePreference } from "../i18n";
 
 export type ThemeMode = "auto" | "light" | "dark";
 export type SeasonMode = "summer" | "winter";
@@ -19,12 +30,74 @@ const MAX_HISTORY = 50;
 // Cap recent searches so the list stays a quick glance, not a full log.
 const MAX_RECENT_SEARCHES = 8;
 
+// How long data may go un-backed-up before the reminder is offered.
+const BACKUP_REMINDER_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 let highlightTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Bumped by every setActiveLocation call so an earlier, slower zone query can't
+// overwrite a later switch's result (see setActiveLocation).
+let activeLocationSeq = 0;
+
+// The startup run currently in progress, so the recovery attempts (see
+// retryInit) join it instead of stacking competing passes over the same tables.
+let initRun: Promise<void> | null = null;
 
 function snapshotGeometry(zones: ZoneWithCount[]): ZoneGeometrySnapshot {
   const snapshot: ZoneGeometrySnapshot = {};
   for (const zone of zones) snapshot[zone.id] = zone.geometry;
   return snapshot;
+}
+
+// True when two outlines describe the same polygon (same canvas size and the
+// same points, curve control points included). Used to skip no-op outline
+// writes so a drag that ends where it started doesn't record an empty
+// undo step.
+function outlinesEqual(a: Outline, b: Outline): boolean {
+  return a.w === b.w && a.h === b.h && JSON.stringify(a.points) === JSON.stringify(b.points);
+}
+
+// Everything outline-edit can change about a location: the polygon, and where
+// its inscriptions sit on it. The two share one history — they're edited in the
+// same session, on the same drawing, so undo and "discard" have to treat them
+// as one piece of work.
+type PlanSnapshot = { outline: Outline; labels: LocationLabels };
+
+const LABEL_SIDES: LabelSide[] = ["front", "rear", "left", "right"];
+
+function planSnapshot(location: Location): PlanSnapshot {
+  return { outline: location.outline, labels: location.labels ?? {} };
+}
+
+// Compares the fields a label carries rather than the objects, since an absent
+// side and a blank one mean the same thing on the plan.
+function labelsEqual(a: LocationLabels, b: LocationLabels): boolean {
+  return LABEL_SIDES.every((side) => {
+    const x = a[side] ?? {};
+    const y = b[side] ?? {};
+    return (
+      (x.text ?? "") === (y.text ?? "") &&
+      !!x.hidden === !!y.hidden &&
+      (x.x ?? null) === (y.x ?? null) &&
+      (x.y ?? null) === (y.y ?? null)
+    );
+  });
+}
+
+// Restores a plan snapshot. Each half is written only if it actually differs,
+// so undoing a label drag doesn't rewrite the outline row (and vice versa).
+async function applyPlanSnapshot(
+  locationId: string,
+  target: PlanSnapshot,
+  current: PlanSnapshot | null
+) {
+  if (!current || !outlinesEqual(current.outline, target.outline)) {
+    await repo.updateLocationOutline(locationId, target.outline);
+  }
+  if (!current || !labelsEqual(current.labels, target.labels)) {
+    await repo.updateLocationLabels(locationId, target.labels);
+  }
 }
 
 // Write each zone in `snapshot` back to its recorded geometry, skipping zones
@@ -62,20 +135,96 @@ type AppState = {
   editSessionSnapshot: ZoneGeometrySnapshot | null;
   themeMode: ThemeMode;
   seasonMode: SeasonMode;
+  showMenuHeader: boolean;
+  // Whether a zone's color washes the whole zone-detail screen (true, the
+  // default) or is confined to its header (false).
+  zoneColorFullScreen: boolean;
+  // The user's choice, not the language actually in effect — "system" means
+  // "whatever the device is set to". Read i18n.language for the resolved one.
+  languagePreference: LanguagePreference;
   remindersEnabled: boolean;
+  backupRemindersEnabled: boolean;
+  // When the last export completed (ISO), null if this install never exported.
+  lastBackupAt: string | null;
+  // Whether the "time to back up" modal is on screen. Decided once per launch
+  // by checkBackupReminder.
+  backupReminderVisible: boolean;
   expirationAlertShown: boolean;
   tutorialVisible: boolean;
   recentSearches: string[];
+  locations: Location[];
+  // Every location's zones (with item counts), keyed by location id. Lets the
+  // overview grid and setActiveLocation avoid an N+1 / blocking query per tap —
+  // populated by one listAllZonesWithCounts() call and kept in sync by loadZones
+  // for the active location. A location with zero zones simply has no key.
+  zonesByLocation: Record<string, ZoneWithCount[]>;
+  activeLocationId: string | null;
+  // Whether the map screen is showing the all-locations overview (true) or a
+  // single location's map (false). Lives in the store so the header (a separate
+  // component in the Stack config) can hide location-only actions while it's up.
+  overviewMode: boolean;
+  // Sub-mode of editMode: swaps the canvas from moving/resizing zones to
+  // editing the location's outline polygon (add/move/delete a vertex).
+  outlineEditMode: boolean;
+  // Outline-edit history, kept separate from the zone undo/redo stacks so the
+  // two sub-modes each have their own undo. Each entry is a full plan snapshot
+  // (outline + inscriptions) taken *before* a change; meaningful only while
+  // outlineEditMode is on for the active location.
+  outlineUndoStack: PlanSnapshot[];
+  outlineRedoStack: PlanSnapshot[];
+  // The active location's plan the moment outline-edit was entered, so "cancel"
+  // can restore it regardless of how many edits happened in between.
+  outlineEditSessionSnapshot: PlanSnapshot | null;
+  // Which "discard your changes?" confirmation is on screen, null for none.
+  // Lives in the store because the two ways of asking to leave — the header's
+  // ✕ and the Android back button — sit in different components, and both must
+  // land on the same prompt.
+  discardPrompt: "session" | "outline" | null;
 
   init: () => Promise<void>;
+  // Restarts a startup that failed or never came back (see the action).
+  retryInit: () => Promise<void>;
+  reloadLocations: () => Promise<void>;
+  // Repopulates zonesByLocation for every location in one query. Call whenever
+  // the zone set for a location other than the active one may have changed.
+  reloadZonesByLocation: () => Promise<void>;
+  setOverviewMode: (overview: boolean) => void;
+  setActiveLocation: (locationId: string, options?: { keepOverviewMode?: boolean }) => Promise<void>;
+  addLocation: (name: string, templateId: string, icon: string) => Promise<string>;
+  renameLocation: (locationId: string, name: string, icon: string) => Promise<void>;
+  deleteLocation: (locationId: string) => Promise<void>;
+  updateLocationOutline: (locationId: string, outline: Outline) => Promise<void>;
+  updateLocationLabel: (
+    locationId: string,
+    side: LabelSide,
+    patch: Partial<LabelDef>
+  ) => Promise<void>;
+  resetLocationLabel: (locationId: string, side: LabelSide) => Promise<void>;
+  toggleOutlineEditMode: () => void;
+  enterOutlineEditMode: () => void;
+  undoOutline: () => Promise<void>;
+  redoOutline: () => Promise<void>;
+  cancelOutlineEdit: () => Promise<void>;
   showTutorial: () => void;
   dismissTutorial: () => Promise<void>;
   setThemeMode: (mode: ThemeMode) => Promise<void>;
   reloadThemeMode: () => Promise<void>;
+  setShowMenuHeader: (show: boolean) => Promise<void>;
+  reloadShowMenuHeader: () => Promise<void>;
+  setZoneColorFullScreen: (full: boolean) => Promise<void>;
+  reloadZoneColorFullScreen: () => Promise<void>;
+  setLanguagePreference: (preference: LanguagePreference) => Promise<void>;
+  reloadLanguagePreference: () => Promise<void>;
   setSeasonMode: (mode: SeasonMode) => Promise<void>;
   reloadSeasonMode: () => Promise<void>;
   setRemindersEnabled: (enabled: boolean) => Promise<boolean>;
   reloadRemindersEnabled: () => Promise<void>;
+  setBackupRemindersEnabled: (enabled: boolean) => Promise<void>;
+  reloadBackupSettings: () => Promise<void>;
+  checkBackupReminder: () => Promise<void>;
+  snoozeBackupReminder: () => Promise<void>;
+  dismissBackupReminder: () => void;
+  recordBackupDone: () => Promise<void>;
   setExpirationAlertShown: (shown: boolean) => void;
   addRecentSearch: (query: string) => Promise<void>;
   removeRecentSearch: (query: string) => Promise<void>;
@@ -124,10 +273,31 @@ type AppState = {
   undo: () => Promise<void>;
   redo: () => Promise<void>;
   cancelEditChanges: () => Promise<void>;
+  requestDiscard: () => void;
+  dismissDiscard: () => void;
+  confirmDiscard: () => Promise<void>;
 };
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+let reminderSyncTimer: ReturnType<typeof setTimeout> | null = null;
+// Collapses a burst of item add/edit/delete calls (e.g. an import, or several
+// quick edits) into a single reminder resync instead of a full
+// cancel-every-notification-and-reschedule pass per mutation. Not awaited by
+// its callers — the resync happens in the background after the debounce
+// window, well after the mutation that triggered it has already returned.
+const REMINDER_SYNC_DEBOUNCE_MS = 500;
+
+function scheduleReminderSync(get: () => AppState): void {
+  if (reminderSyncTimer) clearTimeout(reminderSyncTimer);
+  reminderSyncTimer = setTimeout(() => {
+    reminderSyncTimer = null;
+    get()
+      .syncRemindersIfEnabled()
+      .catch((err) => console.warn("Reminder sync failed", err));
+  }, REMINDER_SYNC_DEBOUNCE_MS);
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -139,30 +309,302 @@ export const useAppStore = create<AppState>((set, get) => ({
   undoStack: [],
   redoStack: [],
   editSessionSnapshot: null,
+  discardPrompt: null,
   themeMode: "auto",
   seasonMode: "summer",
+  showMenuHeader: true,
+  zoneColorFullScreen: true,
+  languagePreference: "system",
   remindersEnabled: false,
+  backupRemindersEnabled: true,
+  lastBackupAt: null,
+  backupReminderVisible: false,
   expirationAlertShown: false,
   tutorialVisible: false,
   recentSearches: [],
+  locations: [],
+  zonesByLocation: {},
+  activeLocationId: null,
+  overviewMode: false,
+  outlineEditMode: false,
+  outlineUndoStack: [],
+  outlineRedoStack: [],
+  outlineEditSessionSnapshot: null,
 
   init: async () => {
     if (get().initialized) return;
-    set({ initError: null });
-    try {
-      await getDb();
-      await get().reloadThemeMode();
-      await get().reloadSeasonMode();
-      await get().reloadRemindersEnabled();
-      await get().reloadRecentSearches();
-      await get().loadZones();
-      // First launch: no "tutorialShown" preference yet → surface the guided
-      // tour. Dismissing it records the preference so it never auto-opens again.
-      const tutorialShown = await getPreference("tutorialShown");
-      set({ initialized: true, tutorialVisible: tutorialShown !== "yes" });
-    } catch (err) {
-      set({ initError: err instanceof Error ? err.message : String(err) });
+    // Called on mount and again by every recovery attempt (focus, foreground,
+    // pull-to-refresh): join the pass already running rather than starting a
+    // competing one.
+    if (initRun) return initRun;
+    const run = (async () => {
+      set({ initError: null });
+      try {
+        await getDb();
+        // First, so everything loaded below — and any string this pass writes
+        // to the database — sees the language the user actually chose. On a
+        // fresh install there's no stored preference yet, which resolves to
+        // the device language, matching what getDb() just seeded.
+        await get().reloadLanguagePreference();
+        await get().reloadThemeMode();
+        await get().reloadShowMenuHeader();
+        await get().reloadZoneColorFullScreen();
+        await get().reloadSeasonMode();
+        await get().reloadRemindersEnabled();
+        await get().reloadBackupSettings();
+        await get().reloadRecentSearches();
+        // Both queries are needed regardless (locations + all zones), so doing
+        // them here up front populates zonesByLocation for every location and
+        // means the resolved active location's zones below come from cache
+        // rather than a second, redundant query.
+        await get().reloadLocations();
+        await get().reloadZonesByLocation();
+
+        // The backup reminder measures "how long has it been" from the last
+        // export — an install that never exported has nothing to measure from,
+        // so first launch is recorded as the starting point.
+        if (!(await getPreference("firstLaunchAt"))) {
+          await setPreference("firstLaunchAt", new Date().toISOString());
+        }
+
+        // Resolve which location is active: the persisted preference if it
+        // still exists, otherwise the first location (e.g. right after the
+        // one-time migration created the default "Van" location).
+        const locations = get().locations;
+        const storedId = await getPreference("activeLocationId");
+        const resolvedId =
+          (storedId && locations.some((l) => l.id === storedId) ? storedId : null) ??
+          locations[0]?.id ??
+          null;
+        set({ activeLocationId: resolvedId });
+        if (resolvedId && resolvedId !== storedId) {
+          await setPreference("activeLocationId", resolvedId);
+        }
+
+        // Start on the all-locations overview, unless there's exactly one
+        // location — then land directly inside it (no reason to show a one-tile
+        // overview). Migrated single-"Van" installs therefore behave as before.
+        set({ overviewMode: locations.length !== 1 });
+
+        // zonesByLocation was just populated above, so this is a cache read,
+        // not a third query.
+        set((s) => ({ zones: resolvedId ? s.zonesByLocation[resolvedId] ?? [] : [] }));
+        // First launch: no "tutorialShown" preference yet → surface the guided
+        // tour. Dismissing it records the preference so it never auto-opens again.
+        const tutorialShown = await getPreference("tutorialShown");
+        set({ initialized: true, tutorialVisible: tutorialShown !== "yes" });
+      } catch (err) {
+        set({ initError: err instanceof Error ? err.message : String(err) });
+      }
+    })();
+    initRun = run;
+    // Only clears its own registration: a retry that gave up on this run has
+    // already replaced it, and must not be unregistered by the run it replaced.
+    run.finally(() => {
+      if (initRun === run) initRun = null;
+    });
+    return run;
+  },
+
+  // Startup that never finished — an error, or a pass still hanging on a
+  // database call that will never come back — used to mean a blank main screen
+  // for the life of the process, since nothing ever asked again. This is the
+  // way back: throw away whatever the last attempt was waiting on and start a
+  // clean one. Safe to call at any time; it's a no-op once startup succeeded.
+  retryInit: async () => {
+    if (get().initialized) return;
+    resetDbConnection();
+    initRun = null;
+    await get().init();
+  },
+
+  reloadLocations: async () => {
+    const locations = await repo.listLocations();
+    set({ locations });
+  },
+
+  reloadZonesByLocation: async () => {
+    const all = await repo.listAllZonesWithCounts();
+    const grouped: Record<string, ZoneWithCount[]> = {};
+    for (const zone of all) {
+      (grouped[zone.location_id] ??= []).push(zone);
     }
+    set({ zonesByLocation: grouped });
+  },
+
+  setOverviewMode: (overview) => set({ overviewMode: overview }),
+
+  setActiveLocation: async (locationId, options) => {
+    const seq = ++activeLocationSeq;
+    const cached = get().zonesByLocation[locationId];
+    // Deletion switches the active location while staying on the overview —
+    // touching overviewMode there would flip it false and back on separate
+    // renders, flashing the location view in between (#deleteLocation).
+    const overviewPatch = options?.keepOverviewMode ? {} : { overviewMode: false };
+
+    if (cached) {
+      // Cache hit: switch synchronously, on the same tick as the tap, so a
+      // flight animation kicked off right after this call starts on the very
+      // next frame instead of waiting on a DB round-trip. Location and zones
+      // still land in one set() — the invariant that guards against a frame of
+      // the new outline over stale zones (see the fallback path below) holds
+      // here too, since both come from the same cache entry.
+      set({ activeLocationId: locationId, zones: cached, ...overviewPatch });
+      // Reconcile against the DB in the background in case the cache is stale
+      // (e.g. another device's export just got restored). Silently dropped if
+      // a newer switch has since taken over, or if it fails outright — the
+      // cached data already rendered and stays as the fallback.
+      repo
+        .listZonesWithCounts(locationId)
+        .then((zones) => {
+          if (seq !== activeLocationSeq) return;
+          set((s) => ({
+            zones,
+            zonesByLocation: { ...s.zonesByLocation, [locationId]: zones },
+          }));
+        })
+        .catch((err) => console.warn("Reconciling active location's zones failed", err));
+      await setPreference("activeLocationId", locationId);
+      return;
+    }
+
+    // No cache entry yet (e.g. a location just created this session). Fetch
+    // the new location's zones *before* switching. Committing the id first
+    // would render one frame of the new outline against the previous
+    // location's zones (they only arrive when the query resolves) — the map
+    // visibly flashed the old layout before snapping to the right one.
+    const zones = await repo.listZonesWithCounts(locationId);
+    // A newer switch started while this query was in flight (fast taps in the
+    // overview): its result is the one that must win, so drop this one.
+    if (seq !== activeLocationSeq) return;
+    // Location, its zones and leaving the overview land in a single render, so
+    // the first frame of the new map is already the correct one.
+    set((s) => ({
+      activeLocationId: locationId,
+      zones,
+      ...overviewPatch,
+      zonesByLocation: { ...s.zonesByLocation, [locationId]: zones },
+    }));
+    await setPreference("activeLocationId", locationId);
+  },
+
+  addLocation: async (name, templateId, icon) => {
+    const template = getTemplate(templateId);
+    const id = generateId();
+    await repo.insertLocation(id, name, template.outline, icon);
+    await repo.instantiateTemplate(id, template);
+    await get().reloadLocations();
+    await get().setActiveLocation(id);
+    return id;
+  },
+
+  renameLocation: async (locationId, name, icon) => {
+    await repo.updateLocation(locationId, name, icon);
+    await get().reloadLocations();
+  },
+
+  deleteLocation: async (locationId) => {
+    const { locations, activeLocationId } = get();
+    // Never delete the last remaining location — there must always be
+    // somewhere for zones/items to live.
+    if (locations.length <= 1) return;
+    await repo.deleteLocation(locationId);
+    await get().reloadLocations();
+    set((s) => {
+      if (!(locationId in s.zonesByLocation)) return {};
+      const next = { ...s.zonesByLocation };
+      delete next[locationId];
+      return { zonesByLocation: next };
+    });
+    if (activeLocationId === locationId) {
+      const next = get().locations[0];
+      // Deletion is only ever triggered from the all-locations overview —
+      // stay there rather than following setActiveLocation into the deleted
+      // location's replacement (keepOverviewMode avoids even a one-frame
+      // flash of the location view while switching).
+      if (next) await get().setActiveLocation(next.id, { keepOverviewMode: true });
+    }
+  },
+
+  updateLocationOutline: async (locationId, outline) => {
+    const loc = get().locations.find((l) => l.id === locationId);
+    // A drag that ends where it started (or a discrete edit that changes
+    // nothing) is a no-op — don't write it or push an empty undo step.
+    if (loc && outlinesEqual(loc.outline, outline)) return;
+    await repo.updateLocationOutline(locationId, outline);
+    // While editing the outline, record how the plan stood *before* this change
+    // so it can be undone (mirrors updateZoneGeometry for zones). Edits made
+    // outside outline-edit mode don't feed the history.
+    set((s) =>
+      s.outlineEditMode && loc
+        ? {
+            outlineUndoStack: [...s.outlineUndoStack, planSnapshot(loc)].slice(-MAX_HISTORY),
+            outlineRedoStack: [],
+          }
+        : {}
+    );
+    await get().reloadLocations();
+  },
+
+  updateLocationLabel: async (locationId, side, patch) => {
+    const loc = get().locations.find((l) => l.id === locationId);
+    if (!loc) return;
+    // Merge the patch onto the existing side so a drag ({x,y}) keeps the text
+    // and a rename keeps a dragged position.
+    const prev = loc.labels?.[side] ?? {};
+    const merged = { ...prev, ...patch };
+    const text = merged.text?.trim() ?? "";
+    const hasPos = merged.x != null && merged.y != null;
+    const next = { ...(loc.labels ?? {}) };
+    // A side carries information if it has custom text, is hidden, OR sits at a
+    // custom (dragged) position. Only when none of these hold is it dropped so
+    // front/rear fall back to their default and left/right disappear.
+    if (!text && !merged.hidden && !hasPos) {
+      delete next[side];
+    } else {
+      next[side] = {
+        ...(text ? { text } : {}),
+        ...(merged.hidden ? { hidden: true } : {}),
+        ...(hasPos ? { x: Math.round(merged.x!), y: Math.round(merged.y!) } : {}),
+      };
+    }
+    // A rename that changes nothing, or a drag that lands where it started,
+    // shouldn't cost an undo step.
+    if (labelsEqual(loc.labels ?? {}, next)) return;
+    const before = planSnapshot(loc);
+    await repo.updateLocationLabels(locationId, next);
+    // Inscriptions are only editable inside outline-edit, and they're part of
+    // the same drawing as the outline — so they go on the same history, and
+    // "discard" puts them back too.
+    set((s) =>
+      s.outlineEditMode
+        ? {
+            outlineUndoStack: [...s.outlineUndoStack, before].slice(-MAX_HISTORY),
+            outlineRedoStack: [],
+          }
+        : {}
+    );
+    await get().reloadLocations();
+  },
+
+  resetLocationLabel: async (locationId, side) => {
+    const loc = get().locations.find((l) => l.id === locationId);
+    if (!loc?.labels?.[side]) return;
+    // Full clear: text, hidden and any custom position all go, returning the
+    // side to its default text at its default anchor.
+    const next = { ...loc.labels };
+    delete next[side];
+    const before = planSnapshot(loc);
+    await repo.updateLocationLabels(locationId, next);
+    set((s) =>
+      s.outlineEditMode
+        ? {
+            outlineUndoStack: [...s.outlineUndoStack, before].slice(-MAX_HISTORY),
+            outlineRedoStack: [],
+          }
+        : {}
+    );
+    await get().reloadLocations();
   },
 
   showTutorial: () => set({ tutorialVisible: true }),
@@ -187,18 +629,60 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  setShowMenuHeader: async (show) => {
+    set({ showMenuHeader: show });
+    await setPreference("showMenuHeader", show ? "on" : "off");
+  },
+
+  // Mirrors reloadThemeMode. Absence of a stored preference means "on" (the
+  // default), so only an explicit "off" flips it.
+  reloadShowMenuHeader: async () => {
+    const stored = await getPreference("showMenuHeader");
+    set({ showMenuHeader: stored !== "off" });
+  },
+
+  setZoneColorFullScreen: async (full) => {
+    set({ zoneColorFullScreen: full });
+    await setPreference("zoneColorFullScreen", full ? "on" : "off");
+  },
+
+  // Mirrors reloadShowMenuHeader. Absence of a stored preference means "on"
+  // (the default), so only an explicit "off" flips it.
+  reloadZoneColorFullScreen: async () => {
+    const stored = await getPreference("zoneColorFullScreen");
+    set({ zoneColorFullScreen: stored !== "off" });
+  },
+
+  setLanguagePreference: async (preference) => {
+    set({ languagePreference: preference });
+    await applyLanguage(preference);
+    await setPreference("language", preference);
+  },
+
+  // Mirrors reloadThemeMode, plus the side effect of actually switching i18n:
+  // the app renders in the device language until this runs (the preference
+  // lives in SQLite, which isn't open yet at i18n init), so startup and
+  // post-import both need it to apply the stored choice, not just record it.
+  reloadLanguagePreference: async () => {
+    const stored = await getPreference("language");
+    const preference: LanguagePreference = isLanguagePreference(stored) ? stored : "system";
+    set({ languagePreference: preference });
+    await applyLanguage(preference);
+  },
+
   setSeasonMode: async (mode) => {
     set({ seasonMode: mode });
     await setPreference("seasonMode", mode);
   },
 
-  // Mirrors reloadThemeMode: reads the persisted seasonMode into in-memory
-  // state without writing back, for startup and post-import refresh.
+  // Mirrors reloadShowMenuHeader: absence of a stored preference means the
+  // default ("summer"), so this always sets a value rather than leaving
+  // whatever was in memory before the read — important after an import,
+  // where the preferences table was just cleared and re-seeded from the
+  // backup (see importAllData).
   reloadSeasonMode: async () => {
     const storedMode = await getPreference("seasonMode");
-    if (storedMode === "summer" || storedMode === "winter") {
-      set({ seasonMode: storedMode });
-    }
+    set({ seasonMode: storedMode === "winter" ? "winter" : "summer" });
   },
 
   setRemindersEnabled: async (enabled) => {
@@ -220,6 +704,70 @@ export const useAppStore = create<AppState>((set, get) => ({
   reloadRemindersEnabled: async () => {
     const stored = await getPreference("remindersEnabled");
     set({ remindersEnabled: stored === "on" });
+  },
+
+  setBackupRemindersEnabled: async (enabled) => {
+    set({ backupRemindersEnabled: enabled });
+    await setPreference("backupRemindersEnabled", enabled ? "on" : "off");
+  },
+
+  // Mirrors reloadThemeMode for the backup section: absence of a stored
+  // preference means "on" (reminders are opt-out), so only an explicit "off"
+  // disables them.
+  reloadBackupSettings: async () => {
+    const [stored, lastBackupAt] = await Promise.all([
+      getPreference("backupRemindersEnabled"),
+      getPreference("lastBackupAt"),
+    ]);
+    set({ backupRemindersEnabled: stored !== "off", lastBackupAt });
+  },
+
+  // Decides once per launch whether to prompt for a backup. All three of the
+  // conditions must hold: reminders on, nothing exported for a week, and data
+  // that has actually moved since the last export — nagging about a backup
+  // that would be byte-identical to the last one is just noise.
+  checkBackupReminder: async () => {
+    if (!get().backupRemindersEnabled) return;
+
+    // "Remind me tomorrow" parks the prompt until the stored moment passes.
+    const snoozedUntil = await getPreference("backupReminderSnoozeUntil");
+    if (snoozedUntil && Date.now() < Date.parse(snoozedUntil)) return;
+
+    // An install with no items has nothing worth losing yet.
+    const { fingerprint, itemCount } = await repo.getDataFingerprint();
+    if (itemCount === 0) return;
+    if (fingerprint === (await getPreference("lastBackupFingerprint"))) return;
+
+    const reference =
+      (await getPreference("lastBackupAt")) ?? (await getPreference("firstLaunchAt"));
+    const referenceMs = reference ? Date.parse(reference) : NaN;
+    if (Number.isNaN(referenceMs)) return;
+    if (Date.now() - referenceMs < BACKUP_REMINDER_DAYS * DAY_MS) return;
+
+    set({ backupReminderVisible: true });
+  },
+
+  snoozeBackupReminder: async () => {
+    set({ backupReminderVisible: false });
+    await setPreference(
+      "backupReminderSnoozeUntil",
+      new Date(Date.now() + DAY_MS).toISOString()
+    );
+  },
+
+  dismissBackupReminder: () => set({ backupReminderVisible: false }),
+
+  // Records the data as safely exported: the moment, and the fingerprint it had
+  // at that moment, so the reminder stays quiet until something actually
+  // changes. Any pending snooze is cleared — it was about a backup that has
+  // now happened.
+  recordBackupDone: async () => {
+    const now = new Date().toISOString();
+    const { fingerprint } = await repo.getDataFingerprint();
+    set({ lastBackupAt: now, backupReminderVisible: false });
+    await setPreference("lastBackupAt", now);
+    await setPreference("lastBackupFingerprint", fingerprint);
+    await setPreference("backupReminderSnoozeUntil", "");
   },
 
   setExpirationAlertShown: (shown) => set({ expirationAlertShown: shown }),
@@ -265,27 +813,35 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   loadZones: async () => {
-    const zones = await repo.listZonesWithCounts();
-    set({ zones });
+    const locationId = get().activeLocationId;
+    if (!locationId) {
+      set({ zones: [] });
+      return;
+    }
+    const zones = await repo.listZonesWithCounts(locationId);
+    // Every zone mutation stays within the active location, so refreshing its
+    // zonesByLocation entry here (rather than a full reloadZonesByLocation) is
+    // enough to keep the overview grid's tiles in sync too.
+    set((s) => ({ zones, zonesByLocation: { ...s.zonesByLocation, [locationId]: zones } }));
   },
 
   addItem: async (name, zoneId, notes = "", season = "none", expirationDate = null, reminderDays = 7) => {
     const id = generateId();
     await repo.insertItem(id, name, zoneId, notes, season, expirationDate, reminderDays);
     await get().loadZones();
-    await get().syncRemindersIfEnabled();
+    scheduleReminderSync(get);
   },
 
   deleteItem: async (itemId) => {
     await repo.deleteItem(itemId);
     await get().loadZones();
-    await get().syncRemindersIfEnabled();
+    scheduleReminderSync(get);
   },
 
   updateItem: async (itemId, name, notes, season, expirationDate, reminderDays) => {
     await repo.updateItem(itemId, name, notes, season, expirationDate, reminderDays);
     await get().loadZones();
-    await get().syncRemindersIfEnabled();
+    scheduleReminderSync(get);
   },
 
   moveItem: async (itemId, newZoneId) => {
@@ -298,14 +854,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     await get().loadZones();
   },
 
+  // Neither of these can change a zone's item_count or geometry — the only
+  // things zonesByLocation/zones carry — so unlike the other item mutations
+  // there's nothing here for loadZones to refresh. The zone screen updates its
+  // own item list directly (see handleToggleChecked/handleResetChecklist).
   setItemChecked: async (itemId, checked) => {
     await repo.setItemChecked(itemId, checked);
-    await get().loadZones();
   },
 
   resetChecklist: async (zoneId) => {
     await repo.resetChecklistItems(zoneId);
-    await get().loadZones();
   },
 
   setHighlightedZoneId: (zoneId) => {
@@ -335,8 +893,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addZone: async (name, color, geometry, checklist = false) => {
+    const locationId = get().activeLocationId;
+    if (!locationId) return;
     const id = generateId();
-    await repo.insertZone(id, name, color, geometry, checklist);
+    await repo.insertZone(id, name, color, geometry, locationId, checklist);
     set({ undoStack: [], redoStack: [] });
     await get().loadZones();
   },
@@ -382,11 +942,102 @@ export const useAppStore = create<AppState>((set, get) => ({
       const turningOn = !s.editMode;
       return {
         editMode: turningOn,
+        outlineEditMode: false,
         undoStack: [],
         redoStack: [],
         editSessionSnapshot: turningOn ? snapshotGeometry(s.zones) : null,
+        outlineUndoStack: [],
+        outlineRedoStack: [],
+        outlineEditSessionSnapshot: null,
       };
     }),
+
+  // Entering outline-edit records the current outline as the "cancel" target
+  // and starts a fresh history; leaving it (the "ok" path) keeps whatever edits
+  // were committed and just clears the session state, returning to zone editing.
+  toggleOutlineEditMode: () =>
+    set((s) => {
+      const turningOn = !s.outlineEditMode;
+      const active = s.locations.find((l) => l.id === s.activeLocationId);
+      return {
+        outlineEditMode: turningOn,
+        outlineUndoStack: [],
+        outlineRedoStack: [],
+        outlineEditSessionSnapshot: turningOn && active ? planSnapshot(active) : null,
+      };
+    }),
+
+  // Enter outline editing directly from the map (long-press on a location),
+  // spinning up a zone-edit session around it too so the usual "ok/cancel"
+  // controls are present and zones stay safe while the outline is reshaped.
+  enterOutlineEditMode: () =>
+    set((s) => {
+      const active = s.locations.find((l) => l.id === s.activeLocationId);
+      return {
+        editMode: true,
+        editSessionSnapshot: snapshotGeometry(s.zones),
+        undoStack: [],
+        redoStack: [],
+        outlineEditMode: true,
+        outlineUndoStack: [],
+        outlineRedoStack: [],
+        outlineEditSessionSnapshot: active ? planSnapshot(active) : null,
+      };
+    }),
+
+  undoOutline: async () => {
+    const { outlineUndoStack, activeLocationId, locations } = get();
+    if (outlineUndoStack.length === 0 || !activeLocationId) return;
+    const loc = locations.find((l) => l.id === activeLocationId);
+    const current = loc ? planSnapshot(loc) : null;
+    const target = outlineUndoStack[outlineUndoStack.length - 1];
+    await applyPlanSnapshot(activeLocationId, target, current);
+    set((s) => ({
+      outlineUndoStack: s.outlineUndoStack.slice(0, -1),
+      outlineRedoStack: current
+        ? [...s.outlineRedoStack, current].slice(-MAX_HISTORY)
+        : s.outlineRedoStack,
+    }));
+    await get().reloadLocations();
+  },
+
+  redoOutline: async () => {
+    const { outlineRedoStack, activeLocationId, locations } = get();
+    if (outlineRedoStack.length === 0 || !activeLocationId) return;
+    const loc = locations.find((l) => l.id === activeLocationId);
+    const current = loc ? planSnapshot(loc) : null;
+    const target = outlineRedoStack[outlineRedoStack.length - 1];
+    await applyPlanSnapshot(activeLocationId, target, current);
+    set((s) => ({
+      outlineRedoStack: s.outlineRedoStack.slice(0, -1),
+      outlineUndoStack: current
+        ? [...s.outlineUndoStack, current].slice(-MAX_HISTORY)
+        : s.outlineUndoStack,
+    }));
+    await get().reloadLocations();
+  },
+
+  // Discards every outline and inscription change made this session, restoring
+  // the plan to how it looked when outline-edit was entered, then returns to
+  // zone editing (editMode itself, and the zones, are left untouched).
+  cancelOutlineEdit: async () => {
+    const { outlineEditSessionSnapshot, activeLocationId, locations } = get();
+    if (outlineEditSessionSnapshot && activeLocationId) {
+      const loc = locations.find((l) => l.id === activeLocationId);
+      await applyPlanSnapshot(
+        activeLocationId,
+        outlineEditSessionSnapshot,
+        loc ? planSnapshot(loc) : null
+      );
+      await get().reloadLocations();
+    }
+    set({
+      outlineEditMode: false,
+      outlineUndoStack: [],
+      outlineRedoStack: [],
+      outlineEditSessionSnapshot: null,
+    });
+  },
 
   updateZoneGeometry: async (zoneId, geometry) => {
     const zones = get().zones;
@@ -445,10 +1096,45 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({
       editMode: false,
+      outlineEditMode: false,
       undoStack: [],
       redoStack: [],
       editSessionSnapshot: null,
+      outlineUndoStack: [],
+      outlineRedoStack: [],
+      outlineEditSessionSnapshot: null,
+      discardPrompt: null,
     });
     await get().loadZones();
+  },
+
+  // Asks to leave the current edit session — from the header's ✕ or from the
+  // Android back button. Which session that is depends on the sub-mode: in
+  // outline-edit only the outline is at stake, otherwise it's the whole
+  // editing session.
+  requestDiscard: () => {
+    const { editMode, outlineEditMode, undoStack, outlineUndoStack } = get();
+    if (!editMode) return;
+    // The undo stacks are empty exactly while the current state still matches
+    // the one the session started from — nothing to discard, nothing to ask,
+    // so leaving is immediate.
+    const hasChanges = (outlineEditMode ? outlineUndoStack : undoStack).length > 0;
+    if (!hasChanges) {
+      if (outlineEditMode) get().cancelOutlineEdit();
+      else get().cancelEditChanges();
+      return;
+    }
+    set({ discardPrompt: outlineEditMode ? "outline" : "session" });
+  },
+
+  dismissDiscard: () => set({ discardPrompt: null }),
+
+  // Reads the prompt rather than the live sub-mode, so it discards exactly what
+  // was asked about.
+  confirmDiscard: async () => {
+    const { discardPrompt } = get();
+    set({ discardPrompt: null });
+    if (discardPrompt === "outline") await get().cancelOutlineEdit();
+    else if (discardPrompt === "session") await get().cancelEditChanges();
   },
 }));

@@ -1,6 +1,6 @@
 # Contributing & Running the App
 
-This document lists every command you need to install, run, test and deploy **My Van Inventory**. It is split by what you have installed locally:
+This document lists every command you need to install, run, test and deploy **My Inventory**. It is split by what you have installed locally:
 
 1. [Prerequisites](#prerequisites)
 2. [Install](#install)
@@ -36,8 +36,8 @@ Optional, depending on the workflow:
 Clone and install dependencies:
 
 ```bash
-git clone <repo-url> van-storage-app
-cd van-storage-app
+git clone <repo-url> my-inventory-app
+cd my-inventory-app
 npm install
 ```
 
@@ -146,7 +146,7 @@ npm run android                # builds + installs + launches
 To stream logs from the device:
 
 ```bash
-adb logcat | grep -i "ReactNative\|Expo\|vanstorage"
+adb logcat | grep -i "ReactNative\|Expo\|myinventory"
 ```
 
 ### 3. Standalone APK (no computer needed afterwards)
@@ -181,7 +181,7 @@ Same APK, but built on your machine. Slower the first time, no cloud minutes use
 
 ```bash
 # Via USB (with adb)
-adb install -r path/to/van-storage.apk
+adb install -r path/to/my-inventory.apk
 
 # Or transfer the APK file to the phone (email, USB, cloud drive) and tap it
 ```
@@ -204,7 +204,7 @@ costs you depends on your Apple account:
 
 You do **not** need to pay to run the app on your own iPhone — a free Apple ID is enough,
 you just re-sign every 7 days. The two options below both produce your real standalone app
-(its own "My Van Inventory" icon), **not** Expo Go.
+(its own "My Inventory" icon), **not** Expo Go.
 
 Both require a Mac with **Xcode** and **CocoaPods** (one-time install):
 
@@ -239,7 +239,7 @@ helper script:
 
 ```bash
 ./scripts/build-ios-ipa.sh
-# → dist/MyVanInventory-vX.Y.Z.ipa
+# → dist/MyInventory-vX.Y.Z.ipa
 ```
 
 The script runs `expo prebuild`, `pod install`, an unsigned Release build, and packages the
@@ -250,7 +250,7 @@ Then:
    [sidestore.io](https://sidestore.io) (pairing file + anisette server — the exact steps
    depend on your iOS version, hence the link to the always-current source). This is the only
    step that needs a computer, once.
-2. In SideStore: **My Apps → +** → pick your `MyVanInventory-vX.Y.Z.ipa` → SideStore signs
+2. In SideStore: **My Apps → +** → pick your `MyInventory-vX.Y.Z.ipa` → SideStore signs
    and installs it.
 3. SideStore renews the 7-day certificate on its own before it expires, as long as the phone
    can reach its anisette server over Wi-Fi.
@@ -373,7 +373,7 @@ below depending on whether a phone already has a build installed from EAS.
 fine reinstalling on every device):
 
 ```bash
-keytool -genkeypair -v -keystore release.jks -alias van-storage \
+keytool -genkeypair -v -keystore release.jks -alias my-inventory \
   -keyalg RSA -keysize 2048 -validity 10000 -storetype JKS
 base64 -i release.jks | pbcopy   # macOS: copies base64 to the clipboard
 ```
@@ -450,7 +450,7 @@ git tag v2.1.6
 git push origin v2.1.6
 ```
 
-A few minutes later a GitHub Release `v2.1.6` appears with `my-van-inventory-v2.1.6.apk`
+A few minutes later a GitHub Release `v2.1.6` appears with `my-inventory-v2.1.6.apk`
 attached — share that release page's link. Anyone with the link can download the APK and
 install it directly (allowing "install unknown apps" the first time).
 

@@ -1,6 +1,23 @@
-import { withDb, Zone, Item, ZoneWithCount, Season } from "./database";
+import { withDb, Zone, Item, ZoneWithCount, Season, Location, LocationLabels } from "./database";
+import { DEFAULT_LOCATION_ICON, LayoutTemplate, Outline } from "./templates";
+import i18n from "../i18n";
 
 export const DEFAULT_FILL_OPACITY = 0.4;
+
+export function isValidOutline(o: unknown): o is Outline {
+  if (typeof o !== "object" || o === null) return false;
+  const { w, h, points } = o as Record<string, unknown>;
+  if (typeof w !== "number" || !Number.isFinite(w)) return false;
+  if (typeof h !== "number" || !Number.isFinite(h)) return false;
+  if (!Array.isArray(points) || points.length < 3) return false;
+  return points.every(
+    (p) =>
+      typeof p === "object" &&
+      p !== null &&
+      typeof (p as Record<string, unknown>).x === "number" &&
+      typeof (p as Record<string, unknown>).y === "number"
+  );
+}
 
 export function sanitizeFillOpacity(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1
@@ -24,14 +41,38 @@ export function isValidGeometry(g: unknown): g is Zone["geometry"] {
   );
 }
 
-export function listZonesWithCounts(): Promise<ZoneWithCount[]> {
+export function listZonesWithCounts(locationId: string): Promise<ZoneWithCount[]> {
+  return queryZonesWithCounts("", "WHERE z.location_id = ?", [locationId]);
+}
+
+// Zones across every location, with each zone's location icon, used by the
+// game screen's question pool so quiz subjects aren't limited to whichever
+// location is currently active.
+export function listAllZonesWithCounts(): Promise<(ZoneWithCount & { location_icon: string })[]> {
+  return queryZonesWithCounts(
+    ", l.icon as location_icon",
+    "JOIN locations l ON z.location_id = l.id",
+    []
+  );
+}
+
+function queryZonesWithCounts<T extends ZoneWithCount = ZoneWithCount>(
+  extraSelect: string,
+  joinAndWhere: string,
+  params: string[]
+): Promise<T[]> {
   return withDb(async (db) => {
-    const rows = await db.getAllAsync<ZoneWithCount & { geometry: string }>(
-      `SELECT z.*, COALESCE(c.cnt, 0) as item_count
+    // A correlated scalar subquery instead of a LEFT JOIN against a
+    // "GROUP BY zone_id over every item in the database" derived table: the
+    // old form aggregated the whole items table even when joinAndWhere
+    // restricts z to one location. This scopes the count to each selected
+    // zone and rides idx_items_zone.
+    const rows = await db.getAllAsync<T & { geometry: string }>(
+      `SELECT z.*, (SELECT COUNT(*) FROM items i WHERE i.zone_id = z.id) as item_count${extraSelect}
        FROM zones z
-       LEFT JOIN (SELECT zone_id, COUNT(*) as cnt FROM items GROUP BY zone_id) c
-       ON z.id = c.zone_id
-       ORDER BY z.sort_order`
+       ${joinAndWhere}
+       ORDER BY z.sort_order`,
+      params
     );
     return rows.flatMap((r) => {
       let geometry: unknown;
@@ -107,15 +148,43 @@ export function moveItem(itemId: string, newZoneId: string): Promise<void> {
   });
 }
 
+export type SearchResultItem = Item & {
+  zone_name: string;
+  zone_checklist: number;
+  location_id: string;
+  location_name: string;
+  location_icon: string;
+};
+
+const SEARCH_ITEM_QUERY = `
+  SELECT i.*, z.name as zone_name, z.checklist as zone_checklist, l.id as location_id, l.name as location_name, l.icon as location_icon
+  FROM items i
+  JOIN zones z ON i.zone_id = z.id
+  JOIN locations l ON z.location_id = l.id
+`;
+
 export function searchItems(
-  query: string
-): Promise<(Item & { zone_name: string; zone_checklist: number })[]> {
+  query: string,
+  locationId: string
+): Promise<SearchResultItem[]> {
   return withDb((db) => {
     const escapedQuery = query.replace(/[\\%_]/g, "\\$&");
-    return db.getAllAsync<Item & { zone_name: string; zone_checklist: number }>(
-      `SELECT i.*, z.name as zone_name, z.checklist as zone_checklist
-       FROM items i JOIN zones z ON i.zone_id = z.id
-       WHERE i.name LIKE ?1 ESCAPE '\\' COLLATE NOCASE OR i.notes LIKE ?1 ESCAPE '\\' COLLATE NOCASE
+    return db.getAllAsync<SearchResultItem>(
+      `${SEARCH_ITEM_QUERY}
+       WHERE l.id = ?2
+       AND (i.name LIKE ?1 ESCAPE '\\' COLLATE NOCASE OR i.notes LIKE ?1 ESCAPE '\\' COLLATE NOCASE)
+       ORDER BY i.name COLLATE NOCASE`,
+      [`%${escapedQuery}%`, locationId]
+    );
+  });
+}
+
+export function searchAllItems(query: string): Promise<SearchResultItem[]> {
+  return withDb((db) => {
+    const escapedQuery = query.replace(/[\\%_]/g, "\\$&");
+    return db.getAllAsync<SearchResultItem>(
+      `${SEARCH_ITEM_QUERY}
+       WHERE (i.name LIKE ?1 ESCAPE '\\' COLLATE NOCASE OR i.notes LIKE ?1 ESCAPE '\\' COLLATE NOCASE)
        ORDER BY i.name COLLATE NOCASE`,
       [`%${escapedQuery}%`]
     );
@@ -158,13 +227,34 @@ export function resetChecklistItems(zoneId: string): Promise<void> {
   });
 }
 
-export function getOutOfVanItems(): Promise<(Item & { zone_name: string })[]> {
+export type OutOfVanItem = Item & {
+  zone_name: string;
+  zone_color: string;
+  location_id: string;
+  location_name: string;
+  location_icon: string;
+};
+
+const OUT_OF_VAN_ITEM_QUERY = `
+  SELECT i.*, z.name as zone_name, z.color as zone_color, l.id as location_id, l.name as location_name, l.icon as location_icon
+  FROM items i
+  JOIN zones z ON i.zone_id = z.id
+  JOIN locations l ON z.location_id = l.id
+`;
+
+export function getOutOfVanItems(locationId: string): Promise<OutOfVanItem[]> {
   return withDb((db) =>
-    db.getAllAsync<Item & { zone_name: string }>(
-      `SELECT i.*, z.name as zone_name
-       FROM items i JOIN zones z ON i.zone_id = z.id
-       WHERE i.out_of_van = 1
-       ORDER BY i.name COLLATE NOCASE`
+    db.getAllAsync<OutOfVanItem>(
+      `${OUT_OF_VAN_ITEM_QUERY} WHERE i.out_of_van = 1 AND l.id = ? ORDER BY i.name COLLATE NOCASE`,
+      [locationId]
+    )
+  );
+}
+
+export function getAllOutOfVanItems(): Promise<OutOfVanItem[]> {
+  return withDb((db) =>
+    db.getAllAsync<OutOfVanItem>(
+      `${OUT_OF_VAN_ITEM_QUERY} WHERE i.out_of_van = 1 ORDER BY i.name COLLATE NOCASE`
     )
   );
 }
@@ -173,33 +263,49 @@ export function sanitizeSeason(v: unknown): Season {
   return v === "summer" || v === "winter" ? v : "none";
 }
 
-export function listSeasonalItems(): Promise<(Item & { zone_name: string })[]> {
+export type SeasonalItem = Item & {
+  zone_name: string;
+  location_name: string;
+  location_icon: string;
+};
+
+export function listSeasonalItems(): Promise<SeasonalItem[]> {
   return withDb((db) =>
-    db.getAllAsync<Item & { zone_name: string }>(
-      `SELECT i.*, z.name as zone_name
-       FROM items i JOIN zones z ON i.zone_id = z.id
+    db.getAllAsync<SeasonalItem>(
+      `SELECT i.*, z.name as zone_name, l.name as location_name, l.icon as location_icon
+       FROM items i
+       JOIN zones z ON i.zone_id = z.id
+       JOIN locations l ON z.location_id = l.id
        WHERE i.season != 'none'
        ORDER BY i.name COLLATE NOCASE`
     )
   );
 }
 
-export function listItemsWithExpiration(): Promise<(Item & { zone_name: string })[]> {
+export type ItemWithExpiration = Item & { zone_name: string; location_name: string };
+
+export function listItemsWithExpiration(): Promise<ItemWithExpiration[]> {
   return withDb((db) =>
-    db.getAllAsync<Item & { zone_name: string }>(
-      `SELECT i.*, z.name as zone_name
-       FROM items i JOIN zones z ON i.zone_id = z.id
+    db.getAllAsync<ItemWithExpiration>(
+      `SELECT i.*, z.name as zone_name, l.name as location_name
+       FROM items i
+       JOIN zones z ON i.zone_id = z.id
+       JOIN locations l ON z.location_id = l.id
        WHERE i.expiration_date IS NOT NULL
        ORDER BY i.expiration_date ASC`
     )
   );
 }
 
-export function listAllItems(): Promise<(Item & { zone_name: string })[]> {
+export function listAllItems(): Promise<
+  (Item & { zone_name: string; location_id: string; location_icon: string })[]
+> {
   return withDb((db) =>
-    db.getAllAsync<Item & { zone_name: string }>(
-      `SELECT i.*, z.name as zone_name
-       FROM items i JOIN zones z ON i.zone_id = z.id
+    db.getAllAsync<Item & { zone_name: string; location_id: string; location_icon: string }>(
+      `SELECT i.*, z.name as zone_name, z.location_id as location_id, l.icon as location_icon
+       FROM items i
+       JOIN zones z ON i.zone_id = z.id
+       JOIN locations l ON z.location_id = l.id
        ORDER BY i.name COLLATE NOCASE`
     )
   );
@@ -231,17 +337,19 @@ export function insertZone(
   name: string,
   color: string,
   geometry: Zone["geometry"],
+  locationId: string,
   checklist: boolean = false
 ): Promise<void> {
   return withDb(async (db) => {
     await db.withTransactionAsync(async () => {
       const maxOrder = await db.getFirstAsync<{ m: number }>(
-        "SELECT COALESCE(MAX(sort_order), 0) as m FROM zones"
+        "SELECT COALESCE(MAX(sort_order), 0) as m FROM zones WHERE location_id = ?",
+        [locationId]
       );
       const order = (maxOrder?.m ?? 0) + 1;
       await db.runAsync(
-        "INSERT INTO zones (id, name, color, geometry, sort_order, checklist) VALUES (?, ?, ?, ?, ?, ?)",
-        [id, name, color, JSON.stringify(geometry), order, checklist ? 1 : 0]
+        "INSERT INTO zones (id, name, color, geometry, sort_order, checklist, location_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [id, name, color, JSON.stringify(geometry), order, checklist ? 1 : 0, locationId]
       );
     });
   });
@@ -259,17 +367,18 @@ export function splitZoneInDb(
   return withDb(async (db) => {
     await db.withTransactionAsync(async () => {
       const maxOrder = await db.getFirstAsync<{ m: number }>(
-        "SELECT COALESCE(MAX(sort_order), 0) as m FROM zones"
+        "SELECT COALESCE(MAX(sort_order), 0) as m FROM zones WHERE location_id = ?",
+        [zone.location_id]
       );
       const order = (maxOrder?.m ?? 0) + 1;
 
       await db.runAsync(
-        "INSERT INTO zones (id, name, color, geometry, sort_order, fill_opacity, checklist) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [id1, zone.name + suffix1, zone.color, JSON.stringify(geom1), order, zone.fill_opacity, zone.checklist]
+        "INSERT INTO zones (id, name, color, geometry, sort_order, fill_opacity, checklist, location_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [id1, zone.name + suffix1, zone.color, JSON.stringify(geom1), order, zone.fill_opacity, zone.checklist, zone.location_id]
       );
       await db.runAsync(
-        "INSERT INTO zones (id, name, color, geometry, sort_order, fill_opacity, checklist) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [id2, zone.name + suffix2, zone.color, JSON.stringify(geom2), order + 1, zone.fill_opacity, zone.checklist]
+        "INSERT INTO zones (id, name, color, geometry, sort_order, fill_opacity, checklist, location_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [id2, zone.name + suffix2, zone.color, JSON.stringify(geom2), order + 1, zone.fill_opacity, zone.checklist, zone.location_id]
       );
 
       // Move all items to the first new zone
@@ -296,8 +405,161 @@ export function updateZoneGeometry(
   });
 }
 
+export function listLocations(): Promise<Location[]> {
+  return withDb(async (db) => {
+    const rows = await db.getAllAsync<Location & { outline: string }>(
+      "SELECT * FROM locations ORDER BY sort_order"
+    );
+    return rows.flatMap((r) => {
+      let outline: unknown;
+      try {
+        outline = JSON.parse(r.outline as unknown as string);
+      } catch {
+        console.warn(`Skipping location ${r.id}: invalid outline JSON`);
+        return [];
+      }
+      if (!isValidOutline(outline)) {
+        console.warn(`Skipping location ${r.id}: invalid outline shape`);
+        return [];
+      }
+      let labels: LocationLabels | undefined;
+      const rawLabels = (r as { labels?: string | null }).labels;
+      if (rawLabels) {
+        try {
+          const parsed = JSON.parse(rawLabels);
+          if (parsed && typeof parsed === "object") labels = parsed;
+        } catch {
+          // A corrupt labels blob just falls back to defaults, never a skip.
+          console.warn(`Location ${r.id}: invalid labels JSON, using defaults`);
+        }
+      }
+      return [{ ...r, outline, labels }];
+    });
+  });
+}
+
+export function insertLocation(
+  id: string,
+  name: string,
+  outline: Outline,
+  icon: string
+): Promise<void> {
+  return withDb(async (db) => {
+    const maxOrder = await db.getFirstAsync<{ m: number }>(
+      "SELECT COALESCE(MAX(sort_order), 0) as m FROM locations"
+    );
+    const order = (maxOrder?.m ?? 0) + 1;
+    await db.runAsync(
+      "INSERT INTO locations (id, name, outline, icon, sort_order) VALUES (?, ?, ?, ?, ?)",
+      [id, name, JSON.stringify(outline), icon, order]
+    );
+  });
+}
+
+export function updateLocation(id: string, name: string, icon: string): Promise<void> {
+  return withDb(async (db) => {
+    await db.runAsync(
+      "UPDATE locations SET name = ?, icon = ?, updated_at = datetime('now') WHERE id = ?",
+      [name, icon, id]
+    );
+  });
+}
+
+export function updateLocationOutline(id: string, outline: Outline): Promise<void> {
+  return withDb(async (db) => {
+    await db.runAsync(
+      "UPDATE locations SET outline = ?, updated_at = datetime('now') WHERE id = ?",
+      [JSON.stringify(outline), id]
+    );
+  });
+}
+
+export function updateLocationLabels(id: string, labels: LocationLabels): Promise<void> {
+  return withDb(async (db) => {
+    await db.runAsync(
+      "UPDATE locations SET labels = ?, updated_at = datetime('now') WHERE id = ?",
+      [JSON.stringify(labels), id]
+    );
+  });
+}
+
+export function deleteLocation(id: string): Promise<void> {
+  return withDb(async (db) => {
+    await db.runAsync("DELETE FROM locations WHERE id = ?", [id]);
+  });
+}
+
+export function instantiateTemplate(
+  locationId: string,
+  template: LayoutTemplate
+): Promise<void> {
+  return withDb(async (db) => {
+    await db.withTransactionAsync(async () => {
+      for (const zone of template.zones) {
+        const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        // Resolved here, once: the name is stored as plain text, so renaming a
+        // zone later — or switching the app's language — leaves it alone.
+        await db.runAsync(
+          "INSERT INTO zones (id, name, color, geometry, sort_order, location_id) VALUES (?, ?, ?, ?, ?, ?)",
+          [
+            id,
+            i18n.t(zone.nameKey),
+            zone.color,
+            JSON.stringify(zone.geometry),
+            zone.sort_order,
+            locationId,
+          ]
+        );
+      }
+    });
+  });
+}
+
+export type DataFingerprint = { fingerprint: string; itemCount: number };
+
+// A cheap stand-in for "has anything worth backing up changed?": the row count
+// of each table plus the most recent updated_at in it. Edits bump updated_at,
+// additions and deletions move the counts — so any change to locations, zones
+// or items produces a different string, without instrumenting every mutation.
+// Preferences are deliberately left out: switching theme or season isn't data
+// worth re-exporting for.
+export function getDataFingerprint(): Promise<DataFingerprint> {
+  return withDb(async (db) => {
+    const row = await db.getFirstAsync<{
+      location_count: number;
+      zone_count: number;
+      item_count: number;
+      locations_at: string;
+      zones_at: string;
+      items_at: string;
+    }>(
+      `SELECT
+         (SELECT COUNT(*) FROM locations) AS location_count,
+         (SELECT COUNT(*) FROM zones) AS zone_count,
+         (SELECT COUNT(*) FROM items) AS item_count,
+         (SELECT COALESCE(MAX(updated_at), '') FROM locations) AS locations_at,
+         (SELECT COALESCE(MAX(updated_at), '') FROM zones) AS zones_at,
+         (SELECT COALESCE(MAX(updated_at), '') FROM items) AS items_at`
+    );
+    if (!row) return { fingerprint: "", itemCount: 0 };
+    return {
+      fingerprint: [
+        row.location_count,
+        row.zone_count,
+        row.item_count,
+        row.locations_at,
+        row.zones_at,
+        row.items_at,
+      ].join("|"),
+      itemCount: row.item_count,
+    };
+  });
+}
+
 export type ExportedData = {
   appVersion: string;
+  exportedAt: string;
+  locations: unknown[];
   zones: unknown[];
   items: unknown[];
   preferences: unknown[];
@@ -305,14 +567,20 @@ export type ExportedData = {
 
 export function exportAllData(appVersion: string): Promise<ExportedData> {
   return withDb(async (db) => {
+    const locations = await db.getAllAsync("SELECT * FROM locations ORDER BY sort_order");
     const zones = await db.getAllAsync("SELECT * FROM zones ORDER BY sort_order");
     const items = await db.getAllAsync("SELECT * FROM items ORDER BY name");
-    const preferences = await db.getAllAsync("SELECT * FROM preferences");
-    return { appVersion, zones, items, preferences };
+    // activeLocationId is which location this device happens to have open —
+    // session state, not a setting worth carrying into another device/backup.
+    const preferences = (
+      await db.getAllAsync<{ key: string; value: string }>("SELECT * FROM preferences")
+    ).filter((p) => p.key !== "activeLocationId");
+    return { appVersion, exportedAt: new Date().toISOString(), locations, zones, items, preferences };
   });
 }
 
 export function importAllData(
+  rawLocations: Record<string, unknown>[],
   rawZones: Record<string, unknown>[],
   rawItems: Record<string, unknown>[],
   rawPreferences: Record<string, unknown>[]
@@ -321,10 +589,35 @@ export function importAllData(
     await db.withTransactionAsync(async () => {
       await db.runAsync("DELETE FROM items");
       await db.runAsync("DELETE FROM zones");
+      await db.runAsync("DELETE FROM locations");
+      // Preferences whose value equals the app's default are never written to
+      // the DB (see reloadShowMenuHeader etc.), so a backup made without ever
+      // touching a setting simply omits that key. Without clearing first,
+      // INSERT OR REPLACE below would leave the device's own stale value in
+      // place instead of falling back to the default the backup implies.
+      await db.runAsync("DELETE FROM preferences");
+
+      for (const location of rawLocations) {
+        await db.runAsync(
+          "INSERT INTO locations (id, name, outline, icon, labels, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          [
+            location.id as string,
+            location.name as string,
+            location.outline as string,
+            (location.icon as string) ?? DEFAULT_LOCATION_ICON,
+            // Orientation inscriptions: exported as a JSON string via SELECT *;
+            // null on older backups leaves the plan on its built-in defaults.
+            (location.labels as string) ?? null,
+            (location.sort_order as number) ?? 0,
+            (location.created_at as string) ?? new Date().toISOString(),
+            (location.updated_at as string) ?? new Date().toISOString(),
+          ]
+        );
+      }
 
       for (const zone of rawZones) {
         await db.runAsync(
-          "INSERT INTO zones (id, name, color, geometry, fill_opacity, checklist, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO zones (id, name, color, geometry, fill_opacity, checklist, sort_order, location_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           [
             zone.id as string,
             zone.name as string,
@@ -333,6 +626,7 @@ export function importAllData(
             sanitizeFillOpacity(zone.fill_opacity),
             zone.checklist ? 1 : 0,
             (zone.sort_order as number) ?? 0,
+            zone.location_id as string,
             (zone.created_at as string) ?? new Date().toISOString(),
             (zone.updated_at as string) ?? new Date().toISOString(),
           ]

@@ -10,16 +10,11 @@ import Animated, {
 } from "react-native-reanimated";
 import { ZoneWithCount, Zone } from "../db/database";
 import { usePanLock } from "./ZoomableContainer";
-import {
-  ZONE_MIN_X,
-  ZONE_MAX_X,
-  ZONE_MIN_Y,
-  ZONE_MAX_Y,
-  ZONE_SNAP_THRESHOLD_PX,
-  ZONE_SNAP_GAP_SVG,
-} from "./vanLayoutConstants";
+import { ZONE_SNAP_THRESHOLD_PX, ZONE_SNAP_GAP_SVG } from "./layoutConstants";
+import { triggerHaptic } from "../utils/haptics";
 
 const HANDLE_SIZE = 24;
+const HANDLE_BORDER = 2;
 const MIN_ZONE_SIZE_SVG = 30;
 
 // --- Edge-snapping helpers (run on the UI thread inside gesture worklets) ---
@@ -98,16 +93,25 @@ type Props = {
   zoomScale: SharedValue<number>;
   offsetX: number;
   offsetY: number;
+  // Allowed geometry range for this location's canvas (size + overflow margin).
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
   otherZones: Zone["geometry"][];
   onGeometryChange: (zoneId: string, geometry: Zone["geometry"]) => void;
 };
 
-export function ZoneEditOverlay({
+function ZoneEditOverlayInner({
   zone,
   fitScale,
   zoomScale,
   offsetX,
   offsetY,
+  minX,
+  maxX,
+  minY,
+  maxY,
   otherZones,
   onGeometryChange,
 }: Props) {
@@ -147,10 +151,10 @@ export function ZoneEditOverlay({
   }, [zone.geometry.x, zone.geometry.y, zone.geometry.w, zone.geometry.h]);
 
   const commitGeometry = (nx: number, ny: number, nw: number, nh: number) => {
-    const w = Math.min(Math.max(MIN_ZONE_SIZE_SVG, nw), ZONE_MAX_X - ZONE_MIN_X);
-    const h = Math.min(Math.max(MIN_ZONE_SIZE_SVG, nh), ZONE_MAX_Y - ZONE_MIN_Y);
-    const x = Math.min(Math.max(ZONE_MIN_X, nx), ZONE_MAX_X - w);
-    const y = Math.min(Math.max(ZONE_MIN_Y, ny), ZONE_MAX_Y - h);
+    const w = Math.min(Math.max(MIN_ZONE_SIZE_SVG, nw), maxX - minX);
+    const h = Math.min(Math.max(MIN_ZONE_SIZE_SVG, nh), maxY - minY);
+    const x = Math.min(Math.max(minX, nx), maxX - w);
+    const y = Math.min(Math.max(minY, ny), maxY - h);
     onGeometryChange(zone.id, {
       type: "rect",
       x: Math.round(x),
@@ -167,6 +171,7 @@ export function ZoneEditOverlay({
   const dragGesture = Gesture.Pan()
     .activateAfterLongPress(250)
     .onStart(() => {
+      runOnJS(triggerHaptic)();
       startX.value = svgX.value;
       startY.value = svgY.value;
       dragActive.value = withTiming(1, { duration: 120 });
@@ -217,8 +222,8 @@ export function ZoneEditOverlay({
       );
       newY = snapToNearest(newY, yCandidates, threshold);
 
-      svgX.value = Math.min(Math.max(ZONE_MIN_X, newX), ZONE_MAX_X - w);
-      svgY.value = Math.min(Math.max(ZONE_MIN_Y, newY), ZONE_MAX_Y - h);
+      svgX.value = Math.min(Math.max(minX, newX), maxX - w);
+      svgY.value = Math.min(Math.max(minY, newY), maxY - h);
     })
     .onEnd(() => {
       runOnJS(commitGeometry)(
@@ -241,6 +246,7 @@ export function ZoneEditOverlay({
   const resizeGesture = Gesture.Pan()
     .activateAfterLongPress(250)
     .onStart(() => {
+      runOnJS(triggerHaptic)();
       startW.value = svgW.value;
       startH.value = svgH.value;
       dragActive.value = withTiming(1, { duration: 120 });
@@ -252,8 +258,8 @@ export function ZoneEditOverlay({
       const dh = e.translationY / scale;
       const x = svgX.value;
       const y = svgY.value;
-      const maxW = ZONE_MAX_X - x;
-      const maxH = ZONE_MAX_Y - y;
+      const maxW = maxX - x;
+      const maxH = maxY - y;
       const threshold = ZONE_SNAP_THRESHOLD_PX / scale;
 
       const rawW = Math.min(Math.max(MIN_ZONE_SIZE_SVG, startW.value + dw), maxW);
@@ -297,6 +303,7 @@ export function ZoneEditOverlay({
   const resizeTLGesture = Gesture.Pan()
     .activateAfterLongPress(250)
     .onStart(() => {
+      runOnJS(triggerHaptic)();
       startX.value = svgX.value;
       startY.value = svgY.value;
       startW.value = svgW.value;
@@ -314,11 +321,11 @@ export function ZoneEditOverlay({
 
       const rawW = Math.min(
         Math.max(MIN_ZONE_SIZE_SVG, startW.value - dx),
-        anchorX - ZONE_MIN_X
+        anchorX - minX
       );
       const rawH = Math.min(
         Math.max(MIN_ZONE_SIZE_SVG, startH.value - dy),
-        anchorY - ZONE_MIN_Y
+        anchorY - minY
       );
       const rawX = anchorX - rawW;
       const rawY = anchorY - rawH;
@@ -343,11 +350,11 @@ export function ZoneEditOverlay({
 
       const newW = Math.min(
         Math.max(MIN_ZONE_SIZE_SVG, anchorX - newX),
-        anchorX - ZONE_MIN_X
+        anchorX - minX
       );
       const newH = Math.min(
         Math.max(MIN_ZONE_SIZE_SVG, anchorY - newY),
-        anchorY - ZONE_MIN_Y
+        anchorY - minY
       );
       svgX.value = anchorX - newW;
       svgY.value = anchorY - newH;
@@ -387,25 +394,46 @@ export function ZoneEditOverlay({
     opacity: dragActive.value,
   }));
 
+  // The handles sit inside the zoomed canvas, so every dimension is divided by
+  // the live zoom: the dot then keeps a constant on-screen size (and touch
+  // target) at any zoom level, instead of a 24pt circle rendering at 96pt at
+  // max zoom and swallowing the very corner it's meant to grab.
+  //
+  // Deliberately done with real layout dimensions rather than an inverse
+  // `transform: [{ scale: 1 / zoom }]`: a layer that carries a shrinking scale
+  // is rasterised at its shrunken size and then blown back up by the canvas
+  // transform, so at 4x zoom the dot was drawn from ~6pt of source and looked
+  // like a pixelated blob. Sizing the box for real leaves the circle on the
+  // compositor's analytic path (the same one that keeps the solid zone borders
+  // sharp when zoomed), so it stays crisp.
+
   // Bottom-right handle
-  const brHandleStyle = useAnimatedStyle(() => ({
-    position: "absolute" as const,
-    left:
-      (svgX.value + svgW.value) * fitScale + offsetX - HANDLE_SIZE / 2,
-    top:
-      (svgY.value + svgH.value) * fitScale + offsetY - HANDLE_SIZE / 2,
-    width: HANDLE_SIZE,
-    height: HANDLE_SIZE,
-  }));
+  const brHandleStyle = useAnimatedStyle(() => {
+    const size = HANDLE_SIZE / zoomScale.value;
+    return {
+      position: "absolute" as const,
+      left: (svgX.value + svgW.value) * fitScale + offsetX - size / 2,
+      top: (svgY.value + svgH.value) * fitScale + offsetY - size / 2,
+      width: size,
+      height: size,
+      borderRadius: size / 2,
+      borderWidth: HANDLE_BORDER / zoomScale.value,
+    };
+  });
 
   // Top-left handle
-  const tlHandleStyle = useAnimatedStyle(() => ({
-    position: "absolute" as const,
-    left: svgX.value * fitScale + offsetX - HANDLE_SIZE / 2,
-    top: svgY.value * fitScale + offsetY - HANDLE_SIZE / 2,
-    width: HANDLE_SIZE,
-    height: HANDLE_SIZE,
-  }));
+  const tlHandleStyle = useAnimatedStyle(() => {
+    const size = HANDLE_SIZE / zoomScale.value;
+    return {
+      position: "absolute" as const,
+      left: svgX.value * fitScale + offsetX - size / 2,
+      top: svgY.value * fitScale + offsetY - size / 2,
+      width: size,
+      height: size,
+      borderRadius: size / 2,
+      borderWidth: HANDLE_BORDER / zoomScale.value,
+    };
+  });
 
   return (
     <>
@@ -420,22 +448,31 @@ export function ZoneEditOverlay({
         </Animated.View>
       </GestureDetector>
 
-      {/* Top-left resize handle */}
+      {/* Top-left resize handle. The gesture target *is* the dot: a nested
+          fixed-size child would need its own zoom-compensated dimensions for
+          no benefit. */}
       <GestureDetector gesture={resizeTLGesture}>
-        <Animated.View style={tlHandleStyle}>
-          <View style={[styles.handle, { backgroundColor: zone.color }]} />
-        </Animated.View>
+        <Animated.View
+          style={[styles.handle, { backgroundColor: zone.color }, tlHandleStyle]}
+        />
       </GestureDetector>
 
       {/* Bottom-right resize handle */}
       <GestureDetector gesture={resizeGesture}>
-        <Animated.View style={brHandleStyle}>
-          <View style={[styles.handle, { backgroundColor: zone.color }]} />
-        </Animated.View>
+        <Animated.View
+          style={[styles.handle, { backgroundColor: zone.color }, brHandleStyle]}
+        />
       </GestureDetector>
     </>
   );
 }
+
+// Memoized, mirroring OutlineEditOverlay: without this, every zone re-rendered
+// (and, before VanLayoutSVG's otherZonesByZoneId memo, rebuilt its `otherZones`
+// array) whenever VanLayoutSVG re-rendered for any reason — a gesture-only
+// update elsewhere, a layout change — not just when this zone's own props
+// changed.
+export const ZoneEditOverlay = React.memo(ZoneEditOverlayInner);
 
 const styles = StyleSheet.create({
   dragBody: {
@@ -462,12 +499,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 10,
   },
+  // Size, radius and border width are zoom-compensated in the animated style;
+  // only the colour lives here. No `opacity`: a translucent layer can be
+  // composited off-screen, which is exactly the bitmap round-trip the sizing
+  // above avoids, and 0.9 vs 1.0 on a solid dot isn't worth it.
   handle: {
-    width: HANDLE_SIZE,
-    height: HANDLE_SIZE,
-    borderRadius: HANDLE_SIZE / 2,
-    borderWidth: 2,
     borderColor: "#FFFFFF",
-    opacity: 0.9,
   },
 });

@@ -1,33 +1,19 @@
 import React, { useRef, useState } from "react";
-import { View, StyleSheet, Alert, ScrollView, Platform } from "react-native";
+import { View, StyleSheet, Alert, ScrollView, Platform, ActionSheetIOS } from "react-native";
 import { Text, Button, Divider, SegmentedButtons, Switch } from "react-native-paper";
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { exportAllData, importAllData, isValidGeometry } from "../src/db/repository";
+import { importAllData, isValidGeometry, isValidOutline } from "../src/db/repository";
+import { getTemplate } from "../src/db/templates";
 import { useAppStore, ThemeMode, SeasonMode } from "../src/store/useAppStore";
 import { useTranslation } from "react-i18next";
+import { APP_LANGUAGES, LANGUAGE_LABELS, LanguagePreference } from "../src/i18n";
 import { useAppTheme } from "../src/theme/useAppTheme";
+import { ContextMenu } from "../src/components/ContextMenu";
 import { SeasonChangeoverDialog } from "../src/components/dialogs/SeasonChangeoverDialog";
 import { ExpirationOverviewDialog } from "../src/components/dialogs/ExpirationOverviewDialog";
-
-function downloadJsonWeb(data: string, filename: string) {
-  const blob = new Blob([data], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function getBackupFilename() {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, "0");
-  const d = String(now.getDate()).padStart(2, "0");
-  return `van-storage-backup-${y}${m}${d}.json`;
-}
+import { runBackupExport } from "../src/utils/backup";
 
 function pickFileWeb(): Promise<string | null> {
   return new Promise((resolve) => {
@@ -45,17 +31,43 @@ function pickFileWeb(): Promise<string | null> {
 
 const DOUBLE_TAP_WINDOW_MS = 500;
 
+// "System" first, then each language named in itself — see LANGUAGE_LABELS.
+const LANGUAGE_OPTIONS: LanguagePreference[] = ["system", ...APP_LANGUAGES];
+
+// Compares dotted version strings numerically (so "1.10.0" > "1.9.0"),
+// unlike a plain string comparison. Missing/non-numeric segments count as 0.
+function compareVersions(a: string, b: string): number {
+  const partsA = a.split(".").map((n) => parseInt(n, 10) || 0);
+  const partsB = b.split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+    const diff = (partsA[i] ?? 0) - (partsB[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
 export default function SettingsScreen() {
-  const { t } = useTranslation();
-  const { palette } = useAppTheme();
+  const { t, i18n } = useTranslation();
+  const { palette, mode } = useAppTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const lastVersionTapRef = useRef(0);
   const loadZones = useAppStore((s) => s.loadZones);
+  const reloadLocations = useAppStore((s) => s.reloadLocations);
+  const setActiveLocation = useAppStore((s) => s.setActiveLocation);
   const showTutorial = useAppStore((s) => s.showTutorial);
   const themeMode = useAppStore((s) => s.themeMode);
   const setThemeMode = useAppStore((s) => s.setThemeMode);
   const reloadThemeMode = useAppStore((s) => s.reloadThemeMode);
+  const showMenuHeader = useAppStore((s) => s.showMenuHeader);
+  const setShowMenuHeader = useAppStore((s) => s.setShowMenuHeader);
+  const reloadShowMenuHeader = useAppStore((s) => s.reloadShowMenuHeader);
+  const zoneColorFullScreen = useAppStore((s) => s.zoneColorFullScreen);
+  const setZoneColorFullScreen = useAppStore((s) => s.setZoneColorFullScreen);
+  const reloadZoneColorFullScreen = useAppStore((s) => s.reloadZoneColorFullScreen);
+  const languagePreference = useAppStore((s) => s.languagePreference);
+  const setLanguagePreference = useAppStore((s) => s.setLanguagePreference);
+  const reloadLanguagePreference = useAppStore((s) => s.reloadLanguagePreference);
   const seasonMode = useAppStore((s) => s.seasonMode);
   const setSeasonMode = useAppStore((s) => s.setSeasonMode);
   const reloadSeasonMode = useAppStore((s) => s.reloadSeasonMode);
@@ -63,10 +75,53 @@ export default function SettingsScreen() {
   const setRemindersEnabled = useAppStore((s) => s.setRemindersEnabled);
   const reloadRemindersEnabled = useAppStore((s) => s.reloadRemindersEnabled);
   const syncRemindersIfEnabled = useAppStore((s) => s.syncRemindersIfEnabled);
+  const backupRemindersEnabled = useAppStore((s) => s.backupRemindersEnabled);
+  const setBackupRemindersEnabled = useAppStore((s) => s.setBackupRemindersEnabled);
+  const reloadBackupSettings = useAppStore((s) => s.reloadBackupSettings);
+  const lastBackupAt = useAppStore((s) => s.lastBackupAt);
+  const recordBackupDone = useAppStore((s) => s.recordBackupDone);
+  const reloadRecentSearches = useAppStore((s) => s.reloadRecentSearches);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [changeoverVisible, setChangeoverVisible] = useState(false);
   const [overviewVisible, setOverviewVisible] = useState(false);
+  // Android only: the measured rect of the language button, so the dropdown
+  // can open flush beneath it. iOS and web use their own native pickers.
+  const [languageAnchor, setLanguageAnchor] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const languageButtonRef = useRef<View>(null);
+
+  const languageLabel = (preference: LanguagePreference) =>
+    preference === "system" ? t("settings.language_system") : LANGUAGE_LABELS[preference];
+
+  const openLanguagePicker = () => {
+    if (Platform.OS === "ios") {
+      const labels = LANGUAGE_OPTIONS.map(languageLabel);
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title: t("settings.title_language"),
+          options: [...labels, t("map.cancel")],
+          cancelButtonIndex: labels.length,
+          userInterfaceStyle: mode,
+        },
+        (index) => {
+          const picked = LANGUAGE_OPTIONS[index];
+          if (picked) setLanguagePreference(picked);
+        }
+      );
+      return;
+    }
+    // Measures the trigger so the dropdown matches its width (react-native-web's
+    // measureInWindow needs a plain View ref — Paper's Button ref isn't
+    // guaranteed to support it).
+    languageButtonRef.current?.measureInWindow((x, y, width, height) => {
+      setLanguageAnchor({ x, y, width, height });
+    });
+  };
 
   const handleToggleReminders = async (value: boolean) => {
     const granted = await setRemindersEnabled(value);
@@ -92,35 +147,28 @@ export default function SettingsScreen() {
 
   const handleExport = async () => {
     setExporting(true);
-    try {
-      const appVersion = Constants.expoConfig?.version ?? "";
-      const data = JSON.stringify(await exportAllData(appVersion), null, 2);
-      const filename = getBackupFilename();
-
-      if (Platform.OS === "web") {
-        downloadJsonWeb(data, filename);
-      } else {
-        const { File, Paths } = await import("expo-file-system");
-        const Sharing = await import("expo-sharing");
-        const file = new File(Paths.cache, filename);
-        file.write(data);
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(file.uri, {
-            mimeType: "application/json",
-            UTI: "public.json",
-          });
-        } else {
-          Alert.alert(t("settings.export_success_title"), t("settings.export_success"));
-        }
-      }
-    } catch (e) {
-      Alert.alert(t("settings.error"), t("settings.export_error") + " " + (e as Error).message);
-    }
+    const result = await runBackupExport();
     setExporting(false);
+    if (!result.ok) {
+      Alert.alert(t("settings.error"), t("settings.export_error") + " " + result.error);
+      return;
+    }
+    // Stops the reminder from asking again until the data moves on.
+    await recordBackupDone();
+    if (!result.shared) {
+      Alert.alert(t("settings.export_success_title"), t("settings.export_success"));
+    }
   };
 
   const importData = async (content: string) => {
-    let data: { zones?: unknown[]; items?: unknown[]; preferences?: unknown[] };
+    let data: {
+      appVersion?: unknown;
+      exportedAt?: unknown;
+      locations?: unknown[];
+      zones?: unknown[];
+      items?: unknown[];
+      preferences?: unknown[];
+    };
     try {
       data = JSON.parse(content);
     } catch {
@@ -171,11 +219,49 @@ export default function SettingsScreen() {
     const isValidPreference = (p: Record<string, unknown>) =>
       typeof p.key === "string" && typeof p.value === "string";
 
+    const isValidLocation = (l: Record<string, unknown>) => {
+      if (typeof l.id !== "string" || typeof l.name !== "string" || typeof l.outline !== "string") {
+        return false;
+      }
+      try {
+        return isValidOutline(JSON.parse(l.outline));
+      } catch {
+        return false;
+      }
+    };
+
     if (
       !rawZones.every(isValidZone) ||
       !rawItems.every(isValidItem) ||
       !rawPreferences.every(isValidPreference)
     ) {
+      Alert.alert(t("settings.error"), t("settings.import_invalid_format"));
+      return;
+    }
+
+    // Backups predating multi-location support have no `locations` array and
+    // no per-zone location_id: fall back to a single generated "Van" location
+    // owning every zone in the file, so an old backup still imports cleanly.
+    let rawLocations: Record<string, unknown>[];
+    if (Array.isArray(data.locations)) {
+      rawLocations = data.locations as Record<string, unknown>[];
+      if (!rawLocations.every(isValidLocation)) {
+        Alert.alert(t("settings.error"), t("settings.import_invalid_format"));
+        return;
+      }
+    } else {
+      const template = getTemplate("van");
+      const fallbackLocationId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      rawLocations = [
+        { id: fallbackLocationId, name: t(template.nameKey), outline: JSON.stringify(template.outline), sort_order: 0 },
+      ];
+      for (const zone of rawZones) {
+        if (!zone.location_id) zone.location_id = fallbackLocationId;
+      }
+    }
+
+    const locationIds = new Set(rawLocations.map((l) => l.id as string));
+    if (rawZones.some((z) => !locationIds.has(z.location_id as string))) {
       Alert.alert(t("settings.error"), t("settings.import_invalid_format"));
       return;
     }
@@ -186,29 +272,103 @@ export default function SettingsScreen() {
       return;
     }
 
+    // Informational only: the backup's own format hasn't changed between
+    // versions so far, so a newer-version backup just gets a heads-up in the
+    // confirm dialog rather than being blocked or migrated.
+    const backupVersion = typeof data.appVersion === "string" ? data.appVersion : "";
+    const backupExportedAt = typeof data.exportedAt === "string" ? data.exportedAt : "";
+    const currentVersion = Constants.expoConfig?.version ?? "";
+    const backupIsNewer =
+      backupVersion !== "" &&
+      currentVersion !== "" &&
+      compareVersions(backupVersion, currentVersion) > 0;
+
+    // Backups made before `exportedAt` existed only carry a version, so this
+    // degrades gracefully: full "date — version" line, version-only, or
+    // nothing at all for very old backups with neither field.
+    const exportedDate = backupExportedAt ? new Date(backupExportedAt) : null;
+    const hasValidDate = !!exportedDate && !isNaN(exportedDate.getTime());
+    let backupInfoLine = "";
+    if (backupVersion && hasValidDate) {
+      backupInfoLine = t("settings.import_backup_info", {
+        date: exportedDate!.toLocaleDateString(i18n.language),
+        version: backupVersion,
+      });
+    } else if (backupVersion) {
+      backupInfoLine = t("settings.import_backup_info_version_only", { version: backupVersion });
+    }
+
     const doImport = async () => {
       setImporting(true);
       try {
-        await importAllData(rawZones, rawItems, rawPreferences);
+        await importAllData(rawLocations, rawZones, rawItems, rawPreferences);
 
-        await loadZones();
+        await reloadLocations();
+        // The previously active location may not exist in the imported data
+        // (it was replaced wholesale) — fall back to the first location so
+        // the map isn't left pointed at a location_id that no longer exists.
+        const currentActiveId = useAppStore.getState().activeLocationId;
+        const stillExists = useAppStore
+          .getState()
+          .locations.some((l) => l.id === currentActiveId);
+        if (stillExists) {
+          await loadZones();
+        } else {
+          const first = useAppStore.getState().locations[0];
+          if (first) await setActiveLocation(first.id);
+        }
+        // The backup carries every preference row, the language among them, so
+        // importing one made on a device set to Italian switches the app to
+        // Italian here rather than on the next launch.
+        await reloadLanguagePreference();
         await reloadThemeMode();
+        await reloadShowMenuHeader();
+        await reloadZoneColorFullScreen();
         await reloadSeasonMode();
         await reloadRemindersEnabled();
         await syncRemindersIfEnabled();
-        Alert.alert(t("settings.import_success_title"), t("settings.import_success"));
+        await reloadBackupSettings();
+        await reloadRecentSearches();
+        // What's on the device now is exactly what's in the file the user just
+        // imported, so there's nothing new to back up — record it as backed up
+        // rather than let the reminder fire on the next launch.
+        await recordBackupDone();
+        Alert.alert(
+          t("settings.import_success_title"),
+          t("settings.import_success"),
+          [
+            {
+              text: t("settings.ok"),
+              onPress: () => {
+                // Data was replaced wholesale, so land back on the all-locations
+                // overview rather than leaving the app pointed at whatever
+                // single-location map happened to be showing before import.
+                useAppStore.getState().setOverviewMode(true);
+                router.replace("/");
+              },
+            },
+          ]
+        );
       } catch (e) {
         Alert.alert(t("settings.error"), t("settings.import_error") + " " + (e as Error).message);
       }
       setImporting(false);
     };
 
-    Alert.alert(
-      t("settings.import_confirm_title"),
+    const confirmText =
+      (backupInfoLine ? backupInfoLine + "\n\n" : "") +
       t("settings.import_confirm_text", {
+        locationsCount: rawLocations.length,
         zonesCount: rawZones.length,
         itemsCount: rawItems.length,
-      }),
+      }) +
+      (backupIsNewer
+        ? "\n\n" + t("settings.import_newer_version_warning", { version: backupVersion })
+        : "");
+
+    Alert.alert(
+      t("settings.import_confirm_title"),
+      confirmText,
       [
         { text: t("map.cancel"), style: "cancel" },
         { text: t("settings.import_confirm_title"), style: "destructive", onPress: doImport },
@@ -270,6 +430,22 @@ export default function SettingsScreen() {
         >
           {t("settings.btn_import")}
         </Button>
+        <View style={[styles.switchRow, styles.switchRowSpaced]}>
+          <Text variant="bodyMedium" style={styles.switchLabel}>
+            {t("settings.backup_reminders_enabled")}
+          </Text>
+          <Switch value={backupRemindersEnabled} onValueChange={setBackupRemindersEnabled} />
+        </View>
+        <Text variant="bodySmall" style={{ color: palette.onSurfaceVariant }}>
+          {t("settings.backup_reminders_hint")}
+        </Text>
+        <Text variant="bodySmall" style={[styles.lastBackup, { color: palette.onSurfaceVariant }]}>
+          {lastBackupAt
+            ? t("settings.last_backup", {
+                date: new Date(lastBackupAt).toLocaleDateString(i18n.language),
+              })
+            : t("settings.last_backup_never")}
+        </Text>
       </View>
       <Divider />
       <View style={styles.section}>
@@ -288,6 +464,14 @@ export default function SettingsScreen() {
             { value: "dark", label: t("settings.theme_dark"), icon: "weather-night" },
           ]}
         />
+        <View style={[styles.switchRow, styles.switchRowSpaced]}>
+          <Text variant="bodyMedium">{t("settings.menu_header_label")}</Text>
+          <Switch value={showMenuHeader} onValueChange={setShowMenuHeader} />
+        </View>
+        <View style={[styles.switchRow, styles.switchRowSpaced]}>
+          <Text variant="bodyMedium">{t("settings.zone_color_full_screen_label")}</Text>
+          <Switch value={zoneColorFullScreen} onValueChange={setZoneColorFullScreen} />
+        </View>
       </View>
       <Divider />
       <View style={styles.section}>
@@ -309,7 +493,7 @@ export default function SettingsScreen() {
           mode="text"
           icon="clipboard-list-outline"
           onPress={() => setChangeoverVisible(true)}
-          style={styles.button}
+          style={[styles.button, { marginTop: 16 }]}
         >
           {t("settings.season_reopen")}
         </Button>
@@ -358,6 +542,55 @@ export default function SettingsScreen() {
       <Divider />
       <View style={styles.section}>
         <Text variant="titleMedium" style={styles.sectionTitle}>
+          {t("settings.title_language")}
+        </Text>
+        <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
+          {t("settings.desc_language")}
+        </Text>
+        {/* The trigger looks the same everywhere; what it opens is the
+            platform's own picker — an action sheet on iOS, the browser's
+            select on web, the app's Material dropdown on Android. */}
+        <View ref={languageButtonRef} style={styles.languageTrigger}>
+          <Button
+            mode="outlined"
+            icon="translate"
+            onPress={Platform.OS === "web" ? undefined : openLanguagePicker}
+          >
+            {languageLabel(languagePreference)}
+          </Button>
+          {Platform.OS === "web" &&
+            // Invisible native <select> stacked over the Paper Button so the
+            // browser's own dropdown opens on click, while the visible control
+            // still matches the rest of the screen. Mirrors the date input in
+            // ExpirationField.
+            React.createElement(
+              "select",
+              {
+                value: languagePreference,
+                onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
+                  setLanguagePreference(e.target.value as LanguagePreference),
+                style: {
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  width: "100%",
+                  height: "100%",
+                  opacity: 0,
+                  cursor: "pointer",
+                  border: "none",
+                },
+              },
+              LANGUAGE_OPTIONS.map((option) =>
+                React.createElement("option", { key: option, value: option }, languageLabel(option))
+              )
+            )}
+        </View>
+      </View>
+      <Divider />
+      <View style={styles.section}>
+        <Text variant="titleMedium" style={styles.sectionTitle}>
           {t("settings.title_about")}
         </Text>
         <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
@@ -382,6 +615,31 @@ export default function SettingsScreen() {
         title={t("expiration.overview_title")}
         onDismiss={() => setOverviewVisible(false)}
       />
+      {/* Android's language picker: the app's own Material dropdown, since
+          React Native exposes no native spinner. Never opened on iOS or web,
+          which have their own pickers above. */}
+      <ContextMenu
+        visible={!!languageAnchor}
+        onDismiss={() => setLanguageAnchor(null)}
+        anchor={languageAnchor ?? { x: 0, y: 0 }}
+        dropdown
+        items={[
+          ...LANGUAGE_OPTIONS.map((option, index) => ({
+            icon: option === "system" ? "cellphone-cog" : "translate",
+            label: languageLabel(option),
+            selected: languagePreference === option,
+            onPress: () => setLanguagePreference(option),
+            // Separates "System" from the language list below it.
+            dividerBefore: index === 1,
+          })),
+          {
+            icon: "close",
+            label: t("map.cancel"),
+            onPress: () => {},
+            dividerBefore: true,
+          },
+        ]}
+      />
     </ScrollView>
   );
 }
@@ -398,4 +656,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 12,
   },
+  switchRowSpaced: {
+    marginTop: 16,
+  },
+  // Relative so the web <select> overlay can cover the button exactly.
+  languageTrigger: { position: "relative" },
+  // Keeps a long label from pushing the switch off the row.
+  switchLabel: { flex: 1, paddingRight: 12 },
+  lastBackup: { marginTop: 8, fontStyle: "italic" },
 });

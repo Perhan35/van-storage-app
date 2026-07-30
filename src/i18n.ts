@@ -1,397 +1,106 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import { getLocales } from "expo-localization";
+import en from "./locales/en.json";
 
-const resources = {
-  en: {
-    translation: {
-      "nav.my_van": "My Van Inventory",
-      "nav.zone": "Zone",
-      "nav.search": "Search Item",
-      "nav.out_of_van": "Out of Van",
-      "nav.settings": "Settings",
-      "nav.edit_mode": "Edit Mode",
-      "nav.undo": "Undo",
-      "nav.redo": "Redo",
-      "nav.cancel_edit": "Cancel all changes",
-      "startup.error": "Something went wrong while loading your data.",
-      "startup.retry": "Retry",
-      "map.add_item": "Add item",
-      "map.add_zone": "Add zone",
-      "map.new_zone": "New zone",
-      "map.zone_name": "Zone name",
-      "map.color": "Color",
-      "map.cancel": "Cancel",
-      "map.create": "Create",
-      "map.which_zone": "Which zone?",
-      "map.objects_count_one": "{{count}} item",
-      "map.objects_count_other": "{{count}} items",
-      "map.front": "FRONT",
-      "map.rear": "REAR",
-      "settings.error": "Error",
-      "settings.title_data": "Data Backup",
-      "settings.desc_data": "Export your data to JSON to back them up or transfer to another device.",
-      "settings.btn_export": "Export Data",
-      "settings.btn_import": "Import Data",
-      "settings.title_appearance": "Appearance",
-      "settings.desc_appearance": "Choose how the app should adapt to your device theme.",
-      "settings.theme_auto": "Auto",
-      "settings.theme_light": "Light",
-      "settings.theme_dark": "Dark",
-      "settings.title_season": "Season",
-      "settings.desc_season": "Switch between summer and winter mode to see what to take out of or put back into the van.",
-      "settings.season_summer": "Summer",
-      "settings.season_winter": "Winter",
-      "settings.season_reopen": "View season changeover",
-      "settings.title_about": "About",
-      "settings.desc_about": "Van Storage by Perhan\n\nInventory app for all types of vans",
-      "settings.version_label": "v{{version}}",
-      "settings.export_success_title": "Export",
-      "settings.export_success": "File saved",
-      "settings.export_error": "Export failed:",
-      "settings.import_invalid_json": "The file is not valid JSON.",
-      "settings.import_invalid_format": "Invalid file format. The file must contain zones and items.",
-      "settings.import_orphan_items": "Invalid file: some items reference a zone that isn't included in the file.",
-      "settings.import_confirm_title": "Import",
-      "settings.import_confirm_text": "Import {{zonesCount}} zones and {{itemsCount}} items?\n\nCurrent data will be replaced.",
-      "settings.import_zones_count_one": "{{count}} zone",
-      "settings.import_zones_count_other": "{{count}} zones",
-      "settings.import_items_count_one": "{{count}} item",
-      "settings.import_items_count_other": "{{count}} items",
-      "settings.import_success_title": "Success",
-      "settings.import_success": "Data imported successfully!",
-      "settings.import_error": "Import failed:",
+export const APP_LANGUAGES = ["en", "fr", "de", "es", "it"] as const;
+export type AppLanguage = (typeof APP_LANGUAGES)[number];
 
-      "game.title": "Game Mode",
-      "game.score": "Score",
-      "game.streak": "Streak",
-      "game.question_zone": "Which zone is \"{{item}}\" in?",
-      "game.question_season": "What season is \"{{item}}\" for?",
-      "game.question_quantity": "How many items are in \"{{zone}}\"?",
-      "game.tap_zone": "Tap a zone on the map",
-      "game.season_summer": "Summer",
-      "game.season_winter": "Winter",
-      "game.season_none": "None",
-      "game.empty_title": "Nothing to play with yet",
-      "game.empty_desc": "Add some zones and items to your van first, then come back to play.",
+// "system" follows the device locale (and keeps following it if the user
+// changes their phone's language later); anything else pins the app.
+export type LanguagePreference = AppLanguage | "system";
 
-      "out.currently_out_one": "{{count}} item currently out of the van",
-      "out.currently_out_other": "{{count}} items currently out of the van",
-      "out.empty": "No item is currently out of the van",
-      "out.all_zones": "All zones",
-      "out.filter_all": "All",
-      "out.filter_summer": "Summer",
-      "out.filter_winter": "Winter",
-      "out.filter_none": "None",
-
-      "search.placeholder": "Search an item...",
-      "search.out_of_van": "Out of van",
-      "search.no_results": "No item found for \"{{query}}\"",
-      "search.empty": "Type the name of an item to locate it in the van",
-      "search.error": "Search failed. Please try again.",
-      "search.recent_title": "Recent searches",
-      "search.recent_remove": "Remove \"{{query}}\" from recent searches",
-
-      "zone.not_found": "Zone not found",
-      "zone.add_item": "Add an item",
-      "zone.new_item": "New item",
-      "zone.edit": "Edit",
-      "zone.move": "Move",
-      "zone.put_back": "Put back in the van",
-      "zone.take_out": "Take out of the van",
-      "zone.delete": "Delete",
-      "zone.delete_alert": "Delete \"{{name}}\"?",
-      "zone.empty": "No item in this zone",
-      "zone.edit_item": "Edit item",
-      "zone.name": "Name",
-      "zone.notes": "Notes (optional)",
-      "zone.save": "Save",
-      "zone.move_to": "Move to...",
-      "zone.edit_zone": "Edit zone",
-      "zone.color_hex": "Color",
-      "zone.opacity": "Fill strength",
-      "zone.opacity_hint_light": "Light",
-      "zone.opacity_hint_solid": "Solid",
-      "zone.delete_zone_alert_title": "Delete zone",
-      "zone.delete_zone_alert_text": "All items in this zone will be deleted. Continue?",
-      "zone.split_zone_alert_title": "Split zone",
-      "zone.split_zone_alert_text": "Split \"{{name}}\" in two ({{direction}})?\n\nExisting items will be moved to the first zone.",
-      "zone.split_left_right": "left / right",
-      "zone.split_top_bottom": "top / bottom",
-      "zone.split_confirm": "Split",
-      "zone.split_suffix_left": " (left)",
-      "zone.split_suffix_right": " (right)",
-      "zone.split_suffix_top": " (top)",
-      "zone.split_suffix_bottom": " (bottom)",
-      "zone.season": "Season",
-      "zone.checklist": "Checklist (checkable items)",
-      "zone.reset_checklist": "Reset checked items",
-      "zone.reset_checklist_confirm": "Uncheck all checked items in this zone?",
-      "zone.completed": "Completed · {{count}}",
-      "zone.add_expiration": "Add an expiration date",
-      "zone.pick_expiration": "Choose expiration date",
-      "zone.expiration_confirm": "Done",
-      "zone.expiration_cancel": "Cancel",
-      "zone.reminder_days": "Remind me N days before",
-      "zone.expires_on": "Expires on {{date}}",
-
-      "season.summer": "Summer",
-      "season.winter": "Winter",
-      "season.none": "None",
-
-      "changeover.title": "Switching to {{season}} mode",
-      "changeover.to_remove": "To take out of the van",
-      "changeover.to_add": "To put back in the van",
-      "changeover.nothing": "Nothing to change, everything is already in place.",
-      "changeover.close": "Close",
-
-      "settings.title_reminders": "Expiration Reminders",
-      "settings.desc_reminders": "Get notified before an item's expiration date is reached.",
-      "settings.reminders_enabled": "Enable reminders",
-      "settings.reminders_permission": "Notification permission was denied. You can still see expiration status in the app.",
-      "settings.view_expirations": "View items with an expiration date",
-
-      "expiration.cat_expired": "Expired",
-      "expiration.cat_soon": "Expiring soon",
-      "expiration.cat_ok": "Up to date",
-      "expiration.overview_title": "Expiration dates",
-      "expiration.startup_title": "Items expiring soon",
-      "expiration.empty": "No item has an expiration date yet.",
-      "expiration.close": "Close",
-      "expiration.acknowledge": "Acknowledge and clear expiration date",
-
-      "reminder.title": "Expiration reminder",
-      "reminder.body": "{{name}} expires on {{date}}",
-
-      "settings.title_help": "Help",
-      "settings.desc_help": "New here? Replay the guided tour of the app.",
-      "settings.btn_tutorial": "Replay the tutorial",
-
-      "tutorial.skip": "Skip",
-      "tutorial.back": "Back",
-      "tutorial.next": "Next",
-      "tutorial.done": "Get started",
-      "tutorial.welcome_title": "Welcome to Van Storage",
-      "tutorial.welcome_desc": "Keep track of everything in your van and always know where it is. Here's a quick tour.",
-      "tutorial.zones_title": "Zones",
-      "tutorial.zones_desc": "Your van is split into zones — lockers, cupboards, drawers. Tap a zone on the map to see what's inside. In Edit mode you can create, move and resize them — press and hold a zone or its resize handle to grab it, then drag.",
-      "tutorial.items_title": "Items",
-      "tutorial.items_desc": "Each zone holds your items. Add them with the + button, then tap an item to edit its details.",
-      "tutorial.expiration_title": "Expiration dates",
-      "tutorial.expiration_desc": "Give perishable items (food, medicine, extinguisher…) an expiration date. The app flags them with an alert icon and can remind you before they lapse.",
-      "tutorial.season_title": "Seasons",
-      "tutorial.season_desc": "Tag items as summer or winter. When you switch season, the app tells you exactly what to take out of the van and what to put back.",
-      "tutorial.gestures_title": "Gestures on an item",
-      "tutorial.demo_item_name": "First-aid kit",
-      "tutorial.demo_item_note": "Expires Dec 2026",
-      "tutorial.gesture_swipe_left_title": "Swipe left",
-      "tutorial.gesture_swipe_left_desc": "Take the item out of the van (or put it back).",
-      "tutorial.gesture_swipe_right_title": "Swipe right",
-      "tutorial.gesture_swipe_right_desc": "Check the item off, in zones set up as a checklist.",
-      "tutorial.gesture_long_press_title": "Long press",
-      "tutorial.gesture_long_press_desc": "Open the menu to edit the item (the ⋮ button does the same)."
-    },
-  },
-  fr: {
-    translation: {
-      "nav.my_van": "Mon Inventaire Van",
-      "nav.zone": "Zone",
-      "nav.search": "Rechercher un objet",
-      "nav.out_of_van": "Sortis du van",
-      "nav.settings": "Paramètres",
-      "nav.edit_mode": "Édition",
-      "nav.undo": "Annuler",
-      "nav.redo": "Rétablir",
-      "nav.cancel_edit": "Annuler tous les changements",
-      "startup.error": "Une erreur est survenue lors du chargement de vos données.",
-      "startup.retry": "Réessayer",
-      "map.add_item": "Ajouter un objet",
-      "map.add_zone": "Ajouter une zone",
-      "map.new_zone": "Nouvelle zone",
-      "map.zone_name": "Nom de la zone",
-      "map.color": "Couleur",
-      "map.cancel": "Annuler",
-      "map.create": "Créer",
-      "map.which_zone": "Dans quelle zone ?",
-      "map.objects_count_one": "{{count}} objet",
-      "map.objects_count_other": "{{count}} objets",
-      "map.front": "AVANT",
-      "map.rear": "ARRIÈRE",
-      "settings.error": "Erreur",
-      "settings.title_data": "Sauvegarde des données",
-      "settings.desc_data": "Exportez vos données en JSON pour les sauvegarder ou les transférer vers un autre appareil.",
-      "settings.btn_export": "Exporter les données",
-      "settings.btn_import": "Importer des données",
-      "settings.title_appearance": "Apparence",
-      "settings.desc_appearance": "Choisissez comment l'application s'adapte au thème de votre appareil.",
-      "settings.theme_auto": "Auto",
-      "settings.theme_light": "Clair",
-      "settings.theme_dark": "Sombre",
-      "settings.title_season": "Saison",
-      "settings.desc_season": "Basculez entre le mode été et hiver pour savoir quoi sortir ou remettre dans le van.",
-      "settings.season_summer": "Été",
-      "settings.season_winter": "Hiver",
-      "settings.season_reopen": "Voir le changement de saison",
-      "settings.title_about": "À propos",
-      "settings.desc_about": "Van Storage par Perhan\n\nApplication d'inventaire pour tous types de Vans",
-      "settings.version_label": "v{{version}}",
-      "settings.export_success_title": "Export",
-      "settings.export_success": "Fichier sauvegardé",
-      "settings.export_error": "Export échoué: ",
-      "settings.import_invalid_json": "Le fichier n'est pas un JSON valide.",
-      "settings.import_invalid_format": "Format de fichier invalide. Le fichier doit contenir des zones et des objets.",
-      "settings.import_orphan_items": "Fichier invalide : certains objets référencent une zone absente du fichier.",
-      "settings.import_confirm_title": "Importer",
-      "settings.import_confirm_text": "Importer {{zonesCount}} zones et {{itemsCount}} objets ?\n\nLes données actuelles seront remplacées.",
-      "settings.import_zones_count_one": "{{count}} zone",
-      "settings.import_zones_count_other": "{{count}} zones",
-      "settings.import_items_count_one": "{{count}} objet",
-      "settings.import_items_count_other": "{{count}} objets",
-      "settings.import_success_title": "Succès",
-      "settings.import_success": "Données importées avec succès !",
-      "settings.import_error": "Import échoué: ",
-
-      "game.title": "Mode Jeu",
-      "game.score": "Score",
-      "game.streak": "Série",
-      "game.question_zone": "Dans quelle zone se trouve « {{item}} » ?",
-      "game.question_season": "Quelle est la saison de « {{item}} » ?",
-      "game.question_quantity": "Combien d'objets se trouvent dans « {{zone}} » ?",
-      "game.tap_zone": "Touchez une zone sur la carte",
-      "game.season_summer": "Été",
-      "game.season_winter": "Hiver",
-      "game.season_none": "Aucune",
-      "game.empty_title": "Rien à jouer pour l'instant",
-      "game.empty_desc": "Ajoutez des zones et des objets à votre van, puis revenez jouer.",
-
-      "out.currently_out_one": "{{count}} objet actuellement sorti du van",
-      "out.currently_out_other": "{{count}} objets actuellement sortis du van",
-      "out.empty": "Aucun objet n'est actuellement sorti du van",
-      "out.all_zones": "Toutes les zones",
-      "out.filter_all": "Tous",
-      "out.filter_summer": "Été",
-      "out.filter_winter": "Hiver",
-      "out.filter_none": "Aucun",
-
-      "search.placeholder": "Chercher un objet...",
-      "search.out_of_van": "Sorti du van",
-      "search.no_results": "Aucun objet trouvé pour \"{{query}}\"",
-      "search.empty": "Tapez le nom d'un objet pour le localiser dans le van",
-      "search.error": "La recherche a échoué. Veuillez réessayer.",
-      "search.recent_title": "Recherches récentes",
-      "search.recent_remove": "Supprimer \"{{query}}\" des recherches récentes",
-
-      "zone.not_found": "Zone introuvable",
-      "zone.add_item": "Ajouter un objet",
-      "zone.new_item": "Nouvel objet",
-      "zone.edit": "Modifier",
-      "zone.move": "Déplacer",
-      "zone.put_back": "Remettre dans le van",
-      "zone.take_out": "Sortir du van",
-      "zone.delete": "Supprimer",
-      "zone.delete_alert": "Supprimer \"{{name}}\" ?",
-      "zone.empty": "Aucun objet dans cette zone",
-      "zone.edit_item": "Modifier l'objet",
-      "zone.name": "Nom",
-      "zone.notes": "Notes (optionnel)",
-      "zone.save": "Enregistrer",
-      "zone.move_to": "Déplacer vers...",
-      "zone.edit_zone": "Modifier la zone",
-      "zone.color_hex": "Couleur",
-      "zone.opacity": "Intensité du remplissage",
-      "zone.opacity_hint_light": "Clair",
-      "zone.opacity_hint_solid": "Plein",
-      "zone.delete_zone_alert_title": "Supprimer la zone",
-      "zone.delete_zone_alert_text": "Tous les objets de cette zone seront supprimés. Continuer ?",
-      "zone.split_zone_alert_title": "Splitter la zone",
-      "zone.split_zone_alert_text": "Diviser \"{{name}}\" en deux ({{direction}}) ?\n\nLes objets existants seront déplacés dans la première zone.",
-      "zone.split_left_right": "gauche / droite",
-      "zone.split_top_bottom": "haut / bas",
-      "zone.split_confirm": "Diviser",
-      "zone.split_suffix_left": " (gauche)",
-      "zone.split_suffix_right": " (droite)",
-      "zone.split_suffix_top": " (haut)",
-      "zone.split_suffix_bottom": " (bas)",
-      "zone.season": "Saison",
-      "zone.checklist": "Liste à cocher (objets cochables)",
-      "zone.reset_checklist": "Réinitialiser les objets cochés",
-      "zone.reset_checklist_confirm": "Décocher tous les objets cochés de cette zone ?",
-      "zone.completed": "Terminés · {{count}}",
-      "zone.add_expiration": "Ajouter une date de péremption",
-      "zone.pick_expiration": "Choisir la date de péremption",
-      "zone.expiration_confirm": "Valider",
-      "zone.expiration_cancel": "Annuler",
-      "zone.reminder_days": "Me prévenir N jours avant",
-      "zone.expires_on": "Périme le {{date}}",
-
-      "season.summer": "Été",
-      "season.winter": "Hiver",
-      "season.none": "Aucun",
-
-      "changeover.title": "Passage en mode {{season}}",
-      "changeover.to_remove": "À sortir du van",
-      "changeover.to_add": "À remettre dans le van",
-      "changeover.nothing": "Rien à changer, tout est déjà en place.",
-      "changeover.close": "Fermer",
-
-      "settings.title_reminders": "Rappels de péremption",
-      "settings.desc_reminders": "Soyez prévenu avant qu'un objet n'atteigne sa date de péremption.",
-      "settings.reminders_enabled": "Activer les rappels",
-      "settings.reminders_permission": "L'autorisation de notification a été refusée. Le statut de péremption reste visible dans l'application.",
-      "settings.view_expirations": "Voir les objets avec une date de péremption",
-
-      "expiration.cat_expired": "Périmés",
-      "expiration.cat_soon": "Bientôt périmés",
-      "expiration.cat_ok": "À jour",
-      "expiration.overview_title": "Dates de péremption",
-      "expiration.startup_title": "Objets bientôt périmés",
-      "expiration.empty": "Aucun objet n'a de date de péremption pour le moment.",
-      "expiration.close": "Fermer",
-      "expiration.acknowledge": "Prise en compte et suppression de la date",
-
-      "reminder.title": "Rappel de péremption",
-      "reminder.body": "{{name}} périme le {{date}}",
-
-      "settings.title_help": "Aide",
-      "settings.desc_help": "Nouveau ici ? Relancez la visite guidée de l'application.",
-      "settings.btn_tutorial": "Revoir le tutoriel",
-
-      "tutorial.skip": "Passer",
-      "tutorial.back": "Retour",
-      "tutorial.next": "Suivant",
-      "tutorial.done": "C'est parti",
-      "tutorial.welcome_title": "Bienvenue dans Van Storage",
-      "tutorial.welcome_desc": "Gardez l'inventaire de votre van et sachez toujours où se trouve chaque objet. Voici un tour rapide.",
-      "tutorial.zones_title": "Les zones",
-      "tutorial.zones_desc": "Votre van est divisé en zones — coffres, placards, tiroirs. Touchez une zone sur le plan pour voir ce qu'elle contient. En mode Édition, vous pouvez les créer, les déplacer et les redimensionner — maintenez une zone ou sa poignée de redimensionnement appuyée pour la saisir, puis faites glisser.",
-      "tutorial.items_title": "Les objets",
-      "tutorial.items_desc": "Chaque zone contient vos objets. Ajoutez-les avec le bouton +, puis touchez un objet pour modifier ses détails.",
-      "tutorial.expiration_title": "Dates de péremption",
-      "tutorial.expiration_desc": "Donnez une date de péremption aux objets périssables (nourriture, médicaments, extincteur…). L'application les signale avec une icône d'alerte et peut vous prévenir avant l'échéance.",
-      "tutorial.season_title": "Les saisons",
-      "tutorial.season_desc": "Marquez les objets comme été ou hiver. Au changement de saison, l'application vous indique exactement quoi sortir du van et quoi y remettre.",
-      "tutorial.gestures_title": "Les gestes sur un objet",
-      "tutorial.demo_item_name": "Trousse de secours",
-      "tutorial.demo_item_note": "Périme en déc. 2026",
-      "tutorial.gesture_swipe_left_title": "Glisser vers la gauche",
-      "tutorial.gesture_swipe_left_desc": "Sortir l'objet du van (ou le remettre).",
-      "tutorial.gesture_swipe_right_title": "Glisser vers la droite",
-      "tutorial.gesture_swipe_right_desc": "Cocher l'objet, dans les zones configurées en liste à cocher.",
-      "tutorial.gesture_long_press_title": "Appui long",
-      "tutorial.gesture_long_press_desc": "Ouvrir le menu pour modifier l'objet (le bouton ⋮ fait de même)."
-    },
-  },
+// Endonyms: each language names itself, in every UI language — a French
+// speaker picking German looks for "Deutsch", not "Allemand". These are
+// deliberately not translation keys.
+export const LANGUAGE_LABELS: Record<AppLanguage, string> = {
+  en: "English",
+  fr: "Français",
+  de: "Deutsch",
+  es: "Español",
+  it: "Italiano",
 };
 
-const deviceLanguage = getLocales()[0].languageCode;
+export function isAppLanguage(value: unknown): value is AppLanguage {
+  return APP_LANGUAGES.includes(value as AppLanguage);
+}
+
+export function isLanguagePreference(value: unknown): value is LanguagePreference {
+  return value === "system" || isAppLanguage(value);
+}
+
+// getLocales() can return an empty array in some environments (web SSR-ish
+// contexts, certain test runners), so this never indexes into an empty array
+// — it always resolves to a supported language instead of throwing.
+export function resolveDeviceLanguage(): AppLanguage {
+  const deviceLanguage = getLocales()[0]?.languageCode;
+  return isAppLanguage(deviceLanguage) ? deviceLanguage : "en";
+}
+
+export function resolveLanguage(preference: LanguagePreference): AppLanguage {
+  return preference === "system" ? resolveDeviceLanguage() : preference;
+}
+
+// A literal path in each require() (rather than a template string built from
+// the language code) is required — Metro resolves and bundles require()
+// targets statically, so a dynamic path wouldn't be resolvable at build time.
+// Every module is bundled either way; a literal call here only controls when
+// each one's module factory actually *runs* (i.e. when its JSON gets parsed
+// into an object), which is the part worth avoiding for languages the user
+// never selects.
+function loadBundle(language: AppLanguage): object {
+  switch (language) {
+    case "fr":
+      return require("./locales/fr.json");
+    case "de":
+      return require("./locales/de.json");
+    case "es":
+      return require("./locales/es.json");
+    case "it":
+      return require("./locales/it.json");
+    case "en":
+      return en;
+  }
+}
+
+// Registers a language's ~236-entry bundle the first time it's actually
+// needed, so a launch only ever parses the active language plus the English
+// fallback. Repeat switches back to an already-visited language are free.
+function ensureBundle(language: AppLanguage): void {
+  if (!i18n.hasResourceBundle(language, "translation")) {
+    i18n.addResourceBundle(language, "translation", loadBundle(language));
+  }
+}
+
+// The persisted preference lives in SQLite and can only be read once the
+// database is open, so startup renders in the device language first and the
+// store's init() applies the stored choice a moment later. react-i18next
+// re-renders every useTranslation consumer on the languageChanged event, so
+// that correction — and every later switch from the settings screen — needs
+// no restart and no manual invalidation.
+export async function applyLanguage(preference: LanguagePreference): Promise<void> {
+  const language = resolveLanguage(preference);
+  if (i18n.language === language) return;
+  ensureBundle(language);
+  await i18n.changeLanguage(language);
+}
+
+const initialLanguage = resolveDeviceLanguage();
 
 i18n.use(initReactI18next).init({
-  resources,
-  lng: deviceLanguage === "fr" ? "fr" : "en",
+  resources: {
+    [initialLanguage]: { translation: loadBundle(initialLanguage) },
+  },
+  lng: initialLanguage,
   fallbackLng: "en",
   interpolation: {
     escapeValue: false,
   },
 });
+
+// fallbackLng needs an English bundle available to fall back to (a translation
+// missing from a non-English build shouldn't render as a raw key) — for "en"
+// itself that's the bundle already registered above.
+ensureBundle("en");
 
 export default i18n;

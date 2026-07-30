@@ -1,16 +1,13 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View, StyleSheet, ScrollView } from "react-native";
 import { Dialog, Portal, List, Text, Button, IconButton } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 import { useRouter } from "expo-router";
-import { listItemsWithExpiration, clearItemExpiration } from "../../db/repository";
-import { Item } from "../../db/database";
+import { listItemsWithExpiration, clearItemExpiration, ItemWithExpiration } from "../../db/repository";
 import { ExpirationStatus, getExpirationStatus } from "../../utils/expiration";
 import { formatExpiration } from "../../utils/date";
 import { expirationIconName, expirationIconColor } from "../expirationIcon";
 import { useAppTheme } from "../../theme/useAppTheme";
-
-type ItemWithZone = Item & { zone_name: string };
 
 type Props = {
   visible: boolean;
@@ -25,7 +22,7 @@ export function ExpirationOverviewDialog({ visible, categories, title, onDismiss
   const { t, i18n } = useTranslation();
   const { palette } = useAppTheme();
   const router = useRouter();
-  const [items, setItems] = useState<ItemWithZone[]>([]);
+  const [items, setItems] = useState<ItemWithExpiration[]>([]);
 
   useEffect(() => {
     if (visible) {
@@ -33,7 +30,7 @@ export function ExpirationOverviewDialog({ visible, categories, title, onDismiss
     }
   }, [visible]);
 
-  const handleAcknowledge = async (item: ItemWithZone) => {
+  const handleAcknowledge = async (item: ItemWithExpiration) => {
     await clearItemExpiration(item.id);
     setItems((prev) => prev.filter((i) => i.id !== item.id));
   };
@@ -46,14 +43,26 @@ export function ExpirationOverviewDialog({ visible, categories, title, onDismiss
 
   // Query already returns items ordered by expiration_date ascending, so the
   // most urgent item within each category stays first after filtering.
-  const groups = CATEGORY_ORDER.filter((status) => categories.includes(status))
-    .map((status) => ({
-      status,
-      items: items.filter(
-        (item) => getExpirationStatus(item.expiration_date as string, item.reminder_days) === status
-      ),
-    }))
-    .filter((group) => group.items.length > 0);
+  // Memoized: this calls getExpirationStatus up to items.length × 3 times,
+  // and previously reran on every render of this dialog (including renders
+  // from unrelated parent state while it's open), not just when `items` or
+  // `categories` actually changed. Both call sites pass an inline array
+  // literal for `categories`, so the dep is its joined content rather than
+  // the array reference — otherwise this would still recompute every render.
+  const categoriesKey = categories.join(",");
+  const groups = useMemo(
+    () =>
+      CATEGORY_ORDER.filter((status) => categories.includes(status))
+        .map((status) => ({
+          status,
+          items: items.filter(
+            (item) => getExpirationStatus(item.expiration_date as string, item.reminder_days) === status
+          ),
+        }))
+        .filter((group) => group.items.length > 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- categoriesKey stands in for categories
+    [items, categoriesKey]
+  );
 
   return (
     <Portal>
@@ -78,7 +87,7 @@ export function ExpirationOverviewDialog({ visible, categories, title, onDismiss
                     <List.Item
                       key={item.id}
                       title={item.name}
-                      description={`${item.zone_name} • ${formatExpiration(
+                      description={`${item.location_name} • ${item.zone_name} • ${formatExpiration(
                         item.expiration_date as string,
                         i18n.language
                       )}`}

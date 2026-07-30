@@ -15,6 +15,15 @@ function parseHex(hex: string): { r: number; g: number; b: number } | null {
   };
 }
 
+// Turns a hex color into an `rgba(...)` string at the given alpha. Used for the
+// tinted icon chips in the context menu, where a translucent fill of the theme
+// color has to sit on either the light or dark surface.
+export function hexToRgba(hex: string, alpha: number): string {
+  const rgb = parseHex(hex);
+  if (!rgb) return `rgba(0, 0, 0, ${alpha})`;
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+}
+
 export function sanitizeHex(input: string | undefined | null, fallback = "#4A90D9"): string {
   if (typeof input !== "string") return fallback;
   const trimmed = input.trim();

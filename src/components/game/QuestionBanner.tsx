@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
-import { StyleSheet } from "react-native";
-import { Text } from "react-native-paper";
+import { StyleSheet, View } from "react-native";
+import { Icon, Text } from "react-native-paper";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -11,9 +11,12 @@ import { useAppTheme } from "../../theme/useAppTheme";
 type Props = {
   text: string;
   questionKey: string;
+  // The subject's location icon; omitted (null) for "where is" questions,
+  // since those ask the player to find the location rather than showing it.
+  icon?: string | null;
 };
 
-export function QuestionBanner({ text, questionKey }: Props) {
+export function QuestionBanner({ text, questionKey, icon }: Props) {
   const { palette } = useAppTheme();
   const translateY = useSharedValue(-24);
   const opacity = useSharedValue(0);
@@ -34,7 +37,10 @@ export function QuestionBanner({ text, questionKey }: Props) {
     <Animated.View
       style={[styles.banner, style, { backgroundColor: palette.surface }]}
     >
-      <Text style={[styles.text, { color: palette.onSurface }]}>{text}</Text>
+      <View style={styles.row}>
+        {icon && <Icon source={icon} size={18} color={palette.onSurfaceVariant} />}
+        <Text style={[styles.text, { color: palette.onSurface }]}>{text}</Text>
+      </View>
     </Animated.View>
   );
 }
@@ -52,7 +58,14 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
   },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
   text: {
+    flexShrink: 1,
     fontSize: 17,
     fontWeight: "700",
     textAlign: "center",

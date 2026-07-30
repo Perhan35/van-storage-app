@@ -9,19 +9,32 @@ import { AnswerButtons, AnswerChoice } from "../src/components/game/AnswerButton
 import { FeedbackOverlay } from "../src/components/game/FeedbackOverlay";
 import { useAppStore } from "../src/store/useAppStore";
 import { useAppTheme } from "../src/theme/useAppTheme";
-import { listAllItems } from "../src/db/repository";
-import { GameQuestion, ItemWithZoneName, generateQuestion, questionKey } from "../src/game/questions";
+import { listAllItems, listAllZonesWithCounts } from "../src/db/repository";
+import {
+  GameQuestion,
+  ItemWithZoneName,
+  ZoneWithLocationIcon,
+  generateQuestion,
+  questionKey,
+  questionLocationIcon,
+} from "../src/game/questions";
 
 const ADVANCE_DELAY_MS = 1200;
 
 export default function GameScreen() {
   const { t } = useTranslation();
   const { palette } = useAppTheme();
-  const zones = useAppStore((s) => s.zones);
+  // VanLayoutSVG reads its zones straight from the store (always the active
+  // location); poolZones below is the separate, app-wide pool used to pick
+  // question subjects, decoupled from whichever location is on screen.
+  const activeLocationId = useAppStore((s) => s.activeLocationId);
+  const setActiveLocation = useAppStore((s) => s.setActiveLocation);
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
 
   const [items, setItems] = useState<ItemWithZoneName[]>([]);
+  const [poolZones, setPoolZones] = useState<ZoneWithLocationIcon[]>([]);
   const [loading, setLoading] = useState(true);
+  const [switchingLocation, setSwitchingLocation] = useState(false);
   const [question, setQuestion] = useState<GameQuestion | null>(null);
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
@@ -31,25 +44,32 @@ export default function GameScreen() {
   const [feedbackKey, setFeedbackKey] = useState("");
 
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Restore the location that was active when the game screen was opened,
+  // so quizzing across locations doesn't leave the rest of the app on
+  // whichever location the last "where is" question happened to land on.
+  const initialLocationId = useRef<string | null>(null);
 
   useEffect(() => {
+    initialLocationId.current = activeLocationId;
     let cancelled = false;
-    listAllItems().then((data) => {
+    Promise.all([listAllItems(), listAllZonesWithCounts()]).then(([itemData, zoneData]) => {
       if (cancelled) return;
-      setItems(data);
+      setItems(itemData);
+      setPoolZones(zoneData);
       setLoading(false);
     });
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (!loading && question === null) {
-      setQuestion(generateQuestion(items, zones));
+      advanceQuestion();
     }
     // Only re-run when loading finishes; question generation afterwards is
-    // driven explicitly by resolveAnswer, not by items/zones changing.
+    // driven explicitly by resolveAnswer, not by items/poolZones changing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading]);
 
@@ -57,8 +77,26 @@ export default function GameScreen() {
     return () => {
       if (advanceTimer.current) clearTimeout(advanceTimer.current);
       setHighlightedZoneId(null);
+      const initial = initialLocationId.current;
+      if (initial && initial !== useAppStore.getState().activeLocationId) {
+        setActiveLocation(initial);
+      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setHighlightedZoneId]);
+
+  // A "zone" question can be about an item in a location other than the one
+  // currently on screen; the van map only draws the active location's
+  // zones, so switch to the item's location first when that happens.
+  const advanceQuestion = async (avoidKey?: string) => {
+    const next = generateQuestion(items, poolZones, avoidKey);
+    if (next && next.kind === "zone" && next.item.location_id !== useAppStore.getState().activeLocationId) {
+      setSwitchingLocation(true);
+      await setActiveLocation(next.item.location_id);
+      setSwitchingLocation(false);
+    }
+    setQuestion(next);
+  };
 
   const resolveAnswer = (isCorrect: boolean, selected: string, revealZoneId?: string) => {
     setAnswered(true);
@@ -69,12 +107,13 @@ export default function GameScreen() {
     setStreak((s) => (isCorrect ? s + 1 : 0));
     if (revealZoneId) setHighlightedZoneId(revealZoneId);
 
+    const answeredKey = question ? questionKey(question) : undefined;
     advanceTimer.current = setTimeout(() => {
       setAnswered(false);
       setSelectedKey(null);
       setResult(null);
       setHighlightedZoneId(null);
-      setQuestion((prev) => generateQuestion(items, zones, prev ? questionKey(prev) : undefined));
+      advanceQuestion(answeredKey);
     }, ADVANCE_DELAY_MS);
   };
 
@@ -92,7 +131,7 @@ export default function GameScreen() {
     }
   };
 
-  if (loading) {
+  if (loading || switchingLocation) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: palette.background }]}>
         <ActivityIndicator size="large" color={palette.primary} />
@@ -142,7 +181,11 @@ export default function GameScreen() {
     <View style={[styles.container, { backgroundColor: palette.background }]}>
       <View style={styles.topSection}>
         <GameHud score={score} streak={streak} />
-        <QuestionBanner text={questionText} questionKey={questionKey(question)} />
+        <QuestionBanner
+          text={questionText}
+          icon={questionLocationIcon(question)}
+          questionKey={questionKey(question)}
+        />
         {isZoneQuestion && (
           <View style={styles.tapHint}>
             <Text style={[styles.tapHintText, { color: palette.onSurfaceVariant }]}>

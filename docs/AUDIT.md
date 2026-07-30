@@ -1,4 +1,4 @@
-# Code Audit — My Van Inventory
+# Code Audit — My Inventory
 
 Full-scale review of architecture, security, code quality, and platform best practices.
 Findings are sorted by priority. Each finding includes a ready-to-use AI prompt to fix it.
@@ -349,7 +349,7 @@ The query is safely parameterized (no injection), but `%` and `_` typed by the u
 
 **File:** [app/search.tsx](../app/search.tsx#L80), [app/out-of-van.tsx](../app/out-of-van.tsx#L43)
 
-`handleItemPress` called `router.back()` assuming the map screen was underneath. If search was opened via deep link (`van-storage://search`), back popped out of the app instead of landing on the highlighted map.
+`handleItemPress` called `router.back()` assuming the map screen was underneath. If search was opened via deep link (`my-inventory://search`), back popped out of the app instead of landing on the highlighted map.
 
 **AI fix prompt:**
 

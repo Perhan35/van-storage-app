@@ -1,16 +1,15 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
-import { View, StyleSheet, Alert, ScrollView, FlatList } from "react-native";
-import ReanimatedSwipeable, {
-  SwipeableMethods,
-  SwipeDirection,
-} from "react-native-gesture-handler/ReanimatedSwipeable";
-import Animated, {
-  useAnimatedStyle,
-  interpolate,
-  Extrapolation,
-  LinearTransition,
-  SharedValue,
-} from "react-native-reanimated";
+import {
+  View,
+  StyleSheet,
+  Alert,
+  ScrollView,
+  FlatList,
+  Platform,
+  useWindowDimensions,
+} from "react-native";
+import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
+import Animated, { LinearTransition } from "react-native-reanimated";
 import { useLocalSearchParams, useRouter, useNavigation } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -20,12 +19,12 @@ import {
   Divider,
   Dialog,
   Portal,
-  Menu,
   FAB,
 } from "react-native-paper";
 import { useAppStore } from "../../src/store/useAppStore";
 import { listItemsForZone } from "../../src/db/repository";
 import { Item } from "../../src/db/database";
+import { DEFAULT_LOCATION_ICON } from "../../src/db/templates";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../../src/theme/useAppTheme";
 import { getReadableTextColor } from "../../src/utils/color";
@@ -33,17 +32,9 @@ import { EditItemDialog } from "../../src/components/dialogs/EditItemDialog";
 import { EditZoneDialog } from "../../src/components/dialogs/EditZoneDialog";
 import { AddItemDialog } from "../../src/components/dialogs/AddItemDialog";
 import { Season } from "../../src/db/database";
-import { seasonIconName, seasonIconColor } from "../../src/components/seasonIcon";
-import { expirationIconName, expirationIconColor } from "../../src/components/expirationIcon";
-import { getExpirationStatus } from "../../src/utils/expiration";
-import { formatExpiration } from "../../src/utils/date";
-import { AnimatedCheckbox } from "../../src/components/AnimatedCheckbox";
-import { AnimatedCheckRow } from "../../src/components/AnimatedCheckRow";
-import { AnimatedOutOfVanRow } from "../../src/components/AnimatedOutOfVanRow";
-import { HighlightFlashRow } from "../../src/components/HighlightFlashRow";
+import { ItemRow } from "../../src/components/ItemRow";
 import { plusIcon, tagFabStyle } from "../../src/components/AddFab";
-
-const ACTION_WIDTH = 64;
+import { ContextMenu } from "../../src/components/ContextMenu";
 
 // How long a freshly-checked item stays put before sliding to the bottom.
 const MOVE_DELAY_MS = 1000;
@@ -54,58 +45,35 @@ const COMPLETED_HEADER_ID = "__completed_header__";
 type CompletedHeaderRow = { __header: true; id: string; count: number };
 type ListRow = Item | CompletedHeaderRow;
 
-// Slides the action button in from its edge as the row is swiped open.
-// `translation` mirrors the legacy Swipeable's `drag` value: positive while
-// revealing a left action, negative while revealing a right action.
-function SwipeActionButton({
-  translation,
-  side,
-  backgroundColor,
-  icon,
-  onPress,
-}: {
-  translation: SharedValue<number>;
-  side: "left" | "right";
-  backgroundColor: string;
-  icon: string;
-  onPress: () => void;
-}) {
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      {
-        translateX:
-          side === "left"
-            ? interpolate(
-                translation.value,
-                [0, ACTION_WIDTH],
-                [-ACTION_WIDTH, 0],
-                Extrapolation.CLAMP
-              )
-            : interpolate(
-                translation.value,
-                [-ACTION_WIDTH, 0],
-                [0, ACTION_WIDTH],
-                Extrapolation.CLAMP
-              ),
-      },
-    ],
-  }));
-
-  return (
-    <Animated.View style={[styles.swipeAction, { backgroundColor }, animatedStyle]}>
-      <IconButton icon={icon} iconColor="#fff" size={26} onPress={onPress} />
-    </Animated.View>
-  );
-}
+// iOS nav-bar geometry, used to size the custom header title to the space the
+// bar button items leave free (see the headerTitle comment below): the native
+// back button on the left, the header action buttons on the right.
+//
+// These are deliberate over-estimates. UIKit centers the title view in the
+// free space, so a box *wider* than that space overhangs on both sides and
+// slides back under the back button — the failure mode this went through
+// several times. Erring high instead costs a few points of gap on the left,
+// which is the harmless direction. BACK_BUTTON_WIDTH is the one to nudge if
+// the title ever needs to sit tighter to the chevron: UIKit does not expose
+// the real width, and on iOS 26 the back button is a circular "liquid glass"
+// pill considerably wider than the old bare chevron.
+const BACK_BUTTON_WIDTH = 80;
+const HEADER_ICON_WIDTH = 44; // split + pencil, size 20
+const RESET_ICON_WIDTH = 48; // reset checklist, default size
+const HEADER_TRAILING_INSET = 12;
 
 export default function ZoneDetailScreen() {
   const { id, highlightItemId } = useLocalSearchParams<{ id: string; highlightItemId?: string }>();
   const router = useRouter();
   const navigation = useNavigation();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { palette } = useAppTheme();
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const zones = useAppStore((s) => s.zones);
+  const activeLocationIcon = useAppStore(
+    (s) => s.locations.find((l) => l.id === s.activeLocationId)?.icon ?? DEFAULT_LOCATION_ICON
+  );
   const addItem = useAppStore((s) => s.addItem);
   const deleteItem = useAppStore((s) => s.deleteItem);
   const updateItem = useAppStore((s) => s.updateItem);
@@ -116,11 +84,12 @@ export default function ZoneDetailScreen() {
   const updateZone = useAppStore((s) => s.updateZone);
   const deleteZone = useAppStore((s) => s.deleteZone);
   const splitZone = useAppStore((s) => s.splitZone);
+  const zoneColorFullScreen = useAppStore((s) => s.zoneColorFullScreen);
 
   const [items, setItems] = useState<Item[]>([]);
   const [addItemVisible, setAddItemVisible] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
-  const [menuVisible, setMenuVisible] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ item: Item; x: number; y: number } | null>(null);
   const [movingItem, setMovingItem] = useState<Item | null>(null);
   const [zoneEditVisible, setZoneEditVisible] = useState(false);
   const swipeableRefs = useRef<Map<string, SwipeableMethods>>(new Map());
@@ -206,14 +175,91 @@ export default function ZoneDetailScreen() {
     return () => clearTimeout(scrollTimer);
   }, [highlightItemId, listData]);
 
+  // useCallback'd (and moved above the setOptions effect below, which lists
+  // them as deps) so that effect doesn't rebuild the header on every render —
+  // a plain function here would get a new identity each time regardless of
+  // whether anything the header shows actually changed.
+  const handleResetChecklist = useCallback(() => {
+    if (!id) return;
+    Alert.alert(t("zone.reset_checklist"), t("zone.reset_checklist_confirm"), [
+      { text: t("map.cancel"), style: "cancel" },
+      {
+        text: t("zone.reset_checklist"),
+        onPress: async () => {
+          await resetChecklist(id);
+          await loadItems();
+        },
+      },
+    ]);
+  }, [id, t, resetChecklist, loadItems]);
+
+  const handleSplitZone = useCallback(() => {
+    if (!zone) return;
+    const { w, h } = zone.geometry;
+    const direction = w >= h ? t("zone.split_left_right") : t("zone.split_top_bottom");
+    Alert.alert(
+      t("zone.split_zone_alert_title"),
+      t("zone.split_zone_alert_text", { name: zone.name, direction }),
+      [
+        { text: t("map.cancel"), style: "cancel" },
+        {
+          text: t("zone.split_confirm"),
+          onPress: async () => {
+            if (id) {
+              const newZoneId = await splitZone(id);
+              if (newZoneId) {
+                router.replace(`/zone/${newZoneId}`);
+              }
+            }
+          },
+        },
+      ]
+    );
+  }, [zone, t, id, splitZone, router]);
+
+  // Narrowed to the two primitives the header actually reads (a count and a
+  // boolean) rather than the whole `items` array: `items` is replaced wholesale
+  // by every optimistic checkbox toggle (see handleToggleChecked), which
+  // otherwise reran this effect — rebuilding both header closures and calling
+  // navigation.setOptions — on every single tap.
+  const itemsCount = items.length;
+  const hasChecked = !!zone?.checklist && items.some((i) => i.checked);
+
   useEffect(() => {
     if (!zone) return;
     navigation.setOptions({
       title: zone.name,
       headerStyle: { backgroundColor: zone.color },
       headerTintColor: zoneHeaderTint,
+      // On iOS the custom headerTitle is handed to UIKit as the nav bar's
+      // `titleView`, which is always centered — `headerTitleAlign` is a
+      // documented no-op there. Its width comes from Yoga, and UIKit centers
+      // it inside the space left free by the bar button items *without*
+      // clamping it: left = BACK_BUTTON_WIDTH + (available - W) / 2. So a
+      // short zone name sat in the middle, and anything wider than the free
+      // space (a long name, or an over-wide box) spilled back under the
+      // chevron.
+      //
+      // Sizing the box to that free space is what makes its centered position
+      // land against the chevron, with its far edge stopping where the action
+      // buttons start. The widths above are rounded up rather than down, so
+      // the box stays narrower than the gap and can never slide back under the
+      // chevron. Android left-aligns the title itself.
+      headerTitleAlign: "left",
       headerTitle: () => (
-        <View style={styles.headerTitleContainer}>
+        <View
+          style={[
+            styles.headerTitleContainer,
+            Platform.OS === "ios" && {
+              width:
+                windowWidth -
+                BACK_BUTTON_WIDTH -
+                2 * HEADER_ICON_WIDTH -
+                (hasChecked ? RESET_ICON_WIDTH : 0) -
+                HEADER_TRAILING_INSET,
+            },
+          ]}
+        >
           <Text
             variant="titleMedium"
             style={{ color: zoneHeaderTint, fontWeight: "bold" }}
@@ -223,45 +269,51 @@ export default function ZoneDetailScreen() {
           </Text>
           <Text variant="bodySmall" style={{ color: zoneHeaderTint }}>
             {t(
-              items.length === 1
-                ? "map.objects_count_one"
-                : "map.objects_count_other",
-              { count: items.length }
+              itemsCount === 1 ? "map.objects_count_one" : "map.objects_count_other",
+              { count: itemsCount }
             )}
           </Text>
         </View>
       ),
-      headerRight: () => {
-        const hasChecked = !!zone.checklist && items.some((i) => i.checked);
-        return (
-          <View style={styles.headerActions}>
-            {hasChecked && (
-              <IconButton
-                icon="checkbox-multiple-blank-outline"
-                iconColor={zoneHeaderTint}
-                accessibilityLabel={t("zone.reset_checklist")}
-                onPress={handleResetChecklist}
-              />
-            )}
+      headerRight: () => (
+        <View style={styles.headerActions}>
+          {hasChecked && (
             <IconButton
-              icon="call-split"
-              size={20}
+              icon="checkbox-multiple-blank-outline"
               iconColor={zoneHeaderTint}
-              accessibilityLabel={t("zone.split_zone_alert_title")}
-              onPress={handleSplitZone}
+              accessibilityLabel={t("zone.reset_checklist")}
+              onPress={handleResetChecklist}
             />
-            <IconButton
-              icon="pencil"
-              size={20}
-              iconColor={zoneHeaderTint}
-              accessibilityLabel={t("zone.edit_zone")}
-              onPress={() => setZoneEditVisible(true)}
-            />
-          </View>
-        );
-      },
+          )}
+          <IconButton
+            icon="call-split"
+            size={20}
+            iconColor={zoneHeaderTint}
+            accessibilityLabel={t("zone.split_zone_alert_title")}
+            onPress={handleSplitZone}
+          />
+          <IconButton
+            icon="pencil"
+            size={20}
+            iconColor={zoneHeaderTint}
+            accessibilityLabel={t("zone.edit_zone")}
+            onPress={() => setZoneEditVisible(true)}
+          />
+        </View>
+      ),
     });
-  }, [zone, items, navigation, palette]);
+  }, [
+    zone,
+    itemsCount,
+    hasChecked,
+    navigation,
+    palette,
+    windowWidth,
+    t,
+    zoneHeaderTint,
+    handleResetChecklist,
+    handleSplitZone,
+  ]);
 
   const handleCreateItem = async (
     name: string,
@@ -277,7 +329,7 @@ export default function ZoneDetailScreen() {
   };
 
   const handleDeleteItem = (item: Item) => {
-    setMenuVisible(null);
+    setMenu(null);
     Alert.alert(t("zone.delete"), t("zone.delete_alert", { name: item.name }), [
       { text: t("map.cancel"), style: "cancel" },
       {
@@ -310,12 +362,20 @@ export default function ZoneDetailScreen() {
     await loadItems();
   };
 
-  const handleToggleOutOfVan = async (item: Item) => {
-    setMenuVisible(null);
-    swipeableRefs.current.get(item.id)?.close();
-    await setItemOutOfVan(item.id, !item.out_of_van);
-    await loadItems();
-  };
+  // useCallback'd from here down through handleHighlightDone: these are
+  // passed as props to ItemRow (see below), which is React.memo'd precisely
+  // so an unrelated row's re-render doesn't cascade into every other row's
+  // swipeable/animated wrappers. A plain function identity here would defeat
+  // that memoization on every render of this screen.
+  const handleToggleOutOfVan = useCallback(
+    async (item: Item) => {
+      setMenu(null);
+      swipeableRefs.current.get(item.id)?.close();
+      await setItemOutOfVan(item.id, !item.out_of_van);
+      await loadItems();
+    },
+    [setItemOutOfVan, loadItems]
+  );
 
   const clearPendingMove = useCallback((itemId: string) => {
     const timer = moveTimers.current.get(itemId);
@@ -331,53 +391,60 @@ export default function ZoneDetailScreen() {
     });
   }, []);
 
-  const handleToggleChecked = async (item: Item) => {
-    swipeableRefs.current.get(item.id)?.close();
-    const nextChecked = !item.checked;
-    // Reset any in-flight move so re-tapping doesn't leave a stale timer.
-    clearPendingMove(item.id);
-    // Reflect the toggle immediately so the checkbox + strikethrough land the
-    // instant the row is tapped, rather than after the async DB write.
-    setItems((prev) =>
-      prev.map((it) => (it.id === item.id ? { ...it, checked: nextChecked ? 1 : 0 } : it))
-    );
-    if (nextChecked && zone?.checklist) {
-      // Hold the item in its current spot (checked + struck through) for a beat
-      // so the completion registers, then release it to slide into "Completed".
-      setPendingMoveIds((prev) => new Set(prev).add(item.id));
-      const timer = setTimeout(() => {
-        moveTimers.current.delete(item.id);
-        setPendingMoveIds((prev) => {
-          if (!prev.has(item.id)) return prev;
-          const next = new Set(prev);
-          next.delete(item.id);
-          return next;
-        });
-      }, MOVE_DELAY_MS);
-      moveTimers.current.set(item.id, timer);
-    }
-    try {
-      await setItemChecked(item.id, nextChecked);
-    } catch {
-      // Roll the optimistic toggle back if the write failed.
+  const handleToggleChecked = useCallback(
+    async (item: Item) => {
+      swipeableRefs.current.get(item.id)?.close();
+      const nextChecked = !item.checked;
+      // Reset any in-flight move so re-tapping doesn't leave a stale timer.
       clearPendingMove(item.id);
-      await loadItems();
-    }
-  };
+      // Reflect the toggle immediately so the checkbox + strikethrough land the
+      // instant the row is tapped, rather than after the async DB write.
+      setItems((prev) =>
+        prev.map((it) => (it.id === item.id ? { ...it, checked: nextChecked ? 1 : 0 } : it))
+      );
+      if (nextChecked && zone?.checklist) {
+        // Hold the item in its current spot (checked + struck through) for a
+        // beat so the completion registers, then release it to slide into
+        // "Completed".
+        setPendingMoveIds((prev) => new Set(prev).add(item.id));
+        const timer = setTimeout(() => {
+          moveTimers.current.delete(item.id);
+          setPendingMoveIds((prev) => {
+            if (!prev.has(item.id)) return prev;
+            const next = new Set(prev);
+            next.delete(item.id);
+            return next;
+          });
+        }, MOVE_DELAY_MS);
+        moveTimers.current.set(item.id, timer);
+      }
+      try {
+        await setItemChecked(item.id, nextChecked);
+      } catch {
+        // Roll the optimistic toggle back if the write failed.
+        clearPendingMove(item.id);
+        await loadItems();
+      }
+    },
+    [zone?.checklist, clearPendingMove, setItemChecked, loadItems]
+  );
 
-  const handleResetChecklist = () => {
-    if (!id) return;
-    Alert.alert(t("zone.reset_checklist"), t("zone.reset_checklist_confirm"), [
-      { text: t("map.cancel"), style: "cancel" },
-      {
-        text: t("zone.reset_checklist"),
-        onPress: async () => {
-          await resetChecklist(id);
-          await loadItems();
-        },
-      },
-    ]);
-  };
+  const handlePressItem = useCallback((item: Item) => {
+    setEditingItem(item);
+  }, []);
+
+  const handleOpenItemMenu = useCallback((item: Item, x: number, y: number) => {
+    setMenu({ item, x, y });
+  }, []);
+
+  const handleSwipeableRef = useCallback((itemId: string, ref: SwipeableMethods | null) => {
+    if (ref) swipeableRefs.current.set(itemId, ref);
+    else swipeableRefs.current.delete(itemId);
+  }, []);
+
+  const handleHighlightDone = useCallback(() => {
+    setHighlightedItemId(null);
+  }, []);
 
   const handleSaveZone = async (
     name: string,
@@ -411,30 +478,6 @@ export default function ZoneDetailScreen() {
     );
   };
 
-  const handleSplitZone = () => {
-    if (!zone) return;
-    const { w, h } = zone.geometry;
-    const direction = w >= h ? t("zone.split_left_right") : t("zone.split_top_bottom");
-    Alert.alert(
-      t("zone.split_zone_alert_title"),
-      t("zone.split_zone_alert_text", { name: zone.name, direction }),
-      [
-        { text: t("map.cancel"), style: "cancel" },
-        {
-          text: t("zone.split_confirm"),
-          onPress: async () => {
-            if (id) {
-              const newZoneId = await splitZone(id);
-              if (newZoneId) {
-                router.replace(`/zone/${newZoneId}`);
-              }
-            }
-          },
-        },
-      ]
-    );
-  };
-
   if (!zone) {
     return (
       <View style={[styles.center, { backgroundColor: palette.surface }]}>
@@ -447,8 +490,10 @@ export default function ZoneDetailScreen() {
     .filter((z) => z.id !== id)
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
+  const screenBackground = zoneColorFullScreen ? zone.color + "26" : palette.surface;
+
   return (
-    <View style={[styles.container, { backgroundColor: zone.color + "26" }]}>
+    <View style={[styles.container, { backgroundColor: screenBackground }]}>
       {/* Items list */}
       <Animated.FlatList
         ref={listRef}
@@ -456,6 +501,14 @@ export default function ZoneDetailScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         itemLayoutAnimation={LinearTransition.duration(300)}
+        // Windowing tuning, now that rows are cheap to skip re-rendering (see
+        // ItemRow's memo) — worth also trimming how many render off-screen.
+        // removeClippedSubviews is deliberately left off: it's known to
+        // conflict with gesture-handler Swipeable rows (a clipped row can
+        // lose its open/close state), and this list's rows are swipeable.
+        initialNumToRender={12}
+        maxToRenderPerBatch={8}
+        windowSize={10}
         onScrollToIndexFailed={(info) => {
           // Row not yet measured (e.g. off-screen on first render) — jump to
           // an estimated offset, then retry once layout has settled.
@@ -481,183 +534,18 @@ export default function ZoneDetailScreen() {
             );
           }
           return (
-          <ReanimatedSwipeable
-            ref={(ref) => {
-              if (ref) swipeableRefs.current.set(item.id, ref);
-              else swipeableRefs.current.delete(item.id);
-            }}
-            overshootRight={false}
-            onSwipeableOpen={(direction) => {
-              // ReanimatedSwipeable's SwipeDirection is inverted relative to the
-              // legacy Swipeable: LEFT means the row moved left, revealing the
-              // *right* actions panel (out-of-van), and vice versa.
-              if (direction === SwipeDirection.LEFT) handleToggleOutOfVan(item);
-              else if (direction === SwipeDirection.RIGHT && zone.checklist)
-                handleToggleChecked(item);
-            }}
-            renderLeftActions={
-              zone.checklist
-                ? (_progress, translation) => (
-                    <SwipeActionButton
-                      translation={translation}
-                      side="left"
-                      backgroundColor={palette.primary}
-                      icon={item.checked ? "checkbox-blank-outline" : "check-bold"}
-                      onPress={() => handleToggleChecked(item)}
-                    />
-                  )
-                : undefined
-            }
-            renderRightActions={(_progress, translation) => (
-              <SwipeActionButton
-                translation={translation}
-                side="right"
-                backgroundColor={item.out_of_van ? palette.success : palette.danger}
-                icon={item.out_of_van ? "van-utility" : "exit-to-app"}
-                onPress={() => handleToggleOutOfVan(item)}
-              />
-            )}
-          >
-          <AnimatedOutOfVanRow
-            outOfVan={!!item.out_of_van}
-            outColor={palette.danger}
-            inColor={palette.success}
-            outIcon="exit-to-app"
-            inIcon="van-utility"
-          >
-          <AnimatedCheckRow checked={!!item.checked}>
-          <HighlightFlashRow
-            active={highlightedItemId === item.id}
-            color={palette.editModeAccent}
-            onDone={() => setHighlightedItemId(null)}
-          >
-          <List.Item
-            title={item.name}
-            description={
-              item.expiration_date
-                ? (props) => {
-                    const status = getExpirationStatus(item.expiration_date as string, item.reminder_days);
-                    return (
-                      <View>
-                        {!!item.notes && (
-                          <Text
-                            style={{ color: props.color, fontSize: props.fontSize }}
-                            numberOfLines={2}
-                          >
-                            {item.notes}
-                          </Text>
-                        )}
-                        <Text
-                          style={{
-                            color: expirationIconColor(status, palette),
-                            fontSize: props.fontSize,
-                          }}
-                        >
-                          {t("zone.expires_on", {
-                            date: formatExpiration(item.expiration_date as string, i18n.language),
-                          })}
-                        </Text>
-                      </View>
-                    );
-                  }
-                : item.notes || undefined
-            }
-            onPress={() => setEditingItem(item)}
-            onLongPress={() => setMenuVisible(item.id)}
-            titleStyle={
-              item.checked
-                ? { color: palette.onSurfaceVariant, textDecorationLine: "line-through" }
-                : undefined
-            }
-            left={(props) => {
-              const seasonIcon = seasonIconName(item.season);
-              const rawExpirationStatus = item.expiration_date
-                ? getExpirationStatus(item.expiration_date, item.reminder_days)
-                : null;
-              // Only surface the calendar icon when the item is actually at
-              // risk (expired or expiring soon) — an up-to-date expiration
-              // date doesn't need a persistent icon on the row.
-              const expirationStatus = rawExpirationStatus === "ok" ? null : rawExpirationStatus;
-              const hasIcons = !!item.out_of_van || !!seasonIcon || !!expirationStatus;
-              if (!zone.checklist && !hasIcons) return null;
-              return (
-                <View style={[styles.itemLeft, props.style]}>
-                  {!!zone.checklist && (
-                    <AnimatedCheckbox
-                      checked={!!item.checked}
-                      onPress={() => handleToggleChecked(item)}
-                    />
-                  )}
-                  {!!item.out_of_van && (
-                    <List.Icon icon="exit-to-app" color={palette.danger} />
-                  )}
-                  {!!seasonIcon && (
-                    <List.Icon icon={seasonIcon} color={seasonIconColor(item.season)} />
-                  )}
-                  {!!expirationStatus && (
-                    <List.Icon
-                      icon={expirationIconName(expirationStatus)}
-                      color={expirationIconColor(expirationStatus, palette)}
-                    />
-                  )}
-                </View>
-              );
-            }}
-            right={() => (
-              <Menu
-                visible={menuVisible === item.id}
-                onDismiss={() => setMenuVisible(null)}
-                anchor={
-                  <IconButton
-                    icon="dots-vertical"
-                    size={24}
-                    onPress={() => setMenuVisible(item.id)}
-                  />
-                }
-              >
-                <Menu.Item
-                  leadingIcon="pencil-outline"
-                  title={t("zone.edit")}
-                  onPress={() => {
-                    setMenuVisible(null);
-                    setEditingItem(item);
-                  }}
-                />
-                {otherZones.length > 0 && (
-                  <Menu.Item
-                    leadingIcon="arrow-right-bold"
-                    title={t("zone.move")}
-                    onPress={() => {
-                      setMenuVisible(null);
-                      setMovingItem(item);
-                    }}
-                  />
-                )}
-                <Menu.Item
-                  leadingIcon={
-                    item.out_of_van ? "tray-arrow-down" : "exit-to-app"
-                  }
-                  title={
-                    item.out_of_van
-                      ? t("zone.put_back")
-                      : t("zone.take_out")
-                  }
-                  onPress={() => handleToggleOutOfVan(item)}
-                />
-                <Divider />
-                <Menu.Item
-                  leadingIcon="delete-outline"
-                  title={t("zone.delete")}
-                  titleStyle={{ color: palette.danger }}
-                  onPress={() => handleDeleteItem(item)}
-                />
-              </Menu>
-            )}
-          />
-          </HighlightFlashRow>
-          </AnimatedCheckRow>
-          </AnimatedOutOfVanRow>
-          </ReanimatedSwipeable>
+            <ItemRow
+              item={item}
+              zoneChecklist={!!zone.checklist}
+              activeLocationIcon={activeLocationIcon}
+              highlighted={highlightedItemId === item.id}
+              onHighlightDone={handleHighlightDone}
+              onToggleChecked={handleToggleChecked}
+              onToggleOutOfVan={handleToggleOutOfVan}
+              onPressItem={handlePressItem}
+              onOpenMenu={handleOpenItemMenu}
+              onSwipeableRef={handleSwipeableRef}
+            />
           );
         }}
         ItemSeparatorComponent={Divider}
@@ -670,15 +558,67 @@ export default function ZoneDetailScreen() {
         }
       />
 
+      <ContextMenu
+        visible={!!menu}
+        onDismiss={() => setMenu(null)}
+        anchor={menu ? { x: menu.x, y: menu.y } : { x: 0, y: 0 }}
+        header={
+          menu
+            ? {
+                title: menu.item.name,
+                icon: "package-variant",
+                subtitle: t("zone.item_kind_label"),
+              }
+            : undefined
+        }
+        items={
+          menu
+            ? [
+                {
+                  icon: "pencil-outline",
+                  label: t("zone.edit"),
+                  onPress: () => setEditingItem(menu.item),
+                },
+                ...(otherZones.length > 0
+                  ? [
+                      {
+                        icon: "arrow-right-bold",
+                        label: t("zone.move"),
+                        onPress: () => setMovingItem(menu.item),
+                      },
+                    ]
+                  : []),
+                {
+                  icon: menu.item.out_of_van ? "tray-arrow-down" : "export",
+                  label: menu.item.out_of_van ? t("zone.put_back") : t("zone.take_out"),
+                  onPress: () => handleToggleOutOfVan(menu.item),
+                },
+                {
+                  icon: "delete-outline",
+                  label: t("zone.delete"),
+                  tone: "danger",
+                  dividerBefore: true,
+                  onPress: () => handleDeleteItem(menu.item),
+                },
+              ]
+            : []
+        }
+      />
+
+      {/* Always painted in the zone's own color like the header above it, so
+          the add button reads as belonging to this zone rather than to the
+          app chrome — independent of zoneColorFullScreen, which only governs
+          the screen background. It therefore borrows the header's derived
+          tint for the "+" glyph. */}
       <FAB
         icon={plusIcon}
-        color={palette.headerTint}
+        color={zoneHeaderTint}
         style={[
           styles.fab,
           tagFabStyle(palette.secondary),
           {
-            backgroundColor: palette.primary,
-            shadowColor: palette.primary,
+            backgroundColor: zone.color,
+            shadowColor: zone.color,
             shadowOpacity: 0.35,
             shadowOffset: { width: 0, height: 4 },
             shadowRadius: 8,
@@ -754,14 +694,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 32,
   },
-  headerTitleContainer: { alignItems: "center" },
+  headerTitleContainer: { alignItems: "flex-start" },
   headerActions: { flexDirection: "row", alignItems: "center" },
-  itemLeft: { flexDirection: "row", alignItems: "center" },
-  swipeAction: {
-    width: ACTION_WIDTH,
-    justifyContent: "center",
-    alignItems: "center",
-  },
   listContent: { paddingBottom: 120 },
   completedHeader: { paddingHorizontal: 16, paddingTop: 20, paddingBottom: 6 },
   scrollArea: { maxHeight: 400 },

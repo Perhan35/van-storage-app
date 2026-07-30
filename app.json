@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "My Van Inventory",
-    "slug": "van-storage",
-    "version": "2.5.2",
+    "name": "My Inventory",
+    "slug": "my-inventory",
+    "version": "0.9.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.perhan35.vanstorage"
+      "bundleIdentifier": "com.perhan35.myinventory"
     },
     "android": {
       "adaptiveIcon": {
@@ -16,7 +16,7 @@
         "backgroundColor": "#4A90D9"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.perhan35.vanstorage"
+      "package": "com.perhan35.myinventory"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -40,7 +40,7 @@
       "./plugins/withoutPushEntitlement.js",
       "expo-notifications"
     ],
-    "scheme": "van-storage",
+    "scheme": "my-inventory",
     "extra": {
       "router": {},
       "eas": {
