@@ -8,6 +8,7 @@ import {
   GestureResponderEvent,
   RefreshControl,
 } from "react-native";
+import type { ViewInstance } from "react-native";
 import Svg, { Rect as SvgRect } from "react-native-svg";
 import { Text, IconButton, Icon } from "react-native-paper";
 import { useTranslation } from "react-i18next";
@@ -59,7 +60,7 @@ export function LocationsOverview({ onSelectLocation, onCreateNew }: Props) {
 
   // The plan box inside each tile, measured on tap so the map screen knows
   // where to grow from.
-  const planRefs = useRef<Record<string, View | null>>({});
+  const planRefs = useRef<Record<string, ViewInstance | null>>({});
 
   const handleTilePress = (locationId: string) => {
     const node = planRefs.current[locationId];

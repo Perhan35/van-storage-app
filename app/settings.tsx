@@ -1,5 +1,6 @@
 import React, { useRef, useState } from "react";
 import { View, StyleSheet, Alert, ScrollView, Platform, ActionSheetIOS } from "react-native";
+import type { ViewInstance } from "react-native";
 import { Text, Button, Divider, SegmentedButtons, Switch } from "react-native-paper";
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
@@ -93,7 +94,7 @@ export default function SettingsScreen() {
     width: number;
     height: number;
   } | null>(null);
-  const languageButtonRef = useRef<View>(null);
+  const languageButtonRef = useRef<ViewInstance>(null);
 
   const languageLabel = (preference: LanguagePreference) =>
     preference === "system" ? t("settings.language_system") : LANGUAGE_LABELS[preference];
