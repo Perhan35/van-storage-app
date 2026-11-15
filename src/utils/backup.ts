@@ -43,7 +43,7 @@ export async function runBackupExport(): Promise<BackupResult> {
     const { File, Paths } = await import("expo-file-system");
     const Sharing = await import("expo-sharing");
     const file = new File(Paths.cache, filename);
-    file.write(data);
+    await file.write(data);
     if (!(await Sharing.isAvailableAsync())) {
       return { ok: true, shared: false };
     }

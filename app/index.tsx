@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { View, StyleSheet, Pressable, BackHandler, AppState } from "react-native";
+import type { ViewInstance } from "react-native";
 import { useRouter, useNavigation, useFocusEffect } from "expo-router";
 import { FAB, Text, Button, IconButton } from "react-native-paper";
 import Animated, {
@@ -120,7 +121,7 @@ export default function VanMapScreen() {
   // Both layers stay mounted while one is running; `transition` says which is
   // moving, and null means "resting", when only one of them exists.
   const [transition, setTransition] = useState<"enter" | "exit" | null>(null);
-  const containerRef = useRef<View>(null);
+  const containerRef = useRef<ViewInstance>(null);
   const containerRect = useRef<Rect | null>(null);
   // The flight the current location was opened with, so leaving can retrace it
   // back onto the same tile. Null when it was opened without one.

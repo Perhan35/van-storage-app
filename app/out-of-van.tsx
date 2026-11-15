@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, FlatList, StyleSheet } from "react-native";
+import type { ViewInstance } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
 import { Button, Divider, SegmentedButtons, Text } from "react-native-paper";
@@ -41,15 +42,15 @@ export default function OutOfVanScreen() {
   type DropdownAnchor = { x: number; y: number; width: number; height: number };
   const [locationMenuAnchor, setLocationMenuAnchor] = useState<DropdownAnchor | null>(null);
   const [zoneMenuAnchor, setZoneMenuAnchor] = useState<DropdownAnchor | null>(null);
-  const locationButtonRef = useRef<View>(null);
-  const zoneButtonRef = useRef<View>(null);
+  const locationButtonRef = useRef<ViewInstance>(null);
+  const zoneButtonRef = useRef<ViewInstance>(null);
   const swipeableRefs = useRef<Map<string, SwipeableMethods>>(new Map());
 
   // Measures the trigger button so the dropdown can open flush beneath it,
   // matching its width (react-native-web's measureInWindow needs a plain View
   // ref — Paper's Button ref isn't guaranteed to support it).
   const openDropdown = (
-    ref: React.RefObject<View | null>,
+    ref: React.RefObject<ViewInstance | null>,
     setAnchor: (a: DropdownAnchor) => void
   ) => {
     ref.current?.measureInWindow((x, y, width, height) => {

@@ -127,7 +127,7 @@ function ItemRowInner({
     <ReanimatedSwipeable
       ref={(ref) => onSwipeableRef(item.id, ref)}
       overshootRight={false}
-      dragOffsetFromLeftEdge={zoneChecklist ? undefined : DISABLE_RIGHTWARD_DRAG}
+      dragOffsetFromLeft={zoneChecklist ? undefined : DISABLE_RIGHTWARD_DRAG}
       onSwipeableOpen={(direction) => {
         // ReanimatedSwipeable's SwipeDirection is inverted relative to the
         // legacy Swipeable: LEFT means the row moved left, revealing the
