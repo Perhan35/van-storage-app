@@ -1,5 +1,5 @@
 import React from "react";
-import { View, StyleSheet, GestureResponderEvent } from "react-native";
+import { View, StyleSheet, GestureResponderEvent, Pressable } from "react-native";
 import ReanimatedSwipeable, {
   SwipeableMethods,
   SwipeDirection,
@@ -10,7 +10,7 @@ import Animated, {
   Extrapolation,
   SharedValue,
 } from "react-native-reanimated";
-import { Text, IconButton, List } from "react-native-paper";
+import { Text, IconButton, List, Icon } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../theme/useAppTheme";
 import { Item } from "../db/database";
@@ -25,6 +25,11 @@ import { AnimatedOutOfVanRow } from "./AnimatedOutOfVanRow";
 import { HighlightFlashRow } from "./HighlightFlashRow";
 
 const ACTION_WIDTH = 64;
+// Indent per nesting level (Sac > Trousse > Brosse à dent).
+const INDENT_PER_LEVEL = 28;
+// Where a level's guide line sits: just under the start of the title of the
+// group it belongs to (List.Item's content starts 16px in).
+const GUIDE_OFFSET = 18;
 
 // Non-checklist rows have no renderLeftActions, but ReanimatedSwipeable's
 // pan gesture still claims any rightward drag past its default 10px
@@ -84,6 +89,13 @@ type Props = {
   item: Item;
   zoneChecklist: boolean;
   activeLocationIcon: string;
+  // 1 for an item directly in the zone, 2 inside another item, 3 below that.
+  depth: number;
+  // How many things are stored inside it (at any level); 0 = not a group.
+  contentCount: number;
+  // Whether its contents are shown below it (only meaningful for a group).
+  expanded: boolean;
+  onToggleExpanded: (item: Item) => void;
   // Deep-link highlight (see zone/[id].tsx's highlightedItemId).
   highlighted: boolean;
   onHighlightDone: () => void;
@@ -107,6 +119,10 @@ function ItemRowInner({
   item,
   zoneChecklist,
   activeLocationIcon,
+  depth,
+  contentCount,
+  expanded,
+  onToggleExpanded,
   highlighted,
   onHighlightDone,
   onToggleChecked,
@@ -206,11 +222,13 @@ function ItemRowInner({
                 triggerHaptic();
                 openMenuAt(e);
               }}
-              titleStyle={
-                item.checked
-                  ? { color: palette.onSurfaceVariant, textDecorationLine: "line-through" }
-                  : undefined
-              }
+              titleStyle={[
+                contentCount > 0 && styles.groupTitle,
+                !!item.checked && {
+                  color: palette.onSurfaceVariant,
+                  textDecorationLine: "line-through" as const,
+                },
+              ]}
               left={(props) => {
                 const seasonIcon = seasonIconName(item.season);
                 const rawExpirationStatus = item.expiration_date
@@ -240,10 +258,63 @@ function ItemRowInner({
                   </View>
                 );
               }}
+              style={[
+                styles.listItem,
+                depth > 1 && { paddingLeft: (depth - 1) * INDENT_PER_LEVEL },
+              ]}
               right={() => (
-                <IconButton icon="dots-vertical" size={24} onPress={openMenuAt} />
+                <View style={styles.itemRight}>
+                  {contentCount > 0 && (
+                    // The count and the arrow open/close the group together,
+                    // on the right, so every title starts at the same place
+                    // and only nesting moves a row to the right.
+                    <Pressable
+                      onPress={() => onToggleExpanded(item)}
+                      style={styles.groupToggle}
+                      hitSlop={6}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded }}
+                      accessibilityLabel={`${t(expanded ? "zone.group_collapse" : "zone.group_expand", {
+                        name: item.name,
+                      })}, ${t("zone.group_count", { count: contentCount })}`}
+                    >
+                      <Text
+                        variant="labelMedium"
+                        style={[
+                          styles.countChip,
+                          { backgroundColor: palette.surfaceVariant, color: palette.onSurfaceVariant },
+                        ]}
+                      >
+                        {contentCount}
+                      </Text>
+                      <Icon
+                        source={expanded ? "chevron-up" : "chevron-down"}
+                        size={22}
+                        color={palette.onSurfaceVariant}
+                      />
+                    </Pressable>
+                  )}
+                  <IconButton
+                    icon="dots-vertical"
+                    size={24}
+                    onPress={openMenuAt}
+                    style={styles.menuButton}
+                  />
+                </View>
               )}
             />
+            {/* One vertical guide per group the item sits in, so what's
+                inside a group reads as hanging from it. */}
+            {Array.from({ length: depth - 1 }, (_, level) => (
+              <View
+                key={level}
+                pointerEvents="none"
+                style={[
+                  styles.guide,
+                  { left: level * INDENT_PER_LEVEL + GUIDE_OFFSET, backgroundColor: palette.outline },
+                ]}
+              />
+            ))}
           </HighlightFlashRow>
         </AnimatedCheckRow>
       </AnimatedOutOfVanRow>
@@ -255,6 +326,24 @@ export const ItemRow = React.memo(ItemRowInner);
 
 const styles = StyleSheet.create({
   itemLeft: { flexDirection: "row", alignItems: "center" },
+  // Paper's MD3 List.Item reserves 24px on the right, and IconButton adds its
+  // own 6px margin — together they pushed the ⋮ well inside the row. Trim both
+  // so the ⋮ sits near the right edge (keeping IconButton's vertical margin so
+  // the row height is unchanged).
+  listItem: { paddingRight: 4 },
+  menuButton: { marginRight: 0 },
+  itemRight: { flexDirection: "row", alignItems: "center" },
+  groupToggle: { flexDirection: "row", alignItems: "center", gap: 2, paddingLeft: 4 },
+  guide: { position: "absolute", top: 0, bottom: 0, width: 2, borderRadius: 1, opacity: 0.5 },
+  groupTitle: { fontWeight: "600" },
+  countChip: {
+    minWidth: 24,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    overflow: "hidden",
+    textAlign: "center",
+  },
   swipeAction: {
     width: ACTION_WIDTH,
     justifyContent: "center",

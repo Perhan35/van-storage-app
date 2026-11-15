@@ -180,6 +180,8 @@
   "out.filter_winter": "Hiver",
   "out.filter_none": "Aucun",
 
+  "out.content_count_one": "+ {{count}} objet dedans",
+  "out.content_count_other": "+ {{count}} objets dedans",
   "search.placeholder": "Chercher un objet...",
   "search.out_of_van": "Sorti",
   "search.no_results": "Aucun objet trouvé pour \"{{query}}\"",
@@ -199,6 +201,20 @@
   "zone.take_out": "Sortir",
   "zone.delete": "Supprimer",
   "zone.delete_alert": "Supprimer \"{{name}}\" ?",
+  "zone.add_inside": "Ajouter dedans",
+  "zone.store_in": "Ranger dans…",
+  "zone.store_in_title": "Ranger « {{name}} » dans",
+  "zone.remove_from": "Retirer de « {{name}} »",
+  "zone.parent_field": "Dans",
+  "zone.parent_none": "Directement dans la zone",
+  "zone.group_expand": "Ouvrir {{name}}",
+  "zone.group_collapse": "Fermer {{name}}",
+  "zone.group_count_one": "{{count}} objet dedans",
+  "zone.group_count_other": "{{count}} objets dedans",
+  "zone.delete_group_text_one": "Il y a {{count}} objet dedans. Qu'est-ce qu'on en fait ?",
+  "zone.delete_group_text_other": "Il y a {{count}} objets dedans. Qu'est-ce qu'on en fait ?",
+  "zone.delete_keep_contents": "Garder les objets",
+  "zone.delete_with_contents": "Tout supprimer",
   "zone.empty": "Aucun objet dans cette zone",
   "zone.edit_item": "Modifier l'objet",
   "zone.name": "Nom",
@@ -287,6 +303,8 @@
   "kit.fulfill_at_home_desc": "Il ira dans « À la maison », prêt à charger.",
   "kit.fulfill_confirm": "Ranger",
   "kit.save_error": "L'opération a échoué. Veuillez réessayer.",
+  "kit.switch_summer": "Passer en mode été",
+  "kit.switch_winter": "Passer en mode hiver",
 
   "settings.title_reminders": "Rappels de péremption",
   "settings.desc_reminders": "Soyez prévenu avant qu'un objet n'atteigne sa date de péremption.",
@@ -338,5 +356,5 @@
   "tutorial.gesture_swipe_right_title": "Glisser vers la droite",
   "tutorial.gesture_swipe_right_desc": "Cocher l'objet, dans les zones configurées en liste à cocher.",
   "tutorial.gesture_long_press_title": "Appui long",
-  "tutorial.gesture_long_press_desc": "Ouvrir le menu pour modifier l'objet (le bouton ⋮ fait de même)."
+  "tutorial.gesture_long_press_desc": "Ouvrir le menu : modifier, déplacer, sortir ou supprimer l'objet. Le bouton ⋮ fait de même."
 }

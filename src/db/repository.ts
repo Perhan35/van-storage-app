@@ -14,6 +14,8 @@ import i18n from "../i18n";
 import { DEFAULT_ZONE_COLOR, sanitizeHex } from "../utils/color";
 import { normalizeForSearch, matchesSearch } from "../utils/search";
 import { toSqliteTimestamp } from "../utils/date";
+import { canAddInto, canNestInto } from "../utils/itemTree";
+import type { SQLiteDatabase } from "expo-sqlite";
 
 export const DEFAULT_FILL_OPACITY = 0.4;
 
@@ -117,6 +119,49 @@ export function listItemsForZone(zoneId: string): Promise<Item[]> {
   );
 }
 
+// The given items plus everything stored inside them, at any depth. UNION
+// (not UNION ALL) drops repeats, so even a corrupt parent_id cycle ends. The
+// seeds go through one IN (...) rather than one SELECT per id, which would hit
+// SQLite's 500-term limit on compound selects for a big "Tout charger".
+function subtreeCte(seedCount: number): string {
+  const placeholders = Array.from({ length: seedCount }, () => "?").join(", ");
+  return `WITH RECURSIVE subtree(id) AS (
+    SELECT id FROM items WHERE id IN (${placeholders})
+    UNION SELECT i.id FROM items i JOIN subtree s ON i.parent_id = s.id
+  )`;
+}
+
+// Checklist rule, walking up from `parentId`: an item whose contents are all
+// checked is checked, one with anything unchecked inside is not. An item left
+// with nothing inside keeps its own state. Takes the `db` it is handed — never
+// call withDb from here (see the INVARIANT on withDb).
+async function syncAncestorsChecked(db: SQLiteDatabase, parentId: string | null): Promise<void> {
+  const seen = new Set<string>();
+  let currentId = parentId;
+  while (currentId && !seen.has(currentId)) {
+    seen.add(currentId);
+    const stats = await db.getFirstAsync<{ total: number; done: number }>(
+      "SELECT COUNT(*) as total, COALESCE(SUM(checked), 0) as done FROM items WHERE parent_id = ?",
+      [currentId]
+    );
+    const parent = await db.getFirstAsync<{ checked: number; parent_id: string | null }>(
+      "SELECT checked, parent_id FROM items WHERE id = ?",
+      [currentId]
+    );
+    if (!parent) return;
+    if (stats && stats.total > 0) {
+      const checked = stats.done === stats.total ? 1 : 0;
+      if (checked !== parent.checked) {
+        await db.runAsync(
+          "UPDATE items SET checked = ?, updated_at = datetime('now') WHERE id = ?",
+          [checked, currentId]
+        );
+      }
+    }
+    currentId = parent.parent_id;
+  }
+}
+
 export function insertItem(
   id: string,
   name: string,
@@ -124,19 +169,65 @@ export function insertItem(
   notes: string,
   season: Season = "none",
   expirationDate: string | null = null,
-  reminderDays: number = 7
+  reminderDays: number = 7,
+  parentId: string | null = null
 ): Promise<void> {
   return withDb(async (db) => {
-    await db.runAsync(
-      "INSERT INTO items (id, name, zone_id, notes, season, expiration_date, reminder_days) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [id, name, zoneId, notes, season, expirationDate, reminderDays]
-    );
+    await db.withTransactionAsync(async () => {
+      // An item always lives in the same zone as the one it's stored in.
+      let targetZoneId = zoneId;
+      let targetParentId: string | null = null;
+      // Added inside a Trousse that is out of the van: it is out too.
+      let outOfVan = 0;
+      if (parentId) {
+        const zoneItems = await db.getAllAsync<Item>(
+          "SELECT * FROM items WHERE zone_id = (SELECT zone_id FROM items WHERE id = ?)",
+          [parentId]
+        );
+        const parent = zoneItems.find((i) => i.id === parentId);
+        if (parent && canAddInto(parentId, zoneItems)) {
+          targetZoneId = parent.zone_id;
+          targetParentId = parentId;
+          outOfVan = parent.out_of_van ? 1 : 0;
+        }
+      }
+      await db.runAsync(
+        "INSERT INTO items (id, name, zone_id, notes, season, expiration_date, reminder_days, parent_id, out_of_van) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [id, name, targetZoneId, notes, season, expirationDate, reminderDays, targetParentId, outOfVan]
+      );
+      // A new, unchecked thing inside a checked Trousse unchecks it.
+      await syncAncestorsChecked(db, targetParentId);
+    });
   });
 }
 
-export function deleteItem(itemId: string): Promise<void> {
+// "all" deletes the item and everything inside it; "keep" deletes only the
+// item and moves its contents up one level (into the item's own parent, or
+// straight into the zone).
+export type DeleteItemMode = "all" | "keep";
+
+export function deleteItem(itemId: string, mode: DeleteItemMode = "all"): Promise<void> {
   return withDb(async (db) => {
-    await db.runAsync("DELETE FROM items WHERE id = ?", [itemId]);
+    await db.withTransactionAsync(async () => {
+      const item = await db.getFirstAsync<{ parent_id: string | null }>(
+        "SELECT parent_id FROM items WHERE id = ?",
+        [itemId]
+      );
+      if (!item) return;
+      if (mode === "keep") {
+        await db.runAsync(
+          "UPDATE items SET parent_id = ?, updated_at = datetime('now') WHERE parent_id = ?",
+          [item.parent_id, itemId]
+        );
+        await db.runAsync("DELETE FROM items WHERE id = ?", [itemId]);
+      } else {
+        await db.runAsync(
+          `${subtreeCte(1)} DELETE FROM items WHERE id IN (SELECT id FROM subtree)`,
+          [itemId]
+        );
+      }
+      await syncAncestorsChecked(db, item.parent_id);
+    });
   });
 }
 
@@ -156,28 +247,82 @@ export function updateItem(
   });
 }
 
+// Moves the item, and everything inside it, to another zone. It leaves the
+// item it was stored in (that one stays behind in the old zone).
 export function moveItem(itemId: string, newZoneId: string): Promise<void> {
   return withDb(async (db) => {
-    await db.runAsync(
-      "UPDATE items SET zone_id = ?, updated_at = datetime('now') WHERE id = ?",
-      [newZoneId, itemId]
-    );
+    await db.withTransactionAsync(async () => {
+      const item = await db.getFirstAsync<{ parent_id: string | null }>(
+        "SELECT parent_id FROM items WHERE id = ?",
+        [itemId]
+      );
+      if (!item) return;
+      await db.runAsync(
+        `${subtreeCte(1)} UPDATE items SET zone_id = ?, updated_at = datetime('now') WHERE id IN (SELECT id FROM subtree)`,
+        [itemId, newZoneId]
+      );
+      await db.runAsync("UPDATE items SET parent_id = NULL WHERE id = ?", [itemId]);
+      await syncAncestorsChecked(db, item.parent_id);
+    });
   });
 }
 
-export type SearchResultItem = Item & {
-  zone_name: string;
-  zone_checklist: number;
-  location_id: string;
-  location_name: string;
-  location_icon: string;
+// Stores the item (with everything inside it) inside `parentId`, or straight
+// in its zone when null. Refused silently when it would go deeper than
+// MAX_ITEM_DEPTH or into itself — the pickers never offer such a target.
+export function setItemParent(itemId: string, parentId: string | null): Promise<void> {
+  return withDb(async (db) => {
+    await db.withTransactionAsync(async () => {
+      const zoneItems = await db.getAllAsync<Item>(
+        "SELECT * FROM items WHERE zone_id = (SELECT zone_id FROM items WHERE id = ?)",
+        [itemId]
+      );
+      const item = zoneItems.find((i) => i.id === itemId);
+      if (!item || item.parent_id === parentId) return;
+      if (parentId && !canNestInto(itemId, parentId, zoneItems)) return;
+      await db.runAsync(
+        "UPDATE items SET parent_id = ?, updated_at = datetime('now') WHERE id = ?",
+        [parentId, itemId]
+      );
+      await syncAncestorsChecked(db, item.parent_id);
+      await syncAncestorsChecked(db, parentId);
+    });
+  });
+}
+
+// What an item is stored in, for showing "Zone › Sac › Trousse". Two levels
+// up is all there can be (MAX_ITEM_DEPTH is 3), so two joins cover it.
+export type ItemParentNames = {
+  parent_name: string | null;
+  grandparent_name: string | null;
 };
 
+const PARENT_NAMES_SELECT = "p.name as parent_name, gp.name as grandparent_name";
+const PARENT_NAMES_JOIN = `
+  LEFT JOIN items p ON i.parent_id = p.id
+  LEFT JOIN items gp ON p.parent_id = gp.id
+`;
+
+// Outermost first: ["Sac", "Trousse"] for the Brosse à dent.
+export function parentPath(item: ItemParentNames): string[] {
+  return [item.grandparent_name, item.parent_name].filter((n): n is string => !!n);
+}
+
+export type SearchResultItem = Item &
+  ItemParentNames & {
+    zone_name: string;
+    zone_checklist: number;
+    location_id: string;
+    location_name: string;
+    location_icon: string;
+  };
+
 const SEARCH_ITEM_QUERY = `
-  SELECT i.*, z.name as zone_name, z.checklist as zone_checklist, l.id as location_id, l.name as location_name, l.icon as location_icon
+  SELECT i.*, z.name as zone_name, z.checklist as zone_checklist, l.id as location_id, l.name as location_name, l.icon as location_icon, ${PARENT_NAMES_SELECT}
   FROM items i
   JOIN zones z ON i.zone_id = z.id
   JOIN locations l ON z.location_id = l.id
+  ${PARENT_NAMES_JOIN}
 `;
 
 // Matching happens in JS (see normalizeForSearch) rather than with SQL LIKE,
@@ -214,31 +359,38 @@ export function searchAllItems(query: string): Promise<SearchResultItem[]> {
   });
 }
 
+// Taking the Trousse out of the van takes everything inside it too (and
+// putting it back brings it all back).
 export function setItemOutOfVan(itemId: string, outOfVan: boolean): Promise<void> {
-  return withDb(async (db) => {
-    await db.runAsync(
-      "UPDATE items SET out_of_van = ?, updated_at = datetime('now') WHERE id = ?",
-      [outOfVan ? 1 : 0, itemId]
-    );
-  });
+  return setItemsOutOfVan([itemId], outOfVan);
 }
 
 export function setItemsOutOfVan(itemIds: string[], outOfVan: boolean): Promise<void> {
+  if (itemIds.length === 0) return Promise.resolve();
   return withDb(async (db) => {
-    const placeholders = itemIds.map(() => "?").join(", ");
     await db.runAsync(
-      `UPDATE items SET out_of_van = ?, updated_at = datetime('now') WHERE id IN (${placeholders})`,
-      [outOfVan ? 1 : 0, ...itemIds]
+      `${subtreeCte(itemIds.length)} UPDATE items SET out_of_van = ?, updated_at = datetime('now') WHERE id IN (SELECT id FROM subtree)`,
+      [...itemIds, outOfVan ? 1 : 0]
     );
   });
 }
 
+// Checks (or unchecks) the item and everything inside it, then updates the
+// items it is stored in (see syncAncestorsChecked).
 export function setItemChecked(itemId: string, checked: boolean): Promise<void> {
   return withDb(async (db) => {
-    await db.runAsync(
-      "UPDATE items SET checked = ?, updated_at = datetime('now') WHERE id = ?",
-      [checked ? 1 : 0, itemId]
-    );
+    await db.withTransactionAsync(async () => {
+      const item = await db.getFirstAsync<{ parent_id: string | null }>(
+        "SELECT parent_id FROM items WHERE id = ?",
+        [itemId]
+      );
+      if (!item) return;
+      await db.runAsync(
+        `${subtreeCte(1)} UPDATE items SET checked = ?, updated_at = datetime('now') WHERE id IN (SELECT id FROM subtree)`,
+        [itemId, checked ? 1 : 0]
+      );
+      await syncAncestorsChecked(db, item.parent_id);
+    });
   });
 }
 
@@ -260,19 +412,21 @@ export function resetChecklistItems(zoneId: string): Promise<void> {
   });
 }
 
-export type OutOfVanItem = Item & {
-  zone_name: string;
-  zone_color: string;
-  location_id: string;
-  location_name: string;
-  location_icon: string;
-};
+export type OutOfVanItem = Item &
+  ItemParentNames & {
+    zone_name: string;
+    zone_color: string;
+    location_id: string;
+    location_name: string;
+    location_icon: string;
+  };
 
 const OUT_OF_VAN_ITEM_QUERY = `
-  SELECT i.*, z.name as zone_name, z.color as zone_color, l.id as location_id, l.name as location_name, l.icon as location_icon
+  SELECT i.*, z.name as zone_name, z.color as zone_color, l.id as location_id, l.name as location_name, l.icon as location_icon, ${PARENT_NAMES_SELECT}
   FROM items i
   JOIN zones z ON i.zone_id = z.id
   JOIN locations l ON z.location_id = l.id
+  ${PARENT_NAMES_JOIN}
 `;
 
 export function getOutOfVanItems(locationId: string): Promise<OutOfVanItem[]> {
@@ -789,6 +943,8 @@ export function importAllData(
         );
       }
 
+      // parent_id is set in a second pass below: a child can come before
+      // its parent in the file, and the foreign key would refuse it.
       for (const item of rawItems) {
         await db.runAsync(
           "INSERT INTO items (id, name, zone_id, notes, out_of_van, season, checked, expiration_date, reminder_days, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -806,6 +962,17 @@ export function importAllData(
             toSqliteTimestamp(item.updated_at),
           ]
         );
+      }
+
+      // Backups made before nested items have no parent_id at all. A parent
+      // missing from the file, or sitting in another zone, leaves the item
+      // directly in its zone rather than failing the whole import.
+      const zoneOfItem = new Map(rawItems.map((i) => [i.id as string, i.zone_id as string]));
+      for (const item of rawItems) {
+        const parentId = item.parent_id;
+        if (typeof parentId !== "string" || parentId === item.id) continue;
+        if (zoneOfItem.get(parentId) !== item.zone_id) continue;
+        await db.runAsync("UPDATE items SET parent_id = ? WHERE id = ?", [parentId, item.id as string]);
       }
 
       for (const wanted of rawWantedItems) {

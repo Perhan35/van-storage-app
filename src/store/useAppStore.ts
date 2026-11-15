@@ -13,6 +13,7 @@ import {
 } from "../db/database";
 import { getPreference, setPreference } from "../db/preferences";
 import * as repo from "../db/repository";
+import type { DeleteItemMode } from "../db/repository";
 import { cancelAllReminders, requestNotificationPermissions, syncReminders } from "../notifications/reminders";
 import { getTemplate, Outline } from "../db/templates";
 import i18n, { applyLanguage, isLanguagePreference, LanguagePreference } from "../i18n";
@@ -239,9 +240,13 @@ type AppState = {
     notes?: string,
     season?: Season,
     expirationDate?: string | null,
-    reminderDays?: number
+    reminderDays?: number,
+    // Stores the new item inside this one (see utils/itemTree).
+    parentId?: string | null
   ) => Promise<void>;
-  deleteItem: (itemId: string) => Promise<void>;
+  // mode "keep" deletes only this item and moves what was inside it up one
+  // level; "all" deletes its contents too (see repo.deleteItem).
+  deleteItem: (itemId: string, mode?: DeleteItemMode) => Promise<void>;
   updateItem: (
     itemId: string,
     name: string,
@@ -251,6 +256,8 @@ type AppState = {
     reminderDays: number
   ) => Promise<void>;
   moveItem: (itemId: string, newZoneId: string) => Promise<void>;
+  // Stores an item inside another one of its zone, or (null) straight in it.
+  setItemParent: (itemId: string, parentId: string | null) => Promise<void>;
   setItemOutOfVan: (itemId: string, outOfVan: boolean) => Promise<void>;
   // Same as setItemOutOfVan for several items at once ("Tout charger").
   setItemsOutOfVan: (itemIds: string[], outOfVan: boolean) => Promise<void>;
@@ -850,15 +857,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ zones, zonesByLocation: { ...s.zonesByLocation, [locationId]: zones } }));
   },
 
-  addItem: async (name, zoneId, notes = "", season = "none", expirationDate = null, reminderDays = 7) => {
+  addItem: async (
+    name,
+    zoneId,
+    notes = "",
+    season = "none",
+    expirationDate = null,
+    reminderDays = 7,
+    parentId = null
+  ) => {
     const id = generateId();
-    await repo.insertItem(id, name, zoneId, notes, season, expirationDate, reminderDays);
+    await repo.insertItem(id, name, zoneId, notes, season, expirationDate, reminderDays, parentId);
     await get().loadZones();
     scheduleReminderSync(get);
   },
 
-  deleteItem: async (itemId) => {
-    await repo.deleteItem(itemId);
+  deleteItem: async (itemId, mode = "all") => {
+    await repo.deleteItem(itemId, mode);
     await get().loadZones();
     scheduleReminderSync(get);
   },
@@ -872,6 +887,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   moveItem: async (itemId, newZoneId) => {
     await repo.moveItem(itemId, newZoneId);
     await get().loadZones();
+  },
+
+  // Stays within one zone, so no zone count changes: nothing to refresh.
+  setItemParent: async (itemId, parentId) => {
+    await repo.setItemParent(itemId, parentId);
   },
 
   setItemOutOfVan: async (itemId, outOfVan) => {

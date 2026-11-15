@@ -180,6 +180,8 @@
   "out.filter_winter": "Winter",
   "out.filter_none": "Keine",
 
+  "out.content_count_one": "+ {{count}} Gegenstand darin",
+  "out.content_count_other": "+ {{count}} Gegenstände darin",
   "search.placeholder": "Gegenstand suchen ...",
   "search.out_of_van": "Entnommen",
   "search.no_results": "Kein Gegenstand für \"{{query}}\" gefunden",
@@ -199,6 +201,20 @@
   "zone.take_out": "Entnehmen",
   "zone.delete": "Löschen",
   "zone.delete_alert": "\"{{name}}\" löschen?",
+  "zone.add_inside": "Darin hinzufügen",
+  "zone.store_in": "Verstauen in…",
+  "zone.store_in_title": "„{{name}}“ verstauen in",
+  "zone.remove_from": "Aus „{{name}}“ nehmen",
+  "zone.parent_field": "In",
+  "zone.parent_none": "Direkt in der Zone",
+  "zone.group_expand": "{{name}} öffnen",
+  "zone.group_collapse": "{{name}} schließen",
+  "zone.group_count_one": "{{count}} Gegenstand darin",
+  "zone.group_count_other": "{{count}} Gegenstände darin",
+  "zone.delete_group_text_one": "Darin ist {{count}} Gegenstand. Was soll damit passieren?",
+  "zone.delete_group_text_other": "Darin sind {{count}} Gegenstände. Was soll damit passieren?",
+  "zone.delete_keep_contents": "Gegenstände behalten",
+  "zone.delete_with_contents": "Alles löschen",
   "zone.empty": "Kein Gegenstand in dieser Zone",
   "zone.edit_item": "Gegenstand bearbeiten",
   "zone.name": "Name",
@@ -287,6 +303,8 @@
   "kit.fulfill_at_home_desc": "Er kommt unter „Zu Hause“, bereit zum Einladen.",
   "kit.fulfill_confirm": "Einräumen",
   "kit.save_error": "Das hat nicht geklappt. Bitte versuche es erneut.",
+  "kit.switch_summer": "In den Sommermodus wechseln",
+  "kit.switch_winter": "In den Wintermodus wechseln",
 
   "settings.title_reminders": "Ablauf-Erinnerungen",
   "settings.desc_reminders": "Lass dich benachrichtigen, bevor das Ablaufdatum eines Gegenstands erreicht ist.",
@@ -338,5 +356,5 @@
   "tutorial.gesture_swipe_right_title": "Nach rechts wischen",
   "tutorial.gesture_swipe_right_desc": "Den Gegenstand abhaken, in Zonen, die als Checkliste eingerichtet sind.",
   "tutorial.gesture_long_press_title": "Langes Drücken",
-  "tutorial.gesture_long_press_desc": "Das Menü zum Bearbeiten des Gegenstands öffnen (die ⋮-Taste tut dasselbe)."
+  "tutorial.gesture_long_press_desc": "Das Menü öffnen: Gegenstand bearbeiten, verschieben, entnehmen oder löschen. Die ⋮-Taste tut dasselbe."
 }

@@ -277,6 +277,9 @@ export type Item = {
   checked: number;
   expiration_date: string | null;
   reminder_days: number;
+  // The item this one is stored inside, or null when it sits directly in
+  // its zone (see utils/itemTree).
+  parent_id: string | null;
 };
 
 export type ZoneWithCount = Zone & { item_count: number };

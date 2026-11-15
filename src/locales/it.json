@@ -180,6 +180,8 @@
   "out.filter_winter": "Inverno",
   "out.filter_none": "Nessuna",
 
+  "out.content_count_one": "+ {{count}} oggetto dentro",
+  "out.content_count_other": "+ {{count}} oggetti dentro",
   "search.placeholder": "Cerca un oggetto...",
   "search.out_of_van": "Fuori",
   "search.no_results": "Nessun oggetto trovato per \"{{query}}\"",
@@ -199,6 +201,20 @@
   "zone.take_out": "Tira fuori",
   "zone.delete": "Elimina",
   "zone.delete_alert": "Eliminare \"{{name}}\"?",
+  "zone.add_inside": "Aggiungi dentro",
+  "zone.store_in": "Metti in…",
+  "zone.store_in_title": "Metti «{{name}}» in",
+  "zone.remove_from": "Togli da «{{name}}»",
+  "zone.parent_field": "Dentro",
+  "zone.parent_none": "Direttamente nella zona",
+  "zone.group_expand": "Apri {{name}}",
+  "zone.group_collapse": "Chiudi {{name}}",
+  "zone.group_count_one": "{{count}} oggetto dentro",
+  "zone.group_count_other": "{{count}} oggetti dentro",
+  "zone.delete_group_text_one": "C'è {{count}} oggetto dentro. Cosa ne facciamo?",
+  "zone.delete_group_text_other": "Ci sono {{count}} oggetti dentro. Cosa ne facciamo?",
+  "zone.delete_keep_contents": "Tieni gli oggetti",
+  "zone.delete_with_contents": "Elimina tutto",
   "zone.empty": "Nessun oggetto in questa zona",
   "zone.edit_item": "Modifica l'oggetto",
   "zone.name": "Nome",
@@ -287,6 +303,8 @@
   "kit.fulfill_at_home_desc": "Andrà in «A casa», pronto da caricare.",
   "kit.fulfill_confirm": "Metti a posto",
   "kit.save_error": "Non ha funzionato. Riprova.",
+  "kit.switch_summer": "Passa alla modalità estate",
+  "kit.switch_winter": "Passa alla modalità inverno",
 
   "settings.title_reminders": "Promemoria di scadenza",
   "settings.desc_reminders": "Ricevi un avviso prima che un oggetto raggiunga la sua data di scadenza.",
@@ -338,5 +356,5 @@
   "tutorial.gesture_swipe_right_title": "Scorri a destra",
   "tutorial.gesture_swipe_right_desc": "Spunta l'oggetto, nelle zone configurate come lista di controllo.",
   "tutorial.gesture_long_press_title": "Pressione prolungata",
-  "tutorial.gesture_long_press_desc": "Apri il menu per modificare l'oggetto (il pulsante ⋮ fa lo stesso)."
+  "tutorial.gesture_long_press_desc": "Apri il menu: modifica, sposta, tira fuori o elimina l'oggetto. Il pulsante ⋮ fa lo stesso."
 }

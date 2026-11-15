@@ -13,6 +13,7 @@ import { useAppTheme } from "../src/theme/useAppTheme";
 import { OutOfVanRow } from "../src/components/OutOfVanRow";
 import { EditItemDialog } from "../src/components/dialogs/EditItemDialog";
 import { ContextMenu } from "../src/components/ContextMenu";
+import { childrenByParent, descendantsOf } from "../src/utils/itemTree";
 
 type OutItem = OutOfVanItem;
 type SeasonFilter = Season | "all";
@@ -168,7 +169,20 @@ export default function OutOfVanScreen() {
     }
   }, [availableZones, selectedZoneId]);
 
+  // A Trousse taken out with everything inside it shows as one row ("+ 3
+  // objets dedans"); its contents only get rows of their own when they're out
+  // without it (taken out alone, or the Trousse was put back without them).
+  const { groupRoots, contentCounts } = useMemo(() => {
+    const outIds = new Set(items.map((item) => item.id));
+    const children = childrenByParent(items);
+    const counts = new Map<string, number>();
+    const roots = items.filter((item) => !item.parent_id || !outIds.has(item.parent_id));
+    for (const root of roots) counts.set(root.id, descendantsOf(root.id, children).length);
+    return { groupRoots: new Set(roots.map((r) => r.id)), contentCounts: counts };
+  }, [items]);
+
   const visibleItems = locationFilteredItems
+    .filter((item) => groupRoots.has(item.id))
     .filter((item) => !selectedZoneId || item.zone_id === selectedZoneId)
     .filter((item) => seasonFilter === "all" || item.season === seasonFilter);
 
@@ -276,6 +290,7 @@ export default function OutOfVanScreen() {
           <OutOfVanRow
             item={item}
             isGlobalView={isGlobalView}
+            contentCount={contentCounts.get(item.id) ?? 0}
             onPutBack={handlePutBack}
             onLocate={handleLocate}
             onLongPressItem={handleLongPressItem}

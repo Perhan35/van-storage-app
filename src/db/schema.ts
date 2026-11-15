@@ -70,6 +70,15 @@ export const ITEM_COLUMNS_TO_ADD: { name: string; ddl: string }[] = [
     name: "reminder_days",
     ddl: "ALTER TABLE items ADD COLUMN reminder_days INTEGER NOT NULL DEFAULT 7",
   },
+  {
+    // The item this one is stored inside (Trousse de toilette > Brosse à dent),
+    // or null for an item sitting directly in its zone. At most MAX_ITEM_DEPTH
+    // levels deep (see utils/itemTree). SET NULL is only a safety net: the app
+    // always decides explicitly what happens to an item's contents when it is
+    // deleted (see deleteItem in repository.ts).
+    name: "parent_id",
+    ddl: "ALTER TABLE items ADD COLUMN parent_id TEXT REFERENCES items(id) ON DELETE SET NULL",
+  },
 ];
 
 export const LOCATION_COLUMNS_TO_ADD: { name: string; ddl: string }[] = [
@@ -116,4 +125,5 @@ export const POST_COLUMN_INDEXES: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_zones_location ON zones(location_id);`,
   `CREATE INDEX IF NOT EXISTS idx_items_expiration ON items(expiration_date);`,
   `CREATE INDEX IF NOT EXISTS idx_items_season ON items(season);`,
+  `CREATE INDEX IF NOT EXISTS idx_items_parent ON items(parent_id);`,
 ];

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import type { ScrollViewInstance } from "react-native";
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from "expo-router";
-import { Button, Divider, Icon, List, SegmentedButtons, Text } from "react-native-paper";
+import { AnimatedFAB, Button, Divider, Icon, List, SegmentedButtons, Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../src/store/useAppStore";
@@ -13,12 +13,17 @@ import { HighlightFlashRow } from "../src/components/HighlightFlashRow";
 import { SeasonChangeoverDialog } from "../src/components/dialogs/SeasonChangeoverDialog";
 import { WantedItemDialog } from "../src/components/dialogs/WantedItemDialog";
 import { FulfillWantedDialog } from "../src/components/dialogs/FulfillWantedDialog";
+import { seasonForDate } from "../src/utils/season";
 
 // The three groups a kit splits into, which the summary tiles filter on.
 type Group = "van" | "home" | "missing";
 
 // How many names the "still in the van" banner spells out before "…".
 const BANNER_MAX_NAMES = 3;
+
+// How long the "switch season" button shows its text before folding down
+// to its icon alone.
+const SWITCH_LABEL_MS = 3000;
 
 function isKitSeason(v: unknown): v is KitSeason {
   return v === "winter" || v === "summer";
@@ -43,6 +48,7 @@ export default function KitScreen() {
   const updateWantedItem = useAppStore((s) => s.updateWantedItem);
   const deleteWantedItem = useAppStore((s) => s.deleteWantedItem);
   const fulfillWantedItem = useAppStore((s) => s.fulfillWantedItem);
+  const setSeasonMode = useAppStore((s) => s.setSeasonMode);
 
   // Which kit is on screen. Only for looking: the app's own season (which
   // drives the changeover) is still set in Settings.
@@ -59,6 +65,10 @@ export default function KitScreen() {
   const [fulfilling, setFulfilling] = useState<WantedItem | null>(null);
   const [changeoverVisible, setChangeoverVisible] = useState(false);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  // The season the calendar says it is. Refreshed on every focus, so a kit
+  // left open in the background across a month change catches up.
+  const [calendarSeason, setCalendarSeason] = useState<KitSeason>(() => seasonForDate(new Date()));
+  const [switchExtended, setSwitchExtended] = useState(true);
   const scrollRef = useRef<ScrollViewInstance>(null);
   const highlightHandledRef = useRef<string | null>(null);
   const pendingScrollIdRef = useRef<string | null>(null);
@@ -87,8 +97,22 @@ export default function KitScreen() {
   useFocusEffect(
     useCallback(() => {
       load();
+      setCalendarSeason(seasonForDate(new Date()));
     }, [load])
   );
+
+  // The calendar has moved on but the app's season hasn't: offer the switch.
+  // No way to dismiss it; it goes away once the mode matches the calendar.
+  const showSeasonSwitch = calendarSeason !== seasonMode;
+
+  // Spell the button out first, then fold it to its icon so it stops
+  // covering the list. Starts over each time the suggestion appears.
+  useEffect(() => {
+    if (!showSeasonSwitch) return;
+    setSwitchExtended(true);
+    const timer = setTimeout(() => setSwitchExtended(false), SWITCH_LABEL_MS);
+    return () => clearTimeout(timer);
+  }, [showSeasonSwitch]);
 
   // Arriving from search on a wanted item: show its season, clear any
   // filter that would hide it, then flash it once its row has laid out.
@@ -189,6 +213,17 @@ export default function KitScreen() {
 
   const toggleFilter = (group: Group) => setFilter((f) => (f === group ? null : group));
 
+  // Same as picking the season in Settings: change the app's mode, then
+  // open the changeover list of what to take out and put back. The kit on
+  // screen follows, since that is the season now being packed for.
+  const handleSeasonSwitch = () => {
+    const next = calendarSeason;
+    setSeasonMode(next).catch((e) => console.warn("Saving the season mode failed", e));
+    setSeason(next);
+    setFilter(null);
+    setChangeoverVisible(true);
+  };
+
   const handleSeasonChange = (v: string) => {
     if (!isKitSeason(v)) return;
     setSeason(v);
@@ -236,7 +271,8 @@ export default function KitScreen() {
     <View style={[styles.container, { backgroundColor: palette.background }]}>
       <ScrollView
         ref={scrollRef}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        // Room under the last row so the switch button never hides it.
+        contentContainerStyle={{ paddingBottom: insets.bottom + 24 + (showSeasonSwitch ? 72 : 0) }}
       >
         <View style={styles.top}>
           <SegmentedButtons
@@ -510,6 +546,20 @@ export default function KitScreen() {
         ) : null}
       </ScrollView>
 
+      {showSeasonSwitch && (
+        <AnimatedFAB
+          icon={calendarSeason === "summer" ? "weather-sunny" : "snowflake"}
+          label={t(`kit.switch_${calendarSeason}`)}
+          accessibilityLabel={t(`kit.switch_${calendarSeason}`)}
+          extended={switchExtended}
+          animateFrom="right"
+          iconMode="static"
+          color={palette.onKitAction}
+          onPress={handleSeasonSwitch}
+          style={[styles.seasonSwitch, { backgroundColor: palette.kitAction, bottom: insets.bottom + 16 }]}
+        />
+      )}
+
       <WantedItemDialog
         visible={wantedDialogItem !== undefined}
         item={wantedDialogItem ?? null}
@@ -586,4 +636,5 @@ const styles = StyleSheet.create({
   emptyIcon: { width: 96, height: 96, borderRadius: 48, alignItems: "center", justifyContent: "center" },
   emptyText: { textAlign: "center" },
   emptyButton: { alignSelf: "stretch" },
+  seasonSwitch: { position: "absolute", right: 16 },
 });
