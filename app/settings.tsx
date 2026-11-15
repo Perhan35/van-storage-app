@@ -194,11 +194,12 @@ export default function SettingsScreen() {
   };
 
   const handleExport = async () => {
-    setExporting(true);
-    const result = await runBackupExport();
+    const result = await runBackupExport(() => setExporting(true));
     setExporting(false);
     if (!result.ok) {
-      Alert.alert(t("settings.error"), t("settings.export_error") + " " + result.error);
+      if (!result.cancelled) {
+        Alert.alert(t("settings.error"), t("settings.export_error") + " " + result.error);
+      }
       return;
     }
     // Stops the reminder from asking again until the data moves on.

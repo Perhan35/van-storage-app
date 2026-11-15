@@ -135,10 +135,6 @@ type AppState = {
   // undo/redo steps happened in between.
   editSessionSnapshot: ZoneGeometrySnapshot | null;
   themeMode: ThemeMode;
-  // True once the stored theme has been read at startup (or startup failed),
-  // so the native splash can stay up until the first frame is in the right
-  // light/dark colors.
-  themeLoaded: boolean;
   seasonMode: SeasonMode;
   showMenuHeader: boolean;
   // Whether a zone's color washes the whole zone-detail screen (true, the
@@ -327,7 +323,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   editSessionSnapshot: null,
   discardPrompt: null,
   themeMode: "auto",
-  themeLoaded: false,
   seasonMode: "summer",
   showMenuHeader: true,
   zoneColorFullScreen: true,
@@ -364,7 +359,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         // the device language, matching what getDb() just seeded.
         await get().reloadLanguagePreference();
         await get().reloadThemeMode();
-        set({ themeLoaded: true });
         await get().reloadShowMenuHeader();
         await get().reloadZoneColorFullScreen();
         await get().reloadSeasonMode();
@@ -412,10 +406,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         const tutorialShown = await getPreference("tutorialShown");
         set({ initialized: true, tutorialVisible: tutorialShown !== "yes" });
       } catch (err) {
-        set({
-          initError: err instanceof Error ? err.message : String(err),
-          themeLoaded: true,
-        });
+        set({ initError: err instanceof Error ? err.message : String(err) });
       }
     })();
     initRun = run;

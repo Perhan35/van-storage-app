@@ -21,11 +21,12 @@ export function BackupReminderDialog() {
   const [exporting, setExporting] = useState(false);
 
   const handleBackupNow = async () => {
-    setExporting(true);
-    const result = await runBackupExport();
+    const result = await runBackupExport(() => setExporting(true));
     setExporting(false);
     if (!result.ok) {
-      Alert.alert(t("settings.error"), t("settings.export_error") + " " + result.error);
+      if (!result.cancelled) {
+        Alert.alert(t("settings.error"), t("settings.export_error") + " " + result.error);
+      }
       return;
     }
     await recordBackupDone();
