@@ -11,13 +11,14 @@ import { useAppTheme } from "../src/theme/useAppTheme";
 import { paperDarkTheme, paperLightTheme, darkPalette, lightPalette } from "../src/theme/palette";
 import { configureNotificationHandler } from "../src/notifications/reminders";
 import { OnboardingTutorial } from "../src/components/OnboardingTutorial";
+import { AnimatedSplash } from "../src/components/AnimatedSplash";
 import { HeaderIcon } from "../src/components/HeaderIcon";
 import { DiscardEditChangesDialog } from "../src/components/dialogs/DiscardEditChangesDialog";
 import i18n from "../src/i18n";
 
-// Keep the native splash up until the stored theme is known: otherwise a user
-// who picked "dark" in the app (phone in light mode) — or the reverse — sees a
-// frame in the wrong colors before the theme switches.
+// Keep the native splash up until AnimatedSplash has drawn its identical copy
+// on top; that overlay then animates and stays until startup has loaded, so
+// the app never shows a frame in the wrong light/dark colors.
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // expo-notifications warns on import when running in Expo Go (SDK 53+ dropped
@@ -210,7 +211,7 @@ export default function RootLayout() {
   const init = useAppStore((s) => s.init);
   const editMode = useAppStore((s) => s.editMode);
   const { palette, isDark } = useAppTheme();
-  const themeLoaded = useAppStore((s) => s.themeLoaded);
+  const startupDone = useAppStore((s) => s.initialized || s.initError !== null);
 
   useEffect(() => {
     configureNotificationHandler();
@@ -219,10 +220,6 @@ export default function RootLayout() {
     const timer = setTimeout(() => SplashScreen.hideAsync().catch(() => {}), 3000);
     return () => clearTimeout(timer);
   }, []);
-
-  useEffect(() => {
-    if (themeLoaded) SplashScreen.hideAsync().catch(() => {});
-  }, [themeLoaded]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -284,6 +281,7 @@ export default function RootLayout() {
           />
         </Stack>
         <OnboardingTutorial />
+        <AnimatedSplash ready={startupDone} />
       </PaperProvider>
     </GestureHandlerRootView>
   );
