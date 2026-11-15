@@ -31,6 +31,14 @@ export async function requestNotificationPermissions(): Promise<boolean> {
   return status === "granted";
 }
 
+// Reads the current status without ever showing the system prompt — for the
+// background resync, which must not pop a permission dialog on its own.
+async function hasNotificationPermission(): Promise<boolean> {
+  if (notificationsUnavailable) return false;
+  const { status } = await Notifications.getPermissionsAsync();
+  return status === "granted";
+}
+
 // 9:00 local time on (expiration date − reminder_days), or null if the item
 // has no expiration date.
 function reminderTriggerDate(item: Item): Date | null {
@@ -70,6 +78,11 @@ export async function scheduleItemReminder(item: Item): Promise<void> {
 // small, so a full cancel-and-reschedule pass is simpler than diffing.
 export async function syncReminders(items: Item[]): Promise<void> {
   if (notificationsUnavailable) return;
+  // The "reminders on" preference can outlive the OS permission: it travels
+  // in backups to devices that denied notifications, and the user can revoke
+  // it in system settings at any time. Scheduling then throws (iOS: "Source
+  // is not authorized"), so skip quietly — the in-app expiry badges remain.
+  if (!(await hasNotificationPermission())) return;
   await Notifications.cancelAllScheduledNotificationsAsync();
   for (const item of items) {
     if (item.expiration_date) await scheduleItemReminder(item);

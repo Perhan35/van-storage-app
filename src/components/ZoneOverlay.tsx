@@ -10,14 +10,13 @@ import Animated, {
 import { ItemCountBadge } from "./ItemCountBadge";
 import { ZoneWithCount } from "../db/database";
 import { DEFAULT_FILL_OPACITY } from "../db/repository";
-import { getReadableTextColor } from "../utils/color";
+import { DEFAULT_ZONE_COLOR, getReadableTextColor } from "../utils/color";
 import { useAppTheme } from "../theme/useAppTheme";
 import { lightPalette, darkPalette } from "../theme/palette";
 
 const AnimatedRect = Animated.createAnimatedComponent(Rect);
 
 // Fallback for zones with a missing/empty color; react-native-svg rejects "".
-const FALLBACK_ZONE_COLOR = "#78909C";
 
 const FONT_SIZES = [11, 10, 9, 8] as const;
 const CHAR_WIDTH_RATIO = 0.58;
@@ -133,7 +132,7 @@ function ZoneOverlayInner({ zone, highlighted, dimmed }: Props) {
   const cx = x + w / 2;
   const cy = y + h / 2;
 
-  const zoneColor = zone.color || FALLBACK_ZONE_COLOR;
+  const zoneColor = zone.color || DEFAULT_ZONE_COLOR;
   const restOpacity = zone.fill_opacity ?? DEFAULT_FILL_OPACITY;
   const opacity = useSharedValue(restOpacity);
   const strokeWidth = useSharedValue(1.5);

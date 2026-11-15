@@ -219,6 +219,7 @@ type AppState = {
   reloadSeasonMode: () => Promise<void>;
   setRemindersEnabled: (enabled: boolean) => Promise<boolean>;
   reloadRemindersEnabled: () => Promise<void>;
+  reconcileRemindersPermission: () => Promise<boolean>;
   setBackupRemindersEnabled: (enabled: boolean) => Promise<void>;
   reloadBackupSettings: () => Promise<void>;
   checkBackupReminder: () => Promise<void>;
@@ -704,6 +705,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   reloadRemindersEnabled: async () => {
     const stored = await getPreference("remindersEnabled");
     set({ remindersEnabled: stored === "on" });
+  },
+
+  // After an import the "reminders on" preference comes from the backup, i.e.
+  // possibly from another device. If this device hasn't granted notification
+  // permission (asks once if never asked; iOS answers "denied" without a
+  // prompt when already refused), switch reminders off and persist it so the
+  // switch tells the truth. Returns true when it had to turn them off.
+  reconcileRemindersPermission: async () => {
+    if (!get().remindersEnabled) return false;
+    if (await requestNotificationPermissions()) return false;
+    set({ remindersEnabled: false });
+    await setPreference("remindersEnabled", "off");
+    return true;
   },
 
   setBackupRemindersEnabled: async (enabled) => {

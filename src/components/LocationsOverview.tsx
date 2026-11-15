@@ -20,6 +20,7 @@ import { useAppTheme } from "../theme/useAppTheme";
 import { Rect } from "./locationTransition";
 import { Location } from "../db/database";
 import { triggerHaptic } from "../utils/haptics";
+import { DEFAULT_ZONE_COLOR } from "../utils/color";
 
 type Props = {
   // `planRect` is the on-screen box of the tile's miniature plan, in window
@@ -157,7 +158,7 @@ export function LocationsOverview({ onSelectLocation, onCreateNew }: Props) {
                   height={zone.geometry.h}
                   rx={6}
                   ry={6}
-                  fill={zone.color || "#78909C"}
+                  fill={zone.color || DEFAULT_ZONE_COLOR}
                   opacity={zone.fill_opacity ?? 0.4}
                 />
               ))}

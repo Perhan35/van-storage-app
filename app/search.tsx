@@ -1,7 +1,10 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { View, FlatList, StyleSheet } from "react-native";
+import type { ViewInstance } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useAndroidKeyboardOverlap } from "../src/hooks/useAndroidKeyboardOverlap";
 import { Searchbar, List, Divider, Text, IconButton } from "react-native-paper";
 import { useAppStore } from "../src/store/useAppStore";
 import { searchItems, searchAllItems, SearchResultItem } from "../src/db/repository";
@@ -19,6 +22,9 @@ export default function SearchScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const { palette } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const containerRef = useRef<ViewInstance>(null);
+  const androidKeyboardOverlap = useAndroidKeyboardOverlap(containerRef);
   const activeLocationId = useAppStore((s) => s.activeLocationId);
   const setHighlightedZoneId = useAppStore((s) => s.setHighlightedZoneId);
   const setActiveLocation = useAppStore((s) => s.setActiveLocation);
@@ -176,11 +182,17 @@ export default function SearchScreen() {
   };
 
   const emptyTextStyle = { color: palette.onSurfaceVariant, textAlign: "center" as const };
+  // The Searchbar autofocuses, so the keyboard is usually up while results
+  // are shown: without this padding the last rows sit under the keyboard and
+  // the system navigation bar with no way to scroll them into view. iOS
+  // insets the list by the keyboard itself (automaticallyAdjustKeyboardInsets);
+  // on Android the part the keyboard covers is added by hand (see the hook).
+  const listContentStyle = { paddingBottom: insets.bottom + 16 + androidKeyboardOverlap };
   const showRecentSearches =
     isSearchFocused && query.trim().length === 0 && recentSearches.length > 0;
 
   return (
-    <View style={[styles.container, { backgroundColor: palette.surface }]}>
+    <View ref={containerRef} style={[styles.container, { backgroundColor: palette.surface }]}>
       <Searchbar
         placeholder={t("search.placeholder")}
         value={query}
@@ -203,6 +215,9 @@ export default function SearchScreen() {
           data={recentSearches}
           keyExtractor={(item) => item}
           keyboardShouldPersistTaps="always"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+          contentContainerStyle={listContentStyle}
           ListHeaderComponent={
             <Text
               variant="labelLarge"
@@ -233,6 +248,10 @@ export default function SearchScreen() {
         <FlatList
           data={results}
           keyExtractor={(item) => item.id}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+          contentContainerStyle={listContentStyle}
           renderItem={({ item }) => (
             <SearchResultRow
               item={item}

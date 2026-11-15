@@ -170,7 +170,8 @@ function HeaderRight() {
           onPress={outlineEditMode ? toggleOutlineEditMode : toggleEditMode}
         />
       )}
-      {!editMode && (
+      {/* Settings are reachable from the all-locations overview only. */}
+      {overviewMode && !editMode && (
         <HeaderIcon icon="cog" tone="utility" size={30} onPress={() => router.push("/settings")} />
       )}
 

@@ -164,79 +164,20 @@ question whose answer would stop being verifiable by eye.
 
 ## Step 3 — Cross-cutting tags
 
-### 3.1 Migration
+**Full design: [TAGS.md](TAGS.md)** (data model, backup, UI, shopping list, open
+questions). Summary:
 
-Two tables appended to `MIGRATIONS` ([schema.ts:1](../src/db/schema.ts#L1)) — the array
-is replayed on every launch, so `IF NOT EXISTS` makes appending safe:
-
-```sql
-CREATE TABLE IF NOT EXISTS tags (
-  id TEXT PRIMARY KEY, name TEXT NOT NULL, color TEXT NOT NULL,
-  created_at TEXT DEFAULT (datetime('now'))
-);
-CREATE TABLE IF NOT EXISTS item_tags (
-  item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-  tag_id  TEXT NOT NULL REFERENCES tags(id)  ON DELETE CASCADE,
-  PRIMARY KEY (item_id, tag_id)
-);
-CREATE INDEX IF NOT EXISTS idx_item_tags_tag ON item_tags(tag_id);
-```
-
-Foreign keys are enforced (`PRAGMA foreign_keys = ON`,
-[database.ts:69](../src/db/database.ts#L69)), so deleting an item or a tag cleans the
-join table automatically.
-
-### 3.2 Loading — avoid the N+1
-
-**Never** query tags per row. One query per screen:
-
-```ts
-listTagsForZone(zoneId): Promise<{ item_id: string; id: string; name: string; color: string }[]>
-```
-
-grouped in JS into a `Map<itemId, Tag[]>`. The `Item` type stays untouched;
-`zone/[id].tsx` holds a separate `tagsByItem` state and passes `tags: Tag[]` to
-`ItemRow`.
-
-> ⚠️ `ItemRow` is `React.memo` ([ItemRow.tsx:254](../src/components/ItemRow.tsx#L254))
-> specifically so one row's re-render doesn't cascade into every other row's swipeable
-> and animated wrappers. Arrays passed as props must keep referential identity between
-> renders, or memoization breaks for every row at once. Memoize the map and reuse a
-> module-level `EMPTY_TAGS` constant for untagged items.
-
-### 3.3 Backup — the riskiest part
-
-Four places must change **together**, or an export/import silently loses tags:
-
-1. `exportAllData` ([repository.ts:568](../src/db/repository.ts#L568)) — add `tags` and
-   `item_tags` to the payload and to the `ExportedData` type.
-2. `importAllData` — `DELETE FROM item_tags` / `DELETE FROM tags` in the purge
-   transaction, then re-insert. Older backups lack these keys → treat as `[]`, never as
-   an error.
-3. Import validation in [settings.tsx](../app/settings.tsx) must accept their absence.
-4. `getDataFingerprint` ([repository.ts:526](../src/db/repository.ts#L526)) — include
-   `COUNT(*)` over `tags` and `item_tags`. Without this, tagging items never triggers
-   the backup reminder even though data genuinely changed.
-
-### 3.4 UI
-
-- `src/components/TagPicker.tsx`: selectable chips + inline creation (name + colour from
-  `PRESET_COLORS` in [src/utils/colors.ts](../src/utils/colors.ts)), embedded in both
-  item dialogs.
-- `ItemRow`: compact `Chip` row under the title, via the `description` slot (already a
-  render function when an expiration is present — merge the two cases).
-- **Filter by tag**: an extra row in step 1's `ZoneListControls`.
-- **Tag management**: a Settings section (rename / recolour / delete); creation stays in
-  the picker.
-- **Search**: extend `SEARCH_ITEM_QUERY`
-  ([repository.ts:159](../src/db/repository.ts#L159)) with
-  `OR EXISTS (SELECT 1 FROM item_tags it JOIN tags tg ON tg.id = it.tag_id
-  WHERE it.item_id = i.id AND tg.name LIKE ?1 …)` so an item can be found by its tag.
-
-### 3.5 i18n
-
-~12 keys × 5 languages (`tag.title`, `tag.new`, `tag.name`, `tag.delete_confirm`,
-`zone.filter_tag`, `settings.title_tags`, …).
+- Two tables, `tags` (name, normalised `name_key`, colour, icon, order) and `item_tags`,
+  appended to `MIGRATIONS`. The `Item` type stays unchanged; tags travel in a
+  per-screen `Map<itemId, Tag[]>` loaded with one query (no N+1, keep `ItemRow` memo
+  working).
+- Backup is the riskiest part: export, import, import validation, fingerprint and
+  import snapshots must all change together.
+- UI: `TagPicker` in both item dialogs, tags shown on item rows, tag filter chips in
+  search, tag management in Settings, then a shopping list built from tags (to be
+  merged with step 2's restock screen).
+- Search is now matched in JS (`src/utils/search.ts`), so tag names are matched there,
+  not with SQL `LIKE`.
 
 ---
 
@@ -592,7 +533,7 @@ only automated guard.
    afterwards → no crash, defaults applied. Then export/import again → quantities and
    tags preserved.
 4. **Backup reminder**: add a tag, relaunch → the reminder must fire (validates the
-   `getDataFingerprint` change in 3.3).
+   `getDataFingerprint` change, [TAGS.md §7](TAGS.md#7-backup--the-riskiest-part)).
 5. **Web**: `npm run web`. The migration path has web-specific workarounds (the SQLite
    worker crashes on duplicate `ALTER TABLE`) — new columns and tables must survive it.
 6. **Checklist regression**: in a checklist zone, checking an item must still linger 1 s
