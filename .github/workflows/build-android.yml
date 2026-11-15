@@ -94,11 +94,17 @@ jobs:
         run: |
           git fetch --tags --force
           CURRENT_TAG="${GITHUB_REF_NAME}"
-          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${CURRENT_TAG}$" | head -1)
+          # Previous tag = most recent tag created before this one (by date, not
+          # by version number: old v2.x tags from the van app must not win over v0.9.x).
+          CURRENT_DATE=$(git for-each-ref --format='%(creatordate:unix)' "refs/tags/${CURRENT_TAG}")
+          PREV_TAG=$(git for-each-ref --sort=-creatordate --format='%(creatordate:unix) %(refname:short)' refs/tags \
+            | awk -v cur="$CURRENT_TAG" -v d="$CURRENT_DATE" '$2 != cur && $1 <= d { print $2; exit }')
           {
             echo "CHANGELOG<<EOF"
             if [ -n "$PREV_TAG" ]; then
-              git log --pretty=format:'- %s' "${PREV_TAG}..${CURRENT_TAG}"
+              # --cherry-pick drops commits already in PREV_TAG under another hash
+              # (e.g. after a "Rebase and merge" PR).
+              git log --no-merges --cherry-pick --right-only --pretty=format:'- %s' "${PREV_TAG}...${CURRENT_TAG}"
             else
               git log --pretty=format:'- %s'
             fi
