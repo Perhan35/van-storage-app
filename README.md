@@ -13,6 +13,7 @@ The app was built specifically for a **Citroën Jumpy / T&T Vans Aventourer** co
 - **Items** — add items to a zone, edit them, move them between zones, attach free-text notes
 - **Out-of-van tracking** — mark items as "currently outside the van" so you can see at a glance what's been unpacked, with a dedicated screen filterable by zone and season
 - **Seasonal items** — tag items as summer/winter/none and switch the app's season mode from Settings; a changeover dialog walks you through what to load in and take out of the van
+- **Season kit** — a header button (snowflake / sun) opens your winter or summer kit: what's in the van, what's still at home (load one or all), and a list of things you still need to get (opened from a location it covers that location only, from the overview every location); "Got it" turns a missing thing into a real item in the zone you pick. Missing things also show, greyed out, in search
 - **Checklists** — mark a zone as a checklist (e.g. a packing list) so its items can be individually checked off, with a one-tap reset for the whole zone
 - **Expiration tracking** — set an expiration date and reminder lead time (in days) per item; a startup dialog surfaces anything expired or expiring soon, and Settings has a full expiration overview
 - **Push notification reminders** — local notifications are scheduled automatically ahead of each item's expiration date (device build only, not on web or in Expo Go)
@@ -48,6 +49,7 @@ my-inventory-app/
 │   ├── zone/[id].tsx                     # Zone detail (item list, checklist, expiration, swipe actions)
 │   ├── search.tsx                        # Item search with swipe actions
 │   ├── out-of-van.tsx                    # Items currently outside the van (zone + season filters)
+│   ├── kit.tsx                           # Season kit: in the van / at home / still needed / all year
 │   ├── settings.tsx                      # Theme, season, reminders, backup/restore, expiration overview
 │   └── game.tsx                          # Hidden trivia game (easter egg, see below)
 ├── src/
@@ -69,6 +71,8 @@ my-inventory-app/
 │   │   │   ├── EditItemDialog.tsx        # Edit item
 │   │   │   ├── CreateZoneDialog.tsx / EditZoneDialog.tsx  # Zone create/edit (color, opacity, checklist)
 │   │   │   ├── SeasonChangeoverDialog.tsx     # Guided summer/winter swap
+│   │   │   ├── WantedItemDialog.tsx      # Note / edit a thing still needed for a season kit
+│   │   │   ├── FulfillWantedDialog.tsx   # "Got it": pick the zone for a newly owned thing
 │   │   │   └── ExpirationOverviewDialog.tsx   # Expired / expiring-soon / up-to-date item list
 │   │   └── game/                         # Trivia game UI (HUD, question banner, answers, feedback)
 │   ├── db/
@@ -101,10 +105,11 @@ my-inventory-app/
 
 ## Data model
 
-Three tables, defined in [src/db/schema.ts](src/db/schema.ts):
+Four tables, defined in [src/db/schema.ts](src/db/schema.ts):
 
 - **zones** — `id`, `name`, `color`, `geometry` (JSON: `{type, x, y, w, h}` in SVG coordinates), `sort_order`, `fill_opacity`, `checklist` (0/1), timestamps
 - **items** — `id`, `name`, `zone_id` (FK, cascade delete), `notes`, `out_of_van` (0/1), `season` (`summer` / `winter` / `none`), `checked` (0/1), `expiration_date`, `reminder_days`, timestamps
+- **wanted_items** — `id`, `name`, `season` (`summer` / `winter`), `notes`, timestamps — things still needed for a season kit; no zone until "Got it" turns one into an item
 - **preferences** — simple `key`/`value` store for app-level settings (theme mode, season mode, reminders enabled, etc.)
 
 All data is stored in a single SQLite file managed by `expo-sqlite`. There is no remote backend.

@@ -3,6 +3,7 @@ import { View, StyleSheet, Text, Pressable, useColorScheme, LogBox } from "react
 import { Stack, useRouter } from "expo-router";
 import { PaperProvider } from "react-native-paper";
 import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "../src/store/useAppStore";
@@ -13,6 +14,11 @@ import { OnboardingTutorial } from "../src/components/OnboardingTutorial";
 import { HeaderIcon } from "../src/components/HeaderIcon";
 import { DiscardEditChangesDialog } from "../src/components/dialogs/DiscardEditChangesDialog";
 import i18n from "../src/i18n";
+
+// Keep the native splash up until the stored theme is known: otherwise a user
+// who picked "dark" in the app (phone in light mode) — or the reverse — sees a
+// frame in the wrong colors before the theme switches.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // expo-notifications warns on import when running in Expo Go (SDK 53+ dropped
 // support there); real dev client / production builds never hit this. Silence
@@ -28,6 +34,9 @@ LogBox.ignoreLogs([
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
   const scheme = useColorScheme();
   const palette = scheme === "dark" ? darkPalette : lightPalette;
+  useEffect(() => {
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
   return (
     <View style={[styles.errorContainer, { backgroundColor: palette.background }]}>
       <Text style={[styles.errorMessage, { color: palette.onSurface }]}>
@@ -73,6 +82,7 @@ function HeaderRight() {
   // Editing zones/outline is meaningless in the all-locations overview, so the
   // edit toggle is hidden there (#4).
   const overviewMode = useAppStore((s) => s.overviewMode);
+  const seasonMode = useAppStore((s) => s.seasonMode);
   const undo = useAppStore((s) => s.undo);
   const redo = useAppStore((s) => s.redo);
   const canUndo = useAppStore((s) => s.undoStack.length > 0);
@@ -93,6 +103,15 @@ function HeaderRight() {
 
   return (
     <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "transparent" }}>
+      {!editMode && (
+        <HeaderIcon
+          icon={seasonMode === "winter" ? "snowflake" : "weather-sunny"}
+          tone="season"
+          size={30}
+          accessibilityLabel={seasonMode === "winter" ? t("kit.open_winter") : t("kit.open_summer")}
+          onPress={() => router.push("/kit")}
+        />
+      )}
       {!editMode && (
         <HeaderIcon
           icon="export"
@@ -191,11 +210,19 @@ export default function RootLayout() {
   const init = useAppStore((s) => s.init);
   const editMode = useAppStore((s) => s.editMode);
   const { palette, isDark } = useAppTheme();
+  const themeLoaded = useAppStore((s) => s.themeLoaded);
 
   useEffect(() => {
     configureNotificationHandler();
     init();
+    // Safety net: never leave the splash up if startup hangs on the database.
+    const timer = setTimeout(() => SplashScreen.hideAsync().catch(() => {}), 3000);
+    return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (themeLoaded) SplashScreen.hideAsync().catch(() => {});
+  }, [themeLoaded]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -242,6 +269,10 @@ export default function RootLayout() {
           <Stack.Screen
             name="settings"
             options={{ title: t("nav.settings") }}
+          />
+          <Stack.Screen
+            name="kit"
+            options={{ title: t("kit.title") }}
           />
           <Stack.Screen
             name="game"

@@ -7,12 +7,17 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAndroidKeyboardOverlap } from "../src/hooks/useAndroidKeyboardOverlap";
 import { Searchbar, List, Divider, Text, IconButton } from "react-native-paper";
 import { useAppStore } from "../src/store/useAppStore";
-import { searchItems, searchAllItems, SearchResultItem } from "../src/db/repository";
+import {
+  searchItems,
+  searchAllItems,
+  searchWantedItems,
+  SearchResultItem,
+} from "../src/db/repository";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../src/theme/useAppTheme";
 import { SearchResultRow } from "../src/components/SearchResultRow";
 import { EditItemDialog } from "../src/components/dialogs/EditItemDialog";
-import { Season } from "../src/db/database";
+import { Season, WantedItem } from "../src/db/database";
 
 type SearchResult = SearchResultItem;
 
@@ -40,6 +45,9 @@ export default function SearchScreen() {
   const [isGlobalView] = useState(() => useAppStore.getState().overviewMode);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
+  // Things still needed for a season kit. They aren't tied to any location,
+  // so they show whichever screen search was opened from.
+  const [wantedResults, setWantedResults] = useState<WantedItem[]>([]);
   const [searched, setSearched] = useState(false);
   const [searchError, setSearchError] = useState(false);
   const [editingItem, setEditingItem] = useState<SearchResult | null>(null);
@@ -67,18 +75,22 @@ export default function SearchScreen() {
     if (!isGlobalView && !activeLocationId) return;
     const seq = ++searchSeq.current;
     let r: SearchResult[];
+    let w: WantedItem[];
     try {
       r = isGlobalView ? await searchAllItems(text) : await searchItems(text, activeLocationId!);
+      w = await searchWantedItems(text);
     } catch (err) {
       if (seq !== searchSeq.current) return;
       console.warn("Search query failed:", err);
       setResults([]);
+      setWantedResults([]);
       setSearched(false);
       setSearchError(true);
       return;
     }
     if (seq !== searchSeq.current) return;
     setResults(r);
+    setWantedResults(w);
     setSearched(true);
     setSearchError(false);
   }, [isGlobalView, activeLocationId]);
@@ -91,6 +103,7 @@ export default function SearchScreen() {
       if (text.trim().length === 0) {
         searchSeq.current++;
         setResults([]);
+        setWantedResults([]);
         setSearched(false);
         setSearchError(false);
         return;
@@ -133,6 +146,11 @@ export default function SearchScreen() {
     },
     [addRecentSearch, query, activeLocationId, isGlobalView, setActiveLocation, setHighlightedZoneId, router]
   );
+
+  const handleWantedPress = (item: WantedItem) => {
+    addRecentSearch(query.trim());
+    router.push(`/kit?season=${item.season}&highlightWantedId=${item.id}`);
+  };
 
   const handleToggleOutOfVan = useCallback(
     async (item: SearchResult) => {
@@ -267,8 +285,30 @@ export default function SearchScreen() {
           maxToRenderPerBatch={8}
           windowSize={10}
           ItemSeparatorComponent={Divider}
+          ListFooterComponent={
+            wantedResults.length > 0 ? (
+              <View>
+                {results.length > 0 && <Divider />}
+                {wantedResults.map((item, index) => (
+                  <View key={item.id}>
+                    {index > 0 && <Divider />}
+                    <List.Item
+                      title={item.name}
+                      titleStyle={{ color: palette.onSurfaceVariant }}
+                      description={t("search.wanted_label", { season: t(`season.${item.season}`) })}
+                      descriptionStyle={{ color: palette.onSurfaceVariant }}
+                      left={(props) => (
+                        <List.Icon {...props} icon="cart-outline" color={palette.onSurfaceVariant} />
+                      )}
+                      onPress={() => handleWantedPress(item)}
+                    />
+                  </View>
+                ))}
+              </View>
+            ) : undefined
+          }
           ListEmptyComponent={
-            searchError ? (
+            wantedResults.length > 0 ? undefined : searchError ? (
               <View style={styles.emptyContainer}>
                 <Text variant="bodyMedium" style={[emptyTextStyle, { color: palette.danger }]}>
                   {t("search.error")}

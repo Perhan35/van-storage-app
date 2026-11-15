@@ -32,6 +32,18 @@ export const MIGRATIONS = [
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
   );`,
+  // Things the user still needs for a season but doesn't own yet. Kept out of
+  // `items` on purpose: an item always has a zone (zone_id is NOT NULL), and a
+  // thing not yet bought has no place in the van. "Je l'ai" turns a row here
+  // into a real item (see fulfillWantedItem).
+  `CREATE TABLE IF NOT EXISTS wanted_items (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    season TEXT NOT NULL DEFAULT 'winter',
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );`,
 ];
 
 // Column additions handled separately via PRAGMA table_info checks, since

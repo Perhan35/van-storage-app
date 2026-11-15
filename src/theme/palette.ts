@@ -34,6 +34,20 @@ export type Palette = {
   // this one means "a lower-priority action" (settings) — same icon whether
   // it's usable or not, so it must never look disabled.
   headerUtility: string;
+  // The season kit button (snowflake / sun). Its shape says which season, so
+  // its color only has to stand clear of the bar and its neighbours: not the
+  // seasons' own blue (identical to the light bar) nor their gold (the
+  // out-of-van icon's hue, right next to it).
+  headerSeason: string;
+  // Season kit screen. kitVan / kitHome mark the "in the van" and "at home"
+  // groups (bar segments, tile and row icons — non-text, so 3:1 against the
+  // surface is the floor). kitAction / onKitAction are its filled buttons
+  // ("Je l'ai", "Ranger"): the app's primary blue only reaches 3.34:1 under
+  // white label text, below the 4.5:1 that 14px text needs.
+  kitVan: string;
+  kitHome: string;
+  kitAction: string;
+  onKitAction: string;
   onSurface: string;
   onSurfaceVariant: string;
   divider: string;
@@ -71,6 +85,11 @@ export const lightPalette: Palette = {
   // as bold against this saturated blue — contrast itself draws the eye — so
   // going closer to the bar's own tone is what makes it sit quietly.
   headerUtility: "#7a7a7a", // 2.00:1 — intentionally low, reads as quiet not disabled
+  headerSeason: "#FFFFFF", // 3.34:1 — same white as the title
+  kitVan: "#2F6FB5", // 5.17:1 on surface
+  kitHome: "#B26A00", // 4.24:1 on surface
+  kitAction: "#2F6FB5",
+  onKitAction: "#FFFFFF", // 5.17:1
   onSurface: "#000000",
   onSurfaceVariant: "#757575",
   divider: "#E0E0E0",
@@ -98,6 +117,11 @@ export const darkPalette: Palette = {
   headerOutOfVan: "#F5A623", // 6.41:1 — warm gold
   headerSearch: "#26C6DA", // 6.30:1 — teal
   headerUtility: "#94A0AB", // 4.88:1 — cool steel-gray, reads as quiet not disabled
+  headerSeason: "#E1F5FE", // 11.57:1 — icy white
+  kitVan: "#5BA3E6", // 6.21:1 on surface
+  kitHome: "#FFB74D", // 9.63:1 on surface
+  kitAction: "#5BA3E6",
+  onKitAction: "#0B1F33", // 6.22:1
   onSurface: "#FFFFFF",
   onSurfaceVariant: "#B0B0B0",
   divider: "#2F2F2F",

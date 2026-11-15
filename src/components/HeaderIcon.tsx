@@ -10,6 +10,7 @@ type Tone =
   | "utility"
   | "outOfVan"
   | "search"
+  | "season"
   | "action";
 
 type Props = {
@@ -54,9 +55,11 @@ export function HeaderIcon({
               ? palette.headerOutOfVan
               : tone === "search"
                 ? palette.headerSearch
-                : tone === "action"
-                  ? palette.headerActionTint // undo/redo — distinct from headerTint, which also drives the title text
-                  : palette.headerTint;
+                : tone === "season"
+                  ? palette.headerSeason
+                  : tone === "action"
+                    ? palette.headerActionTint // undo/redo — distinct from headerTint, which also drives the title text
+                    : palette.headerTint;
 
   // "action" (undo/redo) is the only tone that's ever actually disabled today,
   // so it's the only one with a dedicated muted color; everything else still

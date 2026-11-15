@@ -227,10 +227,11 @@ export default function SettingsScreen() {
     rawZones: Record<string, unknown>[],
     rawItems: Record<string, unknown>[],
     rawPreferences: Record<string, unknown>[],
+    rawWantedItems: Record<string, unknown>[],
     done: { title: string; message: string; recordAsBackedUp: boolean }
   ): Promise<boolean> => {
     try {
-      await importAllData(rawLocations, rawZones, rawItems, rawPreferences);
+      await importAllData(rawLocations, rawZones, rawItems, rawPreferences, rawWantedItems);
     } catch (e) {
       Alert.alert(t("settings.error"), t("settings.import_error") + " " + (e as Error).message);
       return false;
@@ -315,6 +316,8 @@ export default function SettingsScreen() {
           data.zones as Record<string, unknown>[],
           data.items as Record<string, unknown>[],
           data.preferences as Record<string, unknown>[],
+          // Snapshots taken before the season kit existed have no wanted list.
+          Array.isArray(data.wantedItems) ? (data.wantedItems as Record<string, unknown>[]) : [],
           {
             title: t("settings.undo_import_success_title"),
             message: t("settings.undo_import_success"),
@@ -347,6 +350,7 @@ export default function SettingsScreen() {
       locations?: unknown[];
       zones?: unknown[];
       items?: unknown[];
+      wantedItems?: unknown[];
       preferences?: unknown[];
     };
     try {
@@ -399,6 +403,13 @@ export default function SettingsScreen() {
     const isValidPreference = (p: Record<string, unknown>) =>
       typeof p.key === "string" && typeof p.value === "string";
 
+    // Backups made before the season kit existed have no wanted list.
+    const rawWantedItems = Array.isArray(data.wantedItems)
+      ? (data.wantedItems as Record<string, unknown>[])
+      : [];
+    const isValidWantedItem = (w: Record<string, unknown>) =>
+      typeof w.id === "string" && typeof w.name === "string";
+
     const isValidLocation = (l: Record<string, unknown>) => {
       if (typeof l.id !== "string" || typeof l.name !== "string" || typeof l.outline !== "string") {
         return false;
@@ -413,6 +424,7 @@ export default function SettingsScreen() {
     if (
       !rawZones.every(isValidZone) ||
       !rawItems.every(isValidItem) ||
+      !rawWantedItems.every(isValidWantedItem) ||
       !rawPreferences.every(isValidPreference)
     ) {
       Alert.alert(t("settings.error"), t("settings.import_invalid_format"));
@@ -490,7 +502,7 @@ export default function SettingsScreen() {
         Alert.alert(t("settings.error"), t("settings.import_snapshot_error") + " " + (e as Error).message);
         return;
       }
-      const ok = await applyImport(rawLocations, rawZones, rawItems, rawPreferences, {
+      const ok = await applyImport(rawLocations, rawZones, rawItems, rawPreferences, rawWantedItems, {
         title: t("settings.import_success_title"),
         message: t("settings.import_success"),
         recordAsBackedUp: true,
