@@ -147,6 +147,7 @@
   "backup.reminder_off_text": "Sicherungserinnerungen lassen sich jederzeit in den Einstellungen wieder aktivieren.",
 
   "game.title": "Spielmodus",
+  "game.unlocked": "Geheimer Spielmodus freigeschaltet!",
   "game.score": "Punkte",
   "game.streak": "Serie",
   "game.question_zone": "In welcher Zone ist „{{item}}“?",

@@ -9,6 +9,7 @@ import Animated, {
   SharedValue,
 } from "react-native-reanimated";
 import { usePanLock } from "./ZoomableContainer";
+import { CRISP_BORDER } from "./ZoneEditOverlay";
 import { OutlinePoint, Outline } from "../db/templates";
 import { triggerHaptic } from "../utils/haptics";
 
@@ -403,7 +404,10 @@ function EdgeHandle({
 // Sizes, radii and border widths are zoom-compensated in the animated styles
 // above; only the non-scaling traits live here.
 const styles = StyleSheet.create({
+  // CRISP_BORDER: without clipping, iOS paints the border into a bitmap that
+  // the canvas zoom magnifies into blocky pixels (see ZoneEditOverlay).
   vertex: {
+    ...CRISP_BORDER,
     borderColor: "#FFFFFF",
   },
   midpoint: {
@@ -412,6 +416,7 @@ const styles = StyleSheet.create({
   },
   // A curved edge's handle is a filled diamond, so it reads as "active curve".
   midpointCurved: {
+    ...CRISP_BORDER,
     borderColor: "#FFFFFF",
     opacity: 0.95,
   },

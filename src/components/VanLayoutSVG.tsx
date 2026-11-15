@@ -1,13 +1,24 @@
 import React, { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { View, LayoutChangeEvent, StyleSheet, Pressable } from "react-native";
 import Svg, { Text as SvgText, G } from "react-native-svg";
-import { useSharedValue } from "react-native-reanimated";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedReaction,
+  runOnJS,
+} from "react-native-reanimated";
 import { LocationOutline } from "./LocationOutline";
-import { ZoneOverlay } from "./ZoneOverlay";
+import { ZoneOverlay, StaticZoneOverlay } from "./ZoneOverlay";
 import { ZoneEditOverlay } from "./ZoneEditOverlay";
 import { OutlineEditOverlay } from "./OutlineEditOverlay";
 import { InscriptionEditOverlay } from "./InscriptionEditOverlay";
-import { useZoomScale, useZoomControl } from "./ZoomableContainer";
+import {
+  useZoomScale,
+  useZoomControl,
+  RestCover,
+  useSharpLayer,
+  useSharpViewport,
+} from "./ZoomableContainer";
 import { useAppStore } from "../store/useAppStore";
 import { useAppTheme } from "../theme/useAppTheme";
 import { Zone, ZoneWithCount, LabelSide } from "../db/database";
@@ -37,6 +48,69 @@ function sideAnchor(side: LabelSide, canvasW: number, canvasH: number) {
     case "right":
       return { x: canvasW - 12, y: canvasH / 2, rotate: 90 };
   }
+}
+
+// See RestCover in ZoomableContainer: a short-lived copy of the plan as it was
+// drawn before the rest view changed, laid over everything so the frames
+// before the new transform lands show the old picture instead of a jump.
+// Opaque, so the new content underneath can't show through while it waits.
+function TransitionCover({
+  viewBox,
+  background,
+  children,
+  onRegister,
+  onDone,
+}: {
+  viewBox: string;
+  background: string;
+  children: React.ReactNode;
+  onRegister: (cover: RestCover) => void;
+  onDone: () => void;
+}) {
+  const opacity = useSharedValue(1);
+  const scale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+
+  // Child layout effects run before the parent's, so the parent's rest-view
+  // effect in this same commit finds the cover already registered.
+  useLayoutEffect(() => {
+    onRegister({ opacity, scale, translateX, translateY });
+  }, []);
+
+  // Safety net: an opaque cover that somehow never got faded (the UI-thread
+  // switch didn't run) would leave a frozen picture over the live canvas.
+  useEffect(() => {
+    const timer = setTimeout(onDone, 800);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useAnimatedReaction(
+    () => opacity.value,
+    (v, prev) => {
+      if (v <= 0 && prev !== null && prev > 0) runOnJS(onDone)();
+    }
+  );
+
+  const style = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value },
+    ],
+  }));
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFill, { backgroundColor: background }, style]}
+    >
+      <Svg viewBox={viewBox} style={{ flex: 1 }}>
+        {children}
+      </Svg>
+    </Animated.View>
+  );
 }
 
 export type ZoneScreenRect = { left: number; top: number; width: number; height: number };
@@ -254,24 +328,71 @@ export function VanLayoutSVG({ onZonePress, onEditInscription }: Props) {
   const zoneEditActive = editMode && !outlineEditMode;
   const frozenReadFrame = useRef(readFrame);
   if (!zoneEditActive) frozenReadFrame.current = readFrame;
+
+  // Entering or leaving zone editing switches the viewBox (a React commit,
+  // on screen at once) and the rest view (a transform, on screen a frame or
+  // two later). A cover showing the previous viewBox is mounted in that same
+  // commit to hide the gap — see TransitionCover.
+  const viewBox = `${viewBoxMinX} ${viewBoxMinY} ${viewBoxW} ${viewBoxH}`;
+  const committedViewBox = useRef(viewBox);
+  useLayoutEffect(() => {
+    committedViewBox.current = viewBox;
+  });
+  const [cover, setCover] = useState<{
+    id: number;
+    viewBox: string;
+    // Whether the frozen picture is of zone editing (so it keeps the dashes).
+    wasEditing: boolean;
+  } | null>(null);
+  const [coverMode, setCoverMode] = useState(zoneEditActive);
+  if (coverMode !== zoneEditActive) {
+    // Adjusting state during render (React's "derive from props" pattern), so
+    // the cover is part of the very commit that changes the viewBox.
+    setCoverMode(zoneEditActive);
+    if (zoomControl && layout) {
+      setCover({
+        id: (cover?.id ?? 0) + 1,
+        viewBox: committedViewBox.current,
+        wasEditing: coverMode,
+      });
+    }
+  }
+  const pendingCover = useRef<RestCover | null>(null);
+  const registerCover = useCallback((c: RestCover) => {
+    pendingCover.current = c;
+  }, []);
+  const coverId = cover?.id;
+  const dropCover = useCallback(() => {
+    setCover((c) => (c && c.id === coverId ? null : c));
+  }, [coverId]);
+
   // null = rest view not set by us yet, so mounting mid-edit still applies it.
   const restApplied = useRef<boolean | null>(null);
   useLayoutEffect(() => {
     if (!zoomControl || !layout) return;
+    // Consumed once: only the switch that mounted the cover drives it.
+    const c = pendingCover.current;
+    pendingCover.current = null;
     if (zoneEditActive) {
       const f = frozenReadFrame.current;
-      zoomControl.setRestRect({
-        left: f.minX * svgScale + svgOffsetX,
-        top: f.minY * svgScale + svgOffsetY,
-        width: f.w * svgScale,
-        height: f.h * svgScale,
-      });
+      zoomControl.setRestRect(
+        {
+          left: f.minX * svgScale + svgOffsetX,
+          top: f.minY * svgScale + svgOffsetY,
+          width: f.w * svgScale,
+          height: f.h * svgScale,
+        },
+        c
+      );
       restApplied.current = true;
     } else if (restApplied.current !== false) {
       // Only on the way out (or first mount): read mode must not keep
       // snapping the transform back, or it would fight the zone dive.
-      zoomControl.setRestRect(null);
+      zoomControl.setRestRect(null, c);
       restApplied.current = false;
+    } else if (c) {
+      // Nothing to change, so nothing will fade the cover: drop it now.
+      c.opacity.value = 0;
     }
   }, [zoomControl, zoneEditActive, layout, svgScale, svgOffsetX, svgOffsetY]);
 
@@ -333,47 +454,124 @@ export function VanLayoutSVG({ onZonePress, onEditInscription }: Props) {
   // composition (see the comment on `composed` there); the screen wires it up
   // via that component's `onLongPress` prop.
 
+  const svgBackdrop = (
+    <>
+      <LocationOutline outline={renderOutline} />
+      {/* Read mode draws the inscriptions in SVG (at their default or custom
+          position). While editing, the draggable overlays below draw them
+          instead, so the SVG copy is suppressed to avoid a doubled label. */}
+      {!labelsEditable &&
+        INSCRIPTION_SIDES.map((side) => {
+          const text = resolveDisplay(side);
+          if (!text) return null;
+          const { x, y, rotate } = resolvePos(side);
+          return (
+            <G key={side} transform={`rotate(${rotate}, ${x}, ${y})`}>
+              <SvgText
+                x={x}
+                y={y}
+                textAnchor="middle"
+                fill={INSCRIPTION_COLOR}
+                fontSize={13}
+                fontWeight="bold"
+              >
+                {text}
+              </SvgText>
+            </G>
+          );
+        })}
+    </>
+  );
+
+  // Only built while a transition cover is up, with still zones: the cover is
+  // a picture held for a few frames, and the animated zones cost far more to
+  // mount than it is on screen.
+  const coverContent = cover ? (
+    <>
+      {svgBackdrop}
+      {zones.map((zone) => (
+        <StaticZoneOverlay key={zone.id} zone={zone} editing={cover.wasEditing} />
+      ))}
+    </>
+  ) : null;
+
+  const svgContent = (
+    <>
+      {svgBackdrop}
+      {zones.map((zone) => (
+        <ZoneOverlay
+          key={zone.id}
+          zone={zone}
+          highlighted={highlightedZoneId === zone.id}
+          dimmed={
+            highlightedZoneId !== null && highlightedZoneId !== zone.id
+          }
+          editing={zoneEditActive}
+        />
+      ))}
+    </>
+  );
+
+  // Sharp copy (see SharpViewport in ZoomableContainer). The canvas transform
+  // only magnifies the bitmap this Svg was drawn into, so deep zoom turns the
+  // plan blocky. Once the zoom/pan has settled, the same drawing is handed to
+  // the container with a viewBox covering just what's visible, drawn
+  // untransformed at screen resolution; our own Svg hides while it's shown.
+  const sharpLayer = useSharpLayer();
+  const sharpViewport = useSharpViewport();
+  let sharpViewBox: string | null = null;
+  if (sharpViewport && layout) {
+    const { scale: s, tx, ty, width: W, height: H } = sharpViewport;
+    // Visible region in container coords (the inverse of the canvas
+    // transform, which scales about the container center), then in SVG units.
+    const left = W / 2 - (W / 2 + tx) / s;
+    const top = H / 2 - (H / 2 + ty) / s;
+    sharpViewBox = [
+      (left - svgOffsetX) / svgScale,
+      (top - svgOffsetY) / svgScale,
+      W / s / svgScale,
+      H / s / svgScale,
+    ].join(" ");
+  }
+
+  // Re-pushed on every render so the copy follows content changes (a committed
+  // zone move, a live outline drag) as well as new viewports.
+  //
+  // Drawn with the still zones: a second set of animated ZoneOverlays (shared
+  // values, animated props, mount-time transitions — per zone) is costly with
+  // a couple dozen zones. The one thing the still zones can't show is the
+  // highlight pulse, so while a zone is highlighted the sharp copy stands down
+  // and the animated canvas shows through.
+  useLayoutEffect(() => {
+    if (!sharpLayer) return;
+    if (!sharpViewport || !sharpViewBox || highlightedZoneId !== null) {
+      sharpLayer.setContent(null, null);
+      return;
+    }
+    sharpLayer.setContent(
+      <Svg viewBox={sharpViewBox} style={StyleSheet.absoluteFill}>
+        {svgBackdrop}
+        {zones.map((zone) => (
+          <StaticZoneOverlay key={zone.id} zone={zone} editing={zoneEditActive} />
+        ))}
+      </Svg>,
+      sharpViewport
+    );
+  });
+
+  useEffect(() => () => sharpLayer?.setContent(null, null), [sharpLayer]);
+
+  const fallbackSharpShown = useSharedValue(0);
+  const sharpShown = sharpLayer?.shown ?? fallbackSharpShown;
+  const baseSvgStyle = useAnimatedStyle(() => ({ opacity: 1 - sharpShown.value }));
+
   return (
     <View style={styles.container} onLayout={onLayout}>
-      <Svg
-        viewBox={`${viewBoxMinX} ${viewBoxMinY} ${viewBoxW} ${viewBoxH}`}
-        style={{ flex: 1 }}
-      >
-        <LocationOutline outline={renderOutline} />
-        {/* Read mode draws the inscriptions in SVG (at their default or custom
-            position). While editing, the draggable overlays below draw them
-            instead, so the SVG copy is suppressed to avoid a doubled label. */}
-        {!labelsEditable &&
-          INSCRIPTION_SIDES.map((side) => {
-            const text = resolveDisplay(side);
-            if (!text) return null;
-            const { x, y, rotate } = resolvePos(side);
-            return (
-              <G key={side} transform={`rotate(${rotate}, ${x}, ${y})`}>
-                <SvgText
-                  x={x}
-                  y={y}
-                  textAnchor="middle"
-                  fill={INSCRIPTION_COLOR}
-                  fontSize={13}
-                  fontWeight="bold"
-                >
-                  {text}
-                </SvgText>
-              </G>
-            );
-          })}
-        {zones.map((zone) => (
-          <ZoneOverlay
-            key={zone.id}
-            zone={zone}
-            highlighted={highlightedZoneId === zone.id}
-            dimmed={
-              highlightedZoneId !== null && highlightedZoneId !== zone.id
-            }
-          />
-        ))}
-      </Svg>
+      <Animated.View style={[styles.container, baseSvgStyle]}>
+        <Svg viewBox={viewBox} style={{ flex: 1 }}>
+          {svgContent}
+        </Svg>
+      </Animated.View>
 
       {/* Native pressable overlays for zone tapping (works reliably on Android) */}
       {!editMode &&
@@ -466,6 +664,18 @@ export function VanLayoutSVG({ onZonePress, onEditInscription }: Props) {
             />
           );
         })}
+
+      {cover && (
+        <TransitionCover
+          key={cover.id}
+          viewBox={cover.viewBox}
+          background={palette.background}
+          onRegister={registerCover}
+          onDone={dropCover}
+        >
+          {coverContent}
+        </TransitionCover>
+      )}
     </View>
   );
 }

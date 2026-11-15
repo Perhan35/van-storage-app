@@ -5,6 +5,7 @@ import React, {
   useEffect,
   useMemo,
   useRef,
+  useState,
   forwardRef,
   useImperativeHandle,
 } from "react";
@@ -13,8 +14,11 @@ import { GestureDetector, Gesture } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedReaction,
+  useDerivedValue,
   withTiming,
   runOnJS,
+  runOnUI,
   Easing,
   SharedValue,
 } from "react-native-reanimated";
@@ -46,12 +50,36 @@ export type ZoomableContainerHandle = {
 // the plan the same size on screen while the margin stays a pan/pinch away.
 //
 // `rect` is in content-space (pre-transform) coordinates, like ZoomRect for
-// zoomToRect; null restores the identity rest view. The switch is instant and
-// carries the user's own zoom on top of the old rest view over to the new one,
-// so what's on screen doesn't jump.
+// zoomToRect; null restores the identity rest view. The switch carries the
+// user's own zoom on top of the old rest view over to the new one, so what's on
+// screen doesn't jump.
+//
+// The change is applied on the UI thread a couple of frames later, never from
+// the JS call itself — see `cover` for why, and for how the caller hides the
+// frames in between.
 export type ZoomControl = {
-  setRestRect: (rect: ZoomRect | null) => void;
+  setRestRect: (rect: ZoomRect | null, cover?: RestCover | null) => void;
 };
+
+// A layer the caller mounted *inside* the canvas, in the same React commit as
+// whatever made the rest view change (a new viewBox), showing the content as it
+// looked before. React mounts that commit at once, but a transform written from
+// JS only reaches the screen on a later frame — so without a cover, the frame
+// in between shows the new content under the old transform (the plan visibly
+// shrinking for one frame on entering edit mode).
+//
+// When the new rest view lands, this layer is counter-transformed in the same
+// UI frame so it stays exactly where it was on screen, then faded out. The
+// caller owns the shared values (initial opacity 1, identity transform) and
+// unmounts the layer once opacity reaches 0.
+export type RestCover = {
+  opacity: SharedValue<number>;
+  scale: SharedValue<number>;
+  translateX: SharedValue<number>;
+  translateY: SharedValue<number>;
+};
+
+export const REST_COVER_FADE_MS = 150;
 
 type Props = {
   children: React.ReactNode;
@@ -124,6 +152,62 @@ const ZoomControlContext = createContext<ZoomControl | null>(null);
 export function useZoomControl() {
   return useContext(ZoomControlContext);
 }
+
+// --- Sharp layer ---
+//
+// Everything inside the canvas is scaled by a Core Animation transform, and on
+// iOS a transform never re-rasterises bitmap-backed content: react-native-svg
+// draws the whole plan once (drawRect:) at its layout size, dashed borders and
+// text are images too, so zooming in just magnifies those pixels. At the deep
+// zoom zone editing invites (its plan is drawn smaller — the viewBox includes
+// the overflow margin — and it rests zoomed in on top of that) the plan turns
+// visibly blocky.
+//
+// The fix is a second, untransformed copy of the drawing behind the canvas:
+// once the transform has been still for a moment, a descendant re-renders just
+// the visible part of its content at full container size (see
+// SharpViewport), which is rasterised at real screen resolution. While the
+// transform matches the one that copy was drawn for, it is shown and the
+// transformed original hidden (fills are translucent, so never both); the
+// instant the transform moves — on the UI thread, in the same frame — they
+// swap back. Memory stays one screen's worth whatever the zoom.
+
+// The settled transform a sharp copy should be drawn for, plus the container
+// size. A content point p (container coords, pre-transform) appears on screen
+// at C + t + scale * (p - C), with C the container center — so the visible
+// region is the container rect mapped back through that.
+export type SharpViewport = {
+  scale: number;
+  tx: number;
+  ty: number;
+  width: number;
+  height: number;
+};
+
+export type SharpLayer = {
+  // Hand the container the sharp copy for `viewport` (null clears it).
+  setContent: (node: React.ReactNode, viewport: SharpViewport | null) => void;
+  // 1 while the sharp copy is on screen: the transformed original should hide.
+  shown: SharedValue<number>;
+};
+
+const SharpViewportContext = createContext<SharpViewport | null>(null);
+const SharpLayerContext = createContext<SharpLayer | null>(null);
+
+// Null while there's nothing worth sharpening (at or near 1:1 the transformed
+// drawing is already pixel-exact), or outside a ZoomableContainer.
+export function useSharpViewport() {
+  return useContext(SharpViewportContext);
+}
+
+export function useSharpLayer() {
+  return useContext(SharpLayerContext);
+}
+
+// How long the transform must hold still before the sharp copy is redrawn.
+const SHARP_SETTLE_MS = 150;
+// Below this zoom the transformed drawing is sharp enough on its own.
+const SHARP_MIN_SCALE = 1.02;
 
 function clampTranslate(
   translate: number,
@@ -254,9 +338,20 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
     onLongPressRef.current?.();
   }, []);
 
+  const [containerSize, setContainerSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+
   const onLayout = (e: LayoutChangeEvent) => {
-    containerWidth.value = e.nativeEvent.layout.width;
-    containerHeight.value = e.nativeEvent.layout.height;
+    const { width, height } = e.nativeEvent.layout;
+    containerWidth.value = width;
+    containerHeight.value = height;
+    setContainerSize((prev) =>
+      prev && prev.width === width && prev.height === height
+        ? prev
+        : { width, height }
+    );
   };
 
   // Touch counting rides on a manual gesture, which never activates and never
@@ -531,46 +626,177 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
   }), []);
 
   const zoomControl = useMemo<ZoomControl>(() => ({
-    setRestRect(rect) {
-      const cw = containerWidth.value;
-      const ch = containerHeight.value;
-      let nextScale = 1;
-      let nextTx = 0;
-      let nextTy = 0;
-      if (rect && cw > 1 && ch > 1 && rect.width > 0 && rect.height > 0) {
-        const rawScale = Math.min(cw / rect.width, ch / rect.height);
-        nextScale = Math.min(Math.max(rawScale, 1), MAX_SCALE);
-        nextTx = -(rect.left + rect.width / 2 - cw / 2) * nextScale;
-        nextTy = -(rect.top + rect.height / 2 - ch / 2) * nextScale;
-      }
+    setRestRect(rect, cover) {
+      const r = rect ? { left: rect.left, top: rect.top, width: rect.width, height: rect.height } : null;
+      const c = cover ?? null;
+      runOnUI(() => {
+        "worklet";
+        // Two frames, not zero: by then the React commit that mounted the
+        // cover and the new content is certainly on screen on both platforms,
+        // so this can never land *before* it (which would show the old content
+        // under the new transform — the same flash, reversed). The cover keeps
+        // the screen unchanged while waiting.
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const cw = containerWidth.value;
+            const ch = containerHeight.value;
+            let nextScale = 1;
+            let nextTx = 0;
+            let nextTy = 0;
+            if (r && cw > 1 && ch > 1 && r.width > 0 && r.height > 0) {
+              const rawScale = Math.min(cw / r.width, ch / r.height);
+              nextScale = Math.min(Math.max(rawScale, 1), MAX_SCALE);
+              nextTx = -(r.left + r.width / 2 - cw / 2) * nextScale;
+              nextTy = -(r.top + r.height / 2 - ch / 2) * nextScale;
+            }
 
-      // Split the current transform into "old rest view" + "the user's own
-      // zoom/pan on top of it", then re-apply the user's part on top of the
-      // new rest view. (The transform maps a content point p, relative to the
-      // container center, to t + s * p.)
-      const userScale = scale.value / restScale.value;
-      const userTx = translateX.value - userScale * restTranslateX.value;
-      const userTy = translateY.value - userScale * restTranslateY.value;
+            // Split the current transform into "old rest view" + "the user's
+            // own zoom/pan on top of it", then re-apply the user's part on top
+            // of the new rest view. (The transform maps a content point p,
+            // relative to the container center, to t + s * p.)
+            const oldScale = scale.value;
+            const oldTx = translateX.value;
+            const oldTy = translateY.value;
+            const userScale = oldScale / restScale.value;
+            const userTx = oldTx - userScale * restTranslateX.value;
+            const userTy = oldTy - userScale * restTranslateY.value;
 
-      restScale.value = nextScale;
-      restTranslateX.value = nextTx;
-      restTranslateY.value = nextTy;
+            restScale.value = nextScale;
+            restTranslateX.value = nextTx;
+            restTranslateY.value = nextTy;
 
-      const s = Math.min(Math.max(userScale * nextScale, MIN_SCALE), MAX_SCALE * nextScale);
-      const tx = clampTranslate(userTx + userScale * nextTx, cw, s);
-      const ty = clampTranslate(userTy + userScale * nextTy, ch, s);
-      // Plain writes, not animations: the viewBox has already switched, so the
-      // compensation must land at once or the plan visibly shrinks and regrows.
-      scale.value = s;
-      translateX.value = tx;
-      translateY.value = ty;
-      rawTranslateX.value = tx;
-      rawTranslateY.value = ty;
-      // Gestures in flight re-baseline from the new transform.
-      pinchPrimed.value = false;
-      panPrimed.value = false;
+            const s = Math.min(
+              Math.max(userScale * nextScale, MIN_SCALE),
+              MAX_SCALE * nextScale
+            );
+            const tx = clampTranslate(userTx + userScale * nextTx, cw, s);
+            const ty = clampTranslate(userTy + userScale * nextTy, ch, s);
+            scale.value = s;
+            translateX.value = tx;
+            translateY.value = ty;
+            rawTranslateX.value = tx;
+            rawTranslateY.value = ty;
+            // Gestures in flight re-baseline from the new transform.
+            pinchPrimed.value = false;
+            panPrimed.value = false;
+
+            if (c) {
+              // Same frame as the transform above: undo it for the cover, so
+              // (new transform) ∘ (cover transform) = old transform, and it
+              // stays put on screen while it fades.
+              c.scale.value = oldScale / s;
+              c.translateX.value = (oldTx - tx) / s;
+              c.translateY.value = (oldTy - ty) / s;
+              c.opacity.value = withTiming(0, { duration: REST_COVER_FADE_MS });
+            }
+          });
+        });
+      })();
     },
   }), []);
+
+  // --- Sharp layer (see SharpViewport) ---
+
+  // The transform the sharp copy on screen was drawn for, and whether it has
+  // been drawn yet. Written only once the copy has had time to paint.
+  const sharpReady = useSharedValue(false);
+  const sharpScale = useSharedValue(1);
+  const sharpTx = useSharedValue(0);
+  const sharpTy = useSharedValue(0);
+
+  // A derived value rather than a reaction writing a flag: it's evaluated
+  // before the styles that read it in the same frame, so the swap back to the
+  // transformed drawing lands on the very frame the transform starts moving.
+  const sharpShown = useDerivedValue<number>(() =>
+    sharpReady.value &&
+    Math.abs(scale.value - sharpScale.value) < 1e-4 &&
+    Math.abs(translateX.value - sharpTx.value) < 0.25 &&
+    Math.abs(translateY.value - sharpTy.value) < 0.25
+      ? 1
+      : 0
+  );
+
+  // Settle detection: every transform change restarts a short JS timer; when
+  // it runs out, the transform it last saw becomes the settled view.
+  const [settled, setSettled] = useState<{ scale: number; tx: number; ty: number } | null>(null);
+  const latestTransform = useRef({ scale: 1, tx: 0, ty: 0 });
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noteTransform = useCallback((s: number, tx: number, ty: number) => {
+    latestTransform.current = { scale: s, tx, ty };
+    if (settleTimer.current) clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => {
+      settleTimer.current = null;
+      const t = latestTransform.current;
+      setSettled((prev) =>
+        prev && prev.scale === t.scale && prev.tx === t.tx && prev.ty === t.ty
+          ? prev
+          : t
+      );
+    }, SHARP_SETTLE_MS);
+  }, []);
+  useEffect(
+    () => () => {
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+    },
+    []
+  );
+
+  useAnimatedReaction(
+    () => [scale.value, translateX.value, translateY.value],
+    (cur, prev) => {
+      if (prev && cur[0] === prev[0] && cur[1] === prev[1] && cur[2] === prev[2]) {
+        return;
+      }
+      runOnJS(noteTransform)(cur[0], cur[1], cur[2]);
+    }
+  );
+
+  const sharpViewport = useMemo<SharpViewport | null>(() => {
+    if (!settled || !containerSize || settled.scale <= SHARP_MIN_SCALE) return null;
+    return { ...settled, width: containerSize.width, height: containerSize.height };
+  }, [settled, containerSize]);
+
+  const [sharp, setSharp] = useState<{
+    node: React.ReactNode;
+    viewport: SharpViewport;
+  } | null>(null);
+  const sharpViewportShown = useRef<SharpViewport | null>(null);
+
+  const sharpLayer = useMemo<SharpLayer>(() => ({
+    setContent(node, viewport) {
+      // Retire the copy on screen before it's replaced by one drawn for a
+      // different view; it's revealed again once the new one has painted.
+      if (viewport !== sharpViewportShown.current) sharpReady.value = false;
+      sharpViewportShown.current = node && viewport ? viewport : null;
+      setSharp(node && viewport ? { node, viewport } : null);
+    },
+    shown: sharpShown,
+  }), []);
+
+  // Reveal a newly drawn copy only after it has had a couple of frames to be
+  // mounted and painted, so the swap never shows a half-updated layer.
+  const sharpVp = sharp?.viewport ?? null;
+  useEffect(() => {
+    if (!sharpVp) {
+      sharpReady.value = false;
+      return;
+    }
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        sharpScale.value = sharpVp.scale;
+        sharpTx.value = sharpVp.tx;
+        sharpTy.value = sharpVp.ty;
+        sharpReady.value = true;
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [sharpVp]);
+
+  const sharpStyle = useAnimatedStyle(() => ({ opacity: sharpShown.value }));
 
   // A pure read: gestures already clamp as they write (zoomToRect/resetZoom
   // are the deliberate exception, see above), so there's no recombination
@@ -585,13 +811,24 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
 
   return (
     <View style={styles.container} onLayout={onLayout}>
+      {/* Untransformed, behind the canvas: see SharpViewport. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFill, sharpStyle]}
+      >
+        {sharp?.node}
+      </Animated.View>
       <GestureDetector gesture={composed}>
         <Animated.View style={[styles.inner, animatedStyle]}>
           <ZoomScaleContext.Provider value={scale}>
             <PanLockContext.Provider value={dragLock}>
               <MultiTouchContext.Provider value={multiTouch}>
                 <ZoomControlContext.Provider value={zoomControl}>
-                  {children}
+                  <SharpLayerContext.Provider value={sharpLayer}>
+                    <SharpViewportContext.Provider value={sharpViewport}>
+                      {children}
+                    </SharpViewportContext.Provider>
+                  </SharpLayerContext.Provider>
                 </ZoomControlContext.Provider>
               </MultiTouchContext.Provider>
             </PanLockContext.Provider>

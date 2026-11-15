@@ -18,6 +18,20 @@ import {
 } from "./layoutConstants";
 import { triggerHaptic } from "../utils/haptics";
 
+// Every bordered view inside the zoomed canvas needs this. On iOS (Fabric),
+// RN only hands a border to Core Animation, which draws it as a vector and
+// stays sharp at any zoom, when the view clips its content
+// (RCTViewComponentView `useCoreAnimationBorderRendering`). Otherwise it paints
+// the border into a bitmap at the view's layout size, with
+// `magnificationFilter = kCAFilterNearest`. The canvas zoom then blows that up
+// into hard staircase pixels: handles (laid out at 24/zoom pt) turned into
+// pixelated rounded squares instead of circles. These views have no
+// children, so clipping costs nothing.
+export const CRISP_BORDER = { overflow: "hidden" as const };
+
+// How much bigger a zone gets while it's picked up (applied in layout).
+const GRAB_LIFT = 0.05;
+
 const HANDLE_SIZE = 24;
 const HANDLE_BORDER = 2;
 const MIN_ZONE_SIZE_SVG = 30;
@@ -451,15 +465,25 @@ function ZoneEditOverlayInner({
   // Animated style for the zone body (moves + resizes in real time).
   // Positioned in fit-scale units only - the ancestor ZoomableContainer's
   // transform applies pinch zoom visually on top of this.
-  const bodyStyle = useAnimatedStyle(() => ({
-    position: "absolute" as const,
-    left: svgX.value * fitScale + offsetX,
-    top: svgY.value * fitScale + offsetY,
-    width: svgW.value * fitScale,
-    height: svgH.value * fitScale,
-    // Lift the whole zone slightly while it's grabbed.
-    transform: [{ scale: 1 + dragActive.value * 0.05 }],
-  }));
+  //
+  // The grab "lift" (5% bigger, about the center) is done by growing the real
+  // layout box, never with `transform: scale`. A view carrying its own scale
+  // transform gets flattened into a low-resolution bitmap on iOS, the same
+  // trap the handles fell into (see below). With the lift as a transform, the
+  // grabbed zone's ring and veil were visibly blurry the whole time it was held,
+  // at any zoom, while everything around them stayed sharp.
+  const bodyStyle = useAnimatedStyle(() => {
+    const lift = dragActive.value * GRAB_LIFT;
+    const w = svgW.value * fitScale;
+    const h = svgH.value * fitScale;
+    return {
+      position: "absolute" as const,
+      left: svgX.value * fitScale + offsetX - (w * lift) / 2,
+      top: svgY.value * fitScale + offsetY - (h * lift) / 2,
+      width: w * (1 + lift),
+      height: h * (1 + lift),
+    };
+  });
 
   // Solid "grabbed" ring that fades in over the resting dashed outline. Only a
   // numeric opacity is animated here (Reanimated 4 can crash when animating
@@ -514,7 +538,7 @@ function ZoneEditOverlayInner({
       {/* Draggable zone body (press and hold to pick up, then drag) */}
       <GestureDetector gesture={dragGesture}>
         <Animated.View style={bodyStyle}>
-          <View style={[styles.dragBody, { borderColor: zone.color }]} />
+          <View style={styles.dragBody} />
           <Animated.View
             pointerEvents="none"
             style={[styles.grabbedRing, { borderColor: zone.color }, grabbedRingStyle]}
@@ -549,10 +573,11 @@ function ZoneEditOverlayInner({
 export const ZoneEditOverlay = React.memo(ZoneEditOverlayInner);
 
 const styles = StyleSheet.create({
+  // No border here: the dashed "editable" outline is drawn in the SVG (see
+  // EditDashOutline in ZoneOverlay). iOS rasterises a dashed RN border into a
+  // bitmap, which the zoomed canvas magnified into blocky dashes.
   dragBody: {
     flex: 1,
-    borderWidth: 2,
-    borderStyle: "dashed",
     borderRadius: 8,
     backgroundColor: "rgba(255,255,255,0.1)",
   },
@@ -563,7 +588,11 @@ const styles = StyleSheet.create({
   // every zone). boxShadow is drawn from the border path regardless of the
   // background. Blur is 2× the old shadowRadius since RN maps
   // shadowRadius = blur / 2 on iOS.
+  // `overflow: "hidden"` keeps the ring sharp when zoomed, see CRISP_BORDER at
+  // the top of this file. The shadow is unaffected: with clipping on, RN clips
+  // an inner container view and keeps the boxShadow on the outer one.
   grabbedRing: {
+    ...CRISP_BORDER,
     position: "absolute",
     top: 0,
     left: 0,
@@ -580,6 +609,7 @@ const styles = StyleSheet.create({
   // composited off-screen, which is exactly the bitmap round-trip the sizing
   // above avoids, and 0.9 vs 1.0 on a solid dot isn't worth it.
   handle: {
+    ...CRISP_BORDER,
     borderColor: "#FFFFFF",
   },
 });

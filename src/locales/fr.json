@@ -147,6 +147,7 @@
   "backup.reminder_off_text": "Le rappel des sauvegardes peut être réactivé à tout moment dans les paramètres.",
 
   "game.title": "Mode Jeu",
+  "game.unlocked": "Mode jeu secret débloqué !",
   "game.score": "Score",
   "game.streak": "Série",
   "game.question_zone": "Dans quelle zone se trouve « {{item}} » ?",
