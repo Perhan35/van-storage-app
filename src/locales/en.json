@@ -180,6 +180,8 @@
   "out.filter_winter": "Winter",
   "out.filter_none": "None",
 
+  "out.content_count_one": "+ {{count}} item inside",
+  "out.content_count_other": "+ {{count}} items inside",
   "search.placeholder": "Search an item...",
   "search.out_of_van": "Out",
   "search.no_results": "No item found for \"{{query}}\"",
@@ -199,6 +201,20 @@
   "zone.take_out": "Take out",
   "zone.delete": "Delete",
   "zone.delete_alert": "Delete \"{{name}}\"?",
+  "zone.add_inside": "Add inside",
+  "zone.store_in": "Put in…",
+  "zone.store_in_title": "Put “{{name}}” in",
+  "zone.remove_from": "Take out of “{{name}}”",
+  "zone.parent_field": "Inside",
+  "zone.parent_none": "Directly in the zone",
+  "zone.group_expand": "Open {{name}}",
+  "zone.group_collapse": "Close {{name}}",
+  "zone.group_count_one": "{{count}} item inside",
+  "zone.group_count_other": "{{count}} items inside",
+  "zone.delete_group_text_one": "There is {{count}} item inside. What should happen to it?",
+  "zone.delete_group_text_other": "There are {{count}} items inside. What should happen to them?",
+  "zone.delete_keep_contents": "Keep the items",
+  "zone.delete_with_contents": "Delete everything",
   "zone.empty": "No item in this zone",
   "zone.edit_item": "Edit item",
   "zone.name": "Name",
@@ -287,6 +303,8 @@
   "kit.fulfill_at_home_desc": "It goes under “At home”, ready to load.",
   "kit.fulfill_confirm": "Put away",
   "kit.save_error": "That didn't work. Please try again.",
+  "kit.switch_summer": "Switch to summer mode",
+  "kit.switch_winter": "Switch to winter mode",
 
   "settings.title_reminders": "Expiration Reminders",
   "settings.desc_reminders": "Get notified before an item's expiration date is reached.",
@@ -338,5 +356,5 @@
   "tutorial.gesture_swipe_right_title": "Swipe right",
   "tutorial.gesture_swipe_right_desc": "Check the item off, in zones set up as a checklist.",
   "tutorial.gesture_long_press_title": "Long press",
-  "tutorial.gesture_long_press_desc": "Open the menu to edit the item (the ⋮ button does the same)."
+  "tutorial.gesture_long_press_desc": "Open the menu: edit, move, take out or delete the item. The ⋮ button does the same."
 }

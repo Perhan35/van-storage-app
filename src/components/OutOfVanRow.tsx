@@ -14,8 +14,9 @@ import Animated, {
   useReducedMotion,
 } from "react-native-reanimated";
 import { IconButton, List } from "react-native-paper";
+import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../theme/useAppTheme";
-import { OutOfVanItem } from "../db/repository";
+import { OutOfVanItem, parentPath } from "../db/repository";
 import { seasonIconName, seasonIconColor } from "./seasonIcon";
 import { triggerHaptic } from "../utils/haptics";
 
@@ -58,6 +59,8 @@ function SwipeActionButton({
 type Props = {
   item: OutOfVanItem;
   isGlobalView: boolean;
+  // Things taken out together with it (stored inside it).
+  contentCount: number;
   onPutBack: (item: OutOfVanItem) => void;
   onLocate: (item: OutOfVanItem) => void;
   onLongPressItem: (item: OutOfVanItem) => void;
@@ -70,11 +73,13 @@ type Props = {
 function OutOfVanRowInner({
   item,
   isGlobalView,
+  contentCount,
   onPutBack,
   onLocate,
   onLongPressItem,
   onSwipeableRef,
 }: Props) {
+  const { t } = useTranslation();
   const { palette } = useAppTheme();
   const reducedMotion = useReducedMotion();
   const seasonIcon = seasonIconName(item.season);
@@ -101,7 +106,13 @@ function OutOfVanRowInner({
       >
         <List.Item
           title={item.name}
-          description={`📍 ${isGlobalView ? `${item.location_name} • ` : ""}${item.zone_name}${item.notes ? ` • ${item.notes}` : ""}`}
+          description={[
+            `📍 ${isGlobalView ? `${item.location_name} • ` : ""}${[item.zone_name, ...parentPath(item)].join(" › ")}`,
+            contentCount > 0 ? t("out.content_count", { count: contentCount }) : null,
+            item.notes || null,
+          ]
+            .filter(Boolean)
+            .join(" • ")}
           onPress={() => onLocate(item)}
           onLongPress={() => {
             triggerHaptic();

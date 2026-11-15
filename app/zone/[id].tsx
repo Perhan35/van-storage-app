@@ -35,15 +35,38 @@ import { Season } from "../../src/db/database";
 import { ItemRow } from "../../src/components/ItemRow";
 import { plusIcon, tagFabStyle } from "../../src/components/AddFab";
 import { ContextMenu } from "../../src/components/ContextMenu";
+import { ParentOptionList } from "../../src/components/ParentPickerField";
+import { DeleteItemMode } from "../../src/db/repository";
+import {
+  ancestorsOf,
+  applyChecked,
+  canAddInto,
+  childrenByParent,
+  descendantsOf,
+  indexById,
+  isRoot,
+  parentOptions,
+} from "../../src/utils/itemTree";
+import { loadExpandedItemIds, saveExpandedItemIds } from "../../src/utils/expandedItems";
 
 // How long a freshly-checked item stays put before sliding to the bottom.
 const MOVE_DELAY_MS = 1000;
 
 const COMPLETED_HEADER_ID = "__completed_header__";
 
-// The checklist list holds items plus a single synthetic "Completed" divider.
+// The list holds the zone's items as a flattened tree (an open group is
+// followed by what's inside it, indented), plus — in checklist zones — a
+// single synthetic "Completed" divider.
 type CompletedHeaderRow = { __header: true; id: string; count: number };
-type ListRow = Item | CompletedHeaderRow;
+type ItemListRow = {
+  id: string;
+  item: Item;
+  depth: number;
+  // Things stored inside it, at any level (0 = not a group).
+  contentCount: number;
+  expanded: boolean;
+};
+type ListRow = ItemListRow | CompletedHeaderRow;
 
 // iOS nav-bar geometry, used to size the custom header title to the space the
 // bar button items leave free (see the headerTitle comment below): the native
@@ -78,6 +101,7 @@ export default function ZoneDetailScreen() {
   const deleteItem = useAppStore((s) => s.deleteItem);
   const updateItem = useAppStore((s) => s.updateItem);
   const moveItem = useAppStore((s) => s.moveItem);
+  const setItemParent = useAppStore((s) => s.setItemParent);
   const setItemOutOfVan = useAppStore((s) => s.setItemOutOfVan);
   const setItemChecked = useAppStore((s) => s.setItemChecked);
   const resetChecklist = useAppStore((s) => s.resetChecklist);
@@ -88,6 +112,14 @@ export default function ZoneDetailScreen() {
 
   const [items, setItems] = useState<Item[]>([]);
   const [addItemVisible, setAddItemVisible] = useState(false);
+  // Item the new one goes inside ("Ajouter dedans"), null from the "+" button.
+  const [addParentId, setAddParentId] = useState<string | null>(null);
+  // Item being stored inside another one ("Ranger dans…").
+  const [storingItem, setStoringItem] = useState<Item | null>(null);
+  // Groups (items with things inside) currently open. Closed by default;
+  // remembered across visits (see utils/expandedItems).
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [expandedLoaded, setExpandedLoaded] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [menu, setMenu] = useState<{ item: Item; x: number; y: number } | null>(null);
   const [movingItem, setMovingItem] = useState<Item | null>(null);
@@ -131,6 +163,76 @@ export default function ZoneDetailScreen() {
     loadItems();
   }, [loadItems]);
 
+  useEffect(() => {
+    let cancelled = false;
+    loadExpandedItemIds()
+      .then((ids) => {
+        if (!cancelled) setExpandedIds(ids);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setExpandedLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Applies a change to the open groups and remembers it.
+  const updateExpanded = useCallback((change: (prev: Set<string>) => Set<string>) => {
+    setExpandedIds((prev) => {
+      const next = change(prev);
+      if (next !== prev) saveExpandedItemIds(next).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const handleToggleExpanded = useCallback(
+    (item: Item) => {
+      updateExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(item.id)) next.delete(item.id);
+        else next.add(item.id);
+        return next;
+      });
+    },
+    [updateExpanded]
+  );
+
+  // Latest items, for callbacks that must stay stable (they're ItemRow props,
+  // see the useCallback note further down) yet need the current tree.
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
+  // Opens the given items and every group they sit in, so they're visible.
+  const revealItems = useCallback(
+    (ids: (string | null | undefined)[]) => {
+      const byId = indexById(itemsRef.current);
+      const toOpen: string[] = [];
+      for (const id of ids) {
+        if (!id) continue;
+        toOpen.push(id, ...ancestorsOf(id, byId).map((a) => a.id));
+      }
+      if (toOpen.length === 0) return;
+      updateExpanded((prev) => {
+        if (toOpen.every((id) => prev.has(id))) return prev;
+        const next = new Set(prev);
+        toOpen.forEach((id) => next.add(id));
+        return next;
+      });
+    },
+    [updateExpanded]
+  );
+
+  const tree = useMemo(() => {
+    const byId = indexById(items);
+    const children = childrenByParent(items);
+    const contentCounts = new Map<string, number>();
+    for (const parentId of children.keys()) {
+      contentCounts.set(parentId, descendantsOf(parentId, children).length);
+    }
+    return { byId, children, contentCounts };
+  }, [items]);
   // A checked item counts as "done" (and sinks to the bottom) only once its
   // linger window has elapsed — while pending it keeps its active-list spot.
   const isDone = useCallback(
@@ -139,33 +241,60 @@ export default function ZoneDetailScreen() {
   );
 
   // Stable partition: active items keep their loaded order on top, done items
-  // fall to the bottom (also keeping their relative order).
-  const sortedItems = useMemo(() => {
-    if (!zone?.checklist) return items;
-    return items
-      .map((item, index) => ({ item, index }))
-      .sort((a, b) => {
-        const rank = Number(isDone(a.item)) - Number(isDone(b.item));
-        return rank !== 0 ? rank : a.index - b.index;
-      })
-      .map((entry) => entry.item);
-  }, [items, zone?.checklist, isDone]);
+  // fall to the bottom (also keeping their relative order). Applied to each
+  // set of siblings, so a group's checked contents sink within the group and
+  // only a whole finished group drops into "Completed".
+  const sortSiblings = useCallback(
+    (list: Item[]) => {
+      if (!zone?.checklist) return list;
+      return list
+        .map((item, index) => ({ item, index }))
+        .sort((a, b) => {
+          const rank = Number(isDone(a.item)) - Number(isDone(b.item));
+          return rank !== 0 ? rank : a.index - b.index;
+        })
+        .map((entry) => entry.item);
+    },
+    [zone?.checklist, isDone]
+  );
 
-  // Inject a "Completed" divider ahead of the first done item.
   const listData = useMemo<ListRow[]>(() => {
-    if (!zone?.checklist) return sortedItems;
-    const firstDone = sortedItems.findIndex(isDone);
-    if (firstDone === -1) return sortedItems;
-    return [
-      ...sortedItems.slice(0, firstDone),
-      { __header: true, id: COMPLETED_HEADER_ID, count: sortedItems.length - firstDone },
-      ...sortedItems.slice(firstDone),
-    ];
-  }, [sortedItems, zone?.checklist, isDone]);
+    const { byId, children, contentCounts } = tree;
+    const rows: ListRow[] = [];
+    const seen = new Set<string>();
+    const pushTree = (item: Item, depth: number) => {
+      if (seen.has(item.id)) return;
+      seen.add(item.id);
+      const contentCount = contentCounts.get(item.id) ?? 0;
+      const expanded = contentCount > 0 && expandedIds.has(item.id);
+      rows.push({ id: item.id, item, depth, contentCount, expanded });
+      if (!expanded) return;
+      for (const child of sortSiblings(children.get(item.id) ?? [])) pushTree(child, depth + 1);
+    };
+    const roots = sortSiblings(items.filter((item) => isRoot(item, byId)));
+    const firstDone = zone?.checklist ? roots.findIndex(isDone) : -1;
+    roots.forEach((root, index) => {
+      // Inject a "Completed" divider ahead of the first done group.
+      if (index === firstDone) {
+        rows.push({ __header: true, id: COMPLETED_HEADER_ID, count: roots.length - firstDone });
+      }
+      pushTree(root, 1);
+    });
+    return rows;
+  }, [tree, items, expandedIds, sortSiblings, zone?.checklist, isDone]);
+
+  // Opens the groups a deep-linked item (search, expiration overview) sits
+  // in, so the scroll below can find its row.
+  useEffect(() => {
+    if (!highlightItemId || !expandedLoaded || highlightHandledRef.current === highlightItemId) return;
+    if (!tree.byId.has(highlightItemId)) return;
+    revealItems(ancestorsOf(highlightItemId, tree.byId).map((a) => a.id));
+  }, [highlightItemId, expandedLoaded, tree, revealItems]);
 
   useEffect(() => {
     if (!highlightItemId || highlightHandledRef.current === highlightItemId) return;
     const index = listData.findIndex((row) => !("__header" in row) && row.id === highlightItemId);
+    // Not visible yet: its groups are still opening (see the effect above).
     if (index === -1) return;
     highlightHandledRef.current = highlightItemId;
     setHighlightedItemId(highlightItemId);
@@ -315,32 +444,70 @@ export default function ZoneDetailScreen() {
     handleSplitZone,
   ]);
 
+  const openAddItem = (parentId: string | null) => {
+    setAddParentId(parentId);
+    setAddItemVisible(true);
+  };
+
   const handleCreateItem = async (
     name: string,
     notes: string,
     season: Season,
     targetZoneId: string,
     expirationDate: string | null,
-    reminderDays: number
+    reminderDays: number,
+    parentId: string | null
   ) => {
-    await addItem(name, targetZoneId, notes, season, expirationDate, reminderDays);
+    await addItem(name, targetZoneId, notes, season, expirationDate, reminderDays, parentId);
     setAddItemVisible(false);
+    // Open the group it went into, so the new item shows up.
+    revealItems([parentId]);
     await loadItems();
   };
 
   const handleDeleteItem = (item: Item) => {
     setMenu(null);
-    Alert.alert(t("zone.delete"), t("zone.delete_alert", { name: item.name }), [
-      { text: t("map.cancel"), style: "cancel" },
-      {
-        text: t("zone.delete"),
-        style: "destructive",
-        onPress: async () => {
-          await deleteItem(item.id);
-          await loadItems();
-        },
-      },
-    ]);
+    const contentCount = tree.contentCounts.get(item.id) ?? 0;
+    const runDelete = async (mode: DeleteItemMode) => {
+      const removed =
+        mode === "all"
+          ? [item.id, ...descendantsOf(item.id, tree.children).map((d) => d.id)]
+          : [item.id];
+      updateExpanded((prev) => {
+        if (!removed.some((id) => prev.has(id))) return prev;
+        const next = new Set(prev);
+        removed.forEach((id) => next.delete(id));
+        return next;
+      });
+      await deleteItem(item.id, mode);
+      await loadItems();
+    };
+    if (contentCount === 0) {
+      Alert.alert(t("zone.delete"), t("zone.delete_alert", { name: item.name }), [
+        { text: t("map.cancel"), style: "cancel" },
+        { text: t("zone.delete"), style: "destructive", onPress: () => runDelete("all") },
+      ]);
+      return;
+    }
+    // A group: ask every time what happens to what's inside it.
+    Alert.alert(
+      t("zone.delete_alert", { name: item.name }),
+      t("zone.delete_group_text", { count: contentCount }),
+      [
+        { text: t("map.cancel"), style: "cancel" },
+        { text: t("zone.delete_keep_contents"), onPress: () => runDelete("keep") },
+        { text: t("zone.delete_with_contents"), style: "destructive", onPress: () => runDelete("all") },
+      ]
+    );
+  };
+
+  const handleSetParent = async (item: Item, parentId: string | null) => {
+    setStoringItem(null);
+    if (parentId === item.parent_id) return;
+    await setItemParent(item.id, parentId);
+    // Keep the item in sight: open the group it went into.
+    revealItems([parentId]);
+    await loadItems();
   };
 
   const handleSaveEdit = async (
@@ -348,10 +515,15 @@ export default function ZoneDetailScreen() {
     notes: string,
     season: Season,
     expirationDate: string | null,
-    reminderDays: number
+    reminderDays: number,
+    parentId?: string | null
   ) => {
     if (!editingItem) return;
     await updateItem(editingItem.id, name, notes, season, expirationDate, reminderDays);
+    if (parentId !== undefined && parentId !== editingItem.parent_id) {
+      await setItemParent(editingItem.id, parentId);
+      revealItems([parentId]);
+    }
     setEditingItem(null);
     await loadItems();
   };
@@ -391,6 +563,28 @@ export default function ZoneDetailScreen() {
     });
   }, []);
 
+  // Holds freshly checked items in place (checked + struck through) for a
+  // beat so the completion registers, then releases them to slide down.
+  const holdInPlace = useCallback(
+    (ids: string[]) => {
+      for (const itemId of ids) {
+        clearPendingMove(itemId);
+        setPendingMoveIds((prev) => new Set(prev).add(itemId));
+        const timer = setTimeout(() => {
+          moveTimers.current.delete(itemId);
+          setPendingMoveIds((prev) => {
+            if (!prev.has(itemId)) return prev;
+            const next = new Set(prev);
+            next.delete(itemId);
+            return next;
+          });
+        }, MOVE_DELAY_MS);
+        moveTimers.current.set(itemId, timer);
+      }
+    },
+    [clearPendingMove]
+  );
+
   const handleToggleChecked = useCallback(
     async (item: Item) => {
       swipeableRefs.current.get(item.id)?.close();
@@ -398,25 +592,17 @@ export default function ZoneDetailScreen() {
       // Reset any in-flight move so re-tapping doesn't leave a stale timer.
       clearPendingMove(item.id);
       // Reflect the toggle immediately so the checkbox + strikethrough land the
-      // instant the row is tapped, rather than after the async DB write.
-      setItems((prev) =>
-        prev.map((it) => (it.id === item.id ? { ...it, checked: nextChecked ? 1 : 0 } : it))
-      );
-      if (nextChecked && zone?.checklist) {
-        // Hold the item in its current spot (checked + struck through) for a
-        // beat so the completion registers, then release it to slide into
-        // "Completed".
-        setPendingMoveIds((prev) => new Set(prev).add(item.id));
-        const timer = setTimeout(() => {
-          moveTimers.current.delete(item.id);
-          setPendingMoveIds((prev) => {
-            if (!prev.has(item.id)) return prev;
-            const next = new Set(prev);
-            next.delete(item.id);
-            return next;
-          });
-        }, MOVE_DELAY_MS);
-        moveTimers.current.set(item.id, timer);
+      // instant the row is tapped, rather than after the async DB write. The
+      // same checklist rule as the database applies: everything inside the
+      // item follows it, and the groups it sits in update (see applyChecked).
+      const prev = itemsRef.current;
+      const next = applyChecked(prev, item.id, nextChecked);
+      setItems(next);
+      if (zone?.checklist) {
+        const newlyChecked = next
+          .filter((it, i) => it.checked && !prev[i].checked)
+          .map((it) => it.id);
+        holdInPlace(newlyChecked);
       }
       try {
         await setItemChecked(item.id, nextChecked);
@@ -426,7 +612,7 @@ export default function ZoneDetailScreen() {
         await loadItems();
       }
     },
-    [zone?.checklist, clearPendingMove, setItemChecked, loadItems]
+    [zone?.checklist, clearPendingMove, holdInPlace, setItemChecked, loadItems]
   );
 
   const handlePressItem = useCallback((item: Item) => {
@@ -490,6 +676,10 @@ export default function ZoneDetailScreen() {
     .filter((z) => z.id !== id)
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
+  const addParentOptions = addItemVisible ? parentOptions(items, null) : [];
+  const editParentOptions = editingItem ? parentOptions(items, editingItem.id) : undefined;
+  const storeParentOptions = storingItem ? parentOptions(items, storingItem.id) : [];
+
   const screenBackground = zoneColorFullScreen ? zone.color + "26" : palette.surface;
 
   return (
@@ -535,7 +725,11 @@ export default function ZoneDetailScreen() {
           }
           return (
             <ItemRow
-              item={item}
+              item={item.item}
+              depth={item.depth}
+              contentCount={item.contentCount}
+              expanded={item.expanded}
+              onToggleExpanded={handleToggleExpanded}
               zoneChecklist={!!zone.checklist}
               activeLocationIcon={activeLocationIcon}
               highlighted={highlightedItemId === item.id}
@@ -579,6 +773,41 @@ export default function ZoneDetailScreen() {
                   label: t("zone.edit"),
                   onPress: () => setEditingItem(menu.item),
                 },
+                ...(canAddInto(menu.item.id, items)
+                  ? [
+                      {
+                        icon: "package-variant-plus",
+                        label: t("zone.add_inside"),
+                        onPress: () => openAddItem(menu.item.id),
+                      },
+                    ]
+                  : []),
+                ...(parentOptions(items, menu.item.id).some((o) => o.id !== menu.item.parent_id)
+                  ? [
+                      {
+                        icon: "package-down",
+                        label: t("zone.store_in"),
+                        onPress: () => setStoringItem(menu.item),
+                      },
+                    ]
+                  : []),
+                ...(menu.item.parent_id && tree.byId.has(menu.item.parent_id)
+                  ? [
+                      {
+                        icon: "package-up",
+                        label: t("zone.remove_from", {
+                          name: tree.byId.get(menu.item.parent_id)!.name,
+                        }),
+                        // Up one level: into the group the parent sits in,
+                        // or straight into the zone.
+                        onPress: () =>
+                          handleSetParent(
+                            menu.item,
+                            tree.byId.get(menu.item.parent_id!)!.parent_id ?? null
+                          ),
+                      },
+                    ]
+                  : []),
                 ...(otherZones.length > 0
                   ? [
                       {
@@ -625,7 +854,7 @@ export default function ZoneDetailScreen() {
             bottom: insets.bottom + 16,
           },
         ]}
-        onPress={() => setAddItemVisible(true)}
+        onPress={() => openAddItem(null)}
         accessibilityLabel={t("zone.add_item")}
       />
 
@@ -634,12 +863,18 @@ export default function ZoneDetailScreen() {
         zones={zones}
         zoneId={id ?? ""}
         zoneLocked
+        parentOptions={addParentOptions}
+        initialParentId={addParentId}
         onCancel={() => setAddItemVisible(false)}
         onSave={handleCreateItem}
       />
 
       <EditItemDialog
         item={editingItem}
+        parentOptions={editParentOptions}
+        currentParentName={
+          editingItem?.parent_id ? tree.byId.get(editingItem.parent_id)?.name : undefined
+        }
         onCancel={() => setEditingItem(null)}
         onSave={handleSaveEdit}
       />
@@ -651,6 +886,24 @@ export default function ZoneDetailScreen() {
         onSave={handleSaveZone}
         onDelete={handleDeleteZone}
       />
+
+      <Portal>
+        {/* "Ranger dans…": store an item inside another one of this zone */}
+        <Dialog visible={!!storingItem} onDismiss={() => setStoringItem(null)}>
+          <Dialog.Title>{t("zone.store_in_title", { name: storingItem?.name ?? "" })}</Dialog.Title>
+          <Dialog.ScrollArea style={styles.scrollArea}>
+            <ScrollView>
+              {!!storingItem && (
+                <ParentOptionList
+                  options={storeParentOptions}
+                  selectedId={storingItem.parent_id ?? null}
+                  onPick={(parentId) => handleSetParent(storingItem, parentId)}
+                />
+              )}
+            </ScrollView>
+          </Dialog.ScrollArea>
+        </Dialog>
+      </Portal>
 
       <Portal>
         {/* Move item dialog */}

@@ -5,26 +5,37 @@ import { useTranslation } from "react-i18next";
 import { Item, Season } from "../../db/database";
 import { useTextSelectionFix } from "../../hooks/useTextSelectionFix";
 import { ExpirationField } from "../ExpirationField";
+import { ParentPickerField } from "../ParentPickerField";
+import { ParentOption } from "../../utils/itemTree";
 
 type Props = {
   item: Item | null;
+  // Where the item can be stored (see itemTree.parentOptions). The "Dans :"
+  // field only shows when given — screens without the zone's items at hand
+  // (search, out of the van) leave it out, and the parent stays unchanged.
+  parentOptions?: ParentOption[];
+  // Name of the item's current parent, shown when it isn't an option.
+  currentParentName?: string;
   onCancel: () => void;
   onSave: (
     name: string,
     notes: string,
     season: Season,
     expirationDate: string | null,
-    reminderDays: number
+    reminderDays: number,
+    // undefined when the field wasn't shown.
+    parentId?: string | null
   ) => void;
 };
 
-export function EditItemDialog({ item, onCancel, onSave }: Props) {
+export function EditItemDialog({ item, parentOptions, currentParentName, onCancel, onSave }: Props) {
   const { t } = useTranslation();
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
   const [season, setSeason] = useState<Season>("none");
   const [expirationDate, setExpirationDate] = useState<string | null>(null);
   const [reminderDaysText, setReminderDaysText] = useState("7");
+  const [parentId, setParentId] = useState<string | null>(null);
   const nameSelection = useTextSelectionFix();
   const notesSelection = useTextSelectionFix();
   const reminderDaysSelection = useTextSelectionFix();
@@ -36,6 +47,7 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
       setSeason(item.season);
       setExpirationDate(item.expiration_date);
       setReminderDaysText(String(item.reminder_days));
+      setParentId(item.parent_id ?? null);
       nameSelection.resetSelection();
       notesSelection.resetSelection();
       reminderDaysSelection.resetSelection();
@@ -46,7 +58,14 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
     const trimmed = name.trim();
     if (!trimmed) return;
     const reminderDays = Math.max(1, parseInt(reminderDaysText, 10) || 7);
-    onSave(trimmed, notes.trim(), season, expirationDate, reminderDays);
+    onSave(
+      trimmed,
+      notes.trim(),
+      season,
+      expirationDate,
+      reminderDays,
+      parentOptions ? parentId : undefined
+    );
   };
 
   return (
@@ -63,6 +82,15 @@ export function EditItemDialog({ item, onCancel, onSave }: Props) {
             onSelectionChange={nameSelection.onSelectionChange}
             style={styles.input}
           />
+          {!!parentOptions && (parentOptions.length > 0 || parentId !== null) && (
+            <ParentPickerField
+              options={parentOptions}
+              value={parentId}
+              currentName={currentParentName}
+              onChange={setParentId}
+              style={styles.input}
+            />
+          )}
           <TextInput
             mode="outlined"
             label={t("zone.notes")}

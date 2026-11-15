@@ -44,6 +44,8 @@ export default function SearchScreen() {
   // all-locations overview — searches every location.
   const [isGlobalView] = useState(() => useAppStore.getState().overviewMode);
   const [query, setQuery] = useState("");
+  const queryRef = useRef(query);
+  queryRef.current = query;
   const [results, setResults] = useState<SearchResult[]>([]);
   // Things still needed for a season kit. They aren't tied to any location,
   // so they show whichever screen search was opened from.
@@ -141,6 +143,12 @@ export default function SearchScreen() {
       if (item.location_id !== activeLocationId || isGlobalView) {
         await setActiveLocation(item.location_id);
       }
+      // Stored inside another item: the map alone wouldn't say where, so open
+      // the zone itself — it opens the groups the item sits in and flashes it.
+      if (item.parent_id) {
+        router.dismissTo(`/zone/${item.zone_id}?highlightItemId=${item.id}`);
+        return;
+      }
       setHighlightedZoneId(item.zone_id);
       router.dismissTo("/");
     },
@@ -152,6 +160,14 @@ export default function SearchScreen() {
     router.push(`/kit?season=${item.season}&highlightWantedId=${item.id}`);
   };
 
+  // Taking out (or checking) an item also changes what's stored inside it,
+  // and checking can change the groups it sits in — so after the immediate
+  // update of the tapped row, the results are read again to show all of it.
+  const refreshResults = useCallback(() => {
+    const text = queryRef.current.trim();
+    if (text.length > 0) runSearch(text);
+  }, [runSearch]);
+
   const handleToggleOutOfVan = useCallback(
     async (item: SearchResult) => {
       swipeableRefs.current.get(item.id)?.close();
@@ -160,8 +176,9 @@ export default function SearchScreen() {
       setResults((rs) =>
         rs.map((r) => (r.id === item.id ? { ...r, out_of_van: outOfVan ? 1 : 0 } : r))
       );
+      refreshResults();
     },
-    [setItemOutOfVan]
+    [setItemOutOfVan, refreshResults]
   );
 
   const handleToggleChecked = useCallback(
@@ -173,8 +190,9 @@ export default function SearchScreen() {
       setResults((rs) =>
         rs.map((r) => (r.id === item.id ? { ...r, checked: checked ? 1 : 0 } : r))
       );
+      refreshResults();
     },
-    [setItemChecked]
+    [setItemChecked, refreshResults]
   );
 
   const handleLongPressItem = useCallback((item: SearchResult) => {

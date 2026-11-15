@@ -12,8 +12,9 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withRepeat,
-  withSequence,
   withTiming,
+  interpolate,
+  Extrapolation,
   Easing,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,53 +22,171 @@ import { useTranslation } from "react-i18next";
 import { useAppStore } from "../store/useAppStore";
 import { useAppTheme } from "../theme/useAppTheme";
 import { seasonIconColor } from "./seasonIcon";
+import { hexToRgba } from "../utils/color";
 
 const MOCK_ACTION_WIDTH = 56;
 
-// A fake item row that gently nudges left then right on a loop, hinting at the
-// swipe gestures. The action panels behind it (check on the left, take-out on
-// the right) peek through as the card slides, mirroring the real zone screen.
+// One loop drives the whole demo, so the swipe, the press and the menu can
+// never drift out of step. Times are in ms within the loop.
+const LOOP_MS = 6400;
+// Swipe phase: rest, slide left, back, slide right, back.
+const NUDGE_KEYS = [0, 600, 1200, 1800, 2400, 3000];
+const NUDGE_VALUES = [0, 0, -MOCK_ACTION_WIDTH, 0, MOCK_ACTION_WIDTH, 0];
+// Menu phase: the card is pressed and the ⋮ lights up, then the menu opens,
+// stays long enough to read its four lines, and closes.
+const PRESS_START = 3400;
+const PRESS_END = 3700;
+const MENU_OPEN = 3950;
+const MENU_CLOSE = 5700;
+const MENU_GONE = 5950;
+
+// Piecewise ease-out between keyframes — `interpolate` alone is linear, which
+// made the slide look mechanical.
+function easedKeyframes(t: number, keys: number[], values: number[]): number {
+  "worklet";
+  const ease = Easing.out(Easing.ease);
+  for (let i = 0; i < keys.length - 1; i++) {
+    if (t <= keys[i + 1]) {
+      const span = keys[i + 1] - keys[i];
+      const local = span > 0 ? Math.max(0, (t - keys[i]) / span) : 1;
+      return values[i] + (values[i + 1] - values[i]) * ease(local);
+    }
+  }
+  return values[values.length - 1];
+}
+
+// A fake item row that loops through the item gestures: it nudges left then
+// right (the action panels behind it — check on the left, take-out on the
+// right — peek through, mirroring the real zone screen), then gets a long
+// press: the ⋮ lights up and a small copy of the real item menu pops open.
 function MockItemCard() {
   const { palette } = useAppTheme();
   const { t } = useTranslation();
-  const nudge = useSharedValue(0);
+  const clock = useSharedValue(0);
 
   useEffect(() => {
+    clock.value = 0;
+    clock.value = withRepeat(withTiming(LOOP_MS, { duration: LOOP_MS, easing: Easing.linear }), -1);
+  }, [clock]);
+
+  const cardStyle = useAnimatedStyle(() => {
+    const tm = clock.value;
     // Reveal the full action panel (its icon sits centred in MOCK_ACTION_WIDTH),
     // so slide the card the panel's whole width in each direction.
-    nudge.value = withRepeat(
-      withSequence(
-        withTiming(0, { duration: 700 }),
-        withTiming(-MOCK_ACTION_WIDTH, { duration: 600, easing: Easing.out(Easing.ease) }),
-        withTiming(0, { duration: 600, easing: Easing.out(Easing.ease) }),
-        withTiming(MOCK_ACTION_WIDTH, { duration: 600, easing: Easing.out(Easing.ease) }),
-        withTiming(0, { duration: 600, easing: Easing.out(Easing.ease) })
-      ),
-      -1
+    const x = easedKeyframes(tm, NUDGE_KEYS, NUDGE_VALUES);
+    const scale = interpolate(
+      tm,
+      [PRESS_START, PRESS_END, MENU_OPEN],
+      [1, 0.97, 1],
+      Extrapolation.CLAMP
     );
-  }, [nudge]);
+    return { transform: [{ translateX: x }, { scale }] };
+  });
 
-  const cardStyle = useAnimatedStyle(() => ({ transform: [{ translateX: nudge.value }] }));
+  const dotsGlowStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(
+      clock.value,
+      [PRESS_START, PRESS_END, MENU_CLOSE, MENU_GONE],
+      [0, 1, 1, 0],
+      Extrapolation.CLAMP
+    ),
+  }));
+
+  const menuStyle = useAnimatedStyle(() => {
+    const p = interpolate(
+      clock.value,
+      [PRESS_END, MENU_OPEN, MENU_CLOSE, MENU_GONE],
+      [0, 1, 1, 0],
+      Extrapolation.CLAMP
+    );
+    return { opacity: p, transform: [{ scale: 0.92 + 0.08 * p }] };
+  });
+
+  // Same entries, icons and order as the real item menu in zone/[id].tsx.
+  const menuItems = [
+    { icon: "pencil-outline", label: t("zone.edit"), danger: false },
+    { icon: "arrow-right-bold", label: t("zone.move"), danger: false },
+    { icon: "export", label: t("zone.take_out"), danger: false },
+    { icon: "delete-outline", label: t("zone.delete"), danger: true },
+  ];
 
   return (
-    <View style={[styles.mockStage, { borderColor: palette.divider }]}>
-      <View style={[styles.mockAction, styles.mockActionLeft, { backgroundColor: palette.primary }]}>
-        <Icon source="check-bold" size={22} color="#fff" />
-      </View>
-      <View style={[styles.mockAction, styles.mockActionRight, { backgroundColor: palette.danger }]}>
-        <Icon source="export" size={22} color="#fff" />
-      </View>
-      <Animated.View style={[styles.mockCard, { backgroundColor: palette.surface }, cardStyle]}>
-        <Icon source="weather-sunny" size={26} color={seasonIconColor("summer")} />
-        <View style={styles.mockCardText}>
-          <Text variant="titleSmall" style={{ color: palette.onSurface }} numberOfLines={1}>
-            {t("tutorial.demo_item_name")}
-          </Text>
-          <Text variant="bodySmall" style={{ color: palette.onSurfaceVariant }} numberOfLines={1}>
-            {t("tutorial.demo_item_note")}
-          </Text>
+    // The stage clips the sliding card, so the menu lives beside it in this
+    // wrapper. It's raised above the gesture rows that follow, which it
+    // briefly overlaps — like the real menu floating over the list.
+    <View style={styles.mockWrap}>
+      <View style={[styles.mockStage, { borderColor: palette.divider }]}>
+        <View style={[styles.mockAction, styles.mockActionLeft, { backgroundColor: palette.primary }]}>
+          <Icon source="check-bold" size={22} color="#fff" />
         </View>
-        <Icon source="dots-vertical" size={22} color={palette.onSurfaceVariant} />
+        <View style={[styles.mockAction, styles.mockActionRight, { backgroundColor: palette.danger }]}>
+          <Icon source="export" size={22} color="#fff" />
+        </View>
+        <Animated.View style={[styles.mockCard, { backgroundColor: palette.surface }, cardStyle]}>
+          <Icon source="weather-sunny" size={26} color={seasonIconColor("summer")} />
+          <View style={styles.mockCardText}>
+            <Text variant="titleSmall" style={{ color: palette.onSurface }} numberOfLines={1}>
+              {t("tutorial.demo_item_name")}
+            </Text>
+            <Text variant="bodySmall" style={{ color: palette.onSurfaceVariant }} numberOfLines={1}>
+              {t("tutorial.demo_item_note")}
+            </Text>
+          </View>
+          <View style={styles.mockDots}>
+            <Animated.View
+              style={[
+                StyleSheet.absoluteFill,
+                styles.mockDotsGlow,
+                { backgroundColor: hexToRgba(palette.primary, 0.18) },
+                dotsGlowStyle,
+              ]}
+            />
+            <Icon source="dots-vertical" size={22} color={palette.onSurfaceVariant} />
+          </View>
+        </Animated.View>
+      </View>
+
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.mockMenu,
+          {
+            backgroundColor: palette.surface,
+            borderColor: hexToRgba(palette.onSurface, 0.08),
+          },
+          menuStyle,
+        ]}
+      >
+        {menuItems.map((m) => (
+          <React.Fragment key={m.icon}>
+            {m.danger && <View style={[styles.mockMenuDivider, { backgroundColor: palette.divider }]} />}
+            <View style={styles.mockMenuRow}>
+              <View
+                style={[
+                  styles.mockMenuChip,
+                  {
+                    backgroundColor: m.danger
+                      ? hexToRgba(palette.danger, 0.13)
+                      : hexToRgba(palette.primary, 0.12),
+                  },
+                ]}
+              >
+                <Icon
+                  source={m.icon}
+                  size={15}
+                  color={m.danger ? palette.danger : palette.primary}
+                />
+              </View>
+              <Text
+                variant="bodyMedium"
+                numberOfLines={1}
+                style={{ color: m.danger ? palette.danger : palette.onSurface, flexShrink: 1 }}
+              >
+                {m.label}
+              </Text>
+            </View>
+          </React.Fragment>
+        ))}
       </Animated.View>
     </View>
   );
@@ -335,16 +454,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 24,
   },
-  mockStage: {
+  mockWrap: {
     position: "relative",
     width: "100%",
     maxWidth: 420,
+    marginTop: 20,
+    marginBottom: 4,
+    // Keep the floating menu above the gesture rows rendered after it.
+    zIndex: 10,
+    elevation: 10,
+  },
+  mockStage: {
+    position: "relative",
+    width: "100%",
     height: 68,
     borderRadius: 12,
     borderWidth: 1,
     overflow: "hidden",
-    marginTop: 20,
-    marginBottom: 4,
   },
   mockAction: {
     position: "absolute",
@@ -364,9 +490,42 @@ const styles = StyleSheet.create({
     bottom: 0,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 14,
+    paddingLeft: 14,
+    paddingRight: 4,
   },
   mockCardText: { flex: 1, marginHorizontal: 12 },
+  // Same footprint as the real row's ⋮ button, so the glow reads as "tap here".
+  mockDots: { width: 40, height: 40, justifyContent: "center", alignItems: "center" },
+  mockDotsGlow: { borderRadius: 20 },
+  mockMenu: {
+    position: "absolute",
+    top: 52,
+    right: 8,
+    width: 180,
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingVertical: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 18,
+    elevation: 12,
+  },
+  mockMenuRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  mockMenuChip: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mockMenuDivider: { height: 1, marginVertical: 4, marginHorizontal: 10 },
   gestureRow: { flexDirection: "row", alignItems: "center", marginTop: 22, width: "100%", maxWidth: 420 },
   gestureIcon: {
     width: 60,

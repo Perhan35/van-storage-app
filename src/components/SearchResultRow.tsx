@@ -14,7 +14,7 @@ import { List, IconButton } from "react-native-paper";
 import { Text } from "react-native-paper";
 import { useTranslation } from "react-i18next";
 import { useAppTheme } from "../theme/useAppTheme";
-import { SearchResultItem } from "../db/repository";
+import { SearchResultItem, parentPath } from "../db/repository";
 import { seasonIconName, seasonIconColor } from "./seasonIcon";
 import { expirationIconColor } from "./expirationIcon";
 import { getExpirationStatus } from "../utils/expiration";
@@ -145,9 +145,11 @@ function SearchResultRowInner({
             title={item.name}
             description={(props) => {
               const location = isGlobalView ? `${item.location_name} • ` : "";
+              // Where it is stored: "Salle de bain › Trousse de toilette".
+              const place = [item.zone_name, ...parentPath(item)].join(" › ");
               const zoneLine = item.out_of_van
-                ? `📍 ${location}${item.zone_name} • ${t("search.out_of_van")}`
-                : `📍 ${location}${item.zone_name}`;
+                ? `📍 ${location}${place} • ${t("search.out_of_van")}`
+                : `📍 ${location}${place}`;
               return (
                 <View>
                   <Text style={{ color: props.color, fontSize: props.fontSize }}>{zoneLine}</Text>

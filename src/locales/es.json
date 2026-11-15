@@ -180,6 +180,8 @@
   "out.filter_winter": "Invierno",
   "out.filter_none": "Ninguna",
 
+  "out.content_count_one": "+ {{count}} objeto dentro",
+  "out.content_count_other": "+ {{count}} objetos dentro",
   "search.placeholder": "Buscar un objeto...",
   "search.out_of_van": "Fuera",
   "search.no_results": "No se ha encontrado ningún objeto para \"{{query}}\"",
@@ -199,6 +201,20 @@
   "zone.take_out": "Sacar",
   "zone.delete": "Eliminar",
   "zone.delete_alert": "¿Eliminar \"{{name}}\"?",
+  "zone.add_inside": "Añadir dentro",
+  "zone.store_in": "Guardar en…",
+  "zone.store_in_title": "Guardar «{{name}}» en",
+  "zone.remove_from": "Sacar de «{{name}}»",
+  "zone.parent_field": "Dentro de",
+  "zone.parent_none": "Directamente en la zona",
+  "zone.group_expand": "Abrir {{name}}",
+  "zone.group_collapse": "Cerrar {{name}}",
+  "zone.group_count_one": "{{count}} objeto dentro",
+  "zone.group_count_other": "{{count}} objetos dentro",
+  "zone.delete_group_text_one": "Hay {{count}} objeto dentro. ¿Qué hacemos con él?",
+  "zone.delete_group_text_other": "Hay {{count}} objetos dentro. ¿Qué hacemos con ellos?",
+  "zone.delete_keep_contents": "Conservar los objetos",
+  "zone.delete_with_contents": "Borrar todo",
   "zone.empty": "Ningún objeto en esta zona",
   "zone.edit_item": "Editar el objeto",
   "zone.name": "Nombre",
@@ -287,6 +303,8 @@
   "kit.fulfill_at_home_desc": "Irá a «En casa», listo para cargar.",
   "kit.fulfill_confirm": "Guardar",
   "kit.save_error": "No ha funcionado. Inténtalo de nuevo.",
+  "kit.switch_summer": "Cambiar al modo verano",
+  "kit.switch_winter": "Cambiar al modo invierno",
 
   "settings.title_reminders": "Avisos de caducidad",
   "settings.desc_reminders": "Recibe un aviso antes de que un objeto llegue a su fecha de caducidad.",
@@ -338,5 +356,5 @@
   "tutorial.gesture_swipe_right_title": "Deslizar a la derecha",
   "tutorial.gesture_swipe_right_desc": "Marcar el objeto, en las zonas configuradas como lista de comprobación.",
   "tutorial.gesture_long_press_title": "Pulsación larga",
-  "tutorial.gesture_long_press_desc": "Abrir el menú para editar el objeto (el botón ⋮ hace lo mismo)."
+  "tutorial.gesture_long_press_desc": "Abrir el menú: editar, mover, sacar o eliminar el objeto. El botón ⋮ hace lo mismo."
 }

@@ -5,12 +5,20 @@ import { useTranslation } from "react-i18next";
 import { Season, ZoneWithCount } from "../../db/database";
 import { useTextSelectionFix } from "../../hooks/useTextSelectionFix";
 import { ExpirationField } from "../ExpirationField";
+import { ParentPickerField } from "../ParentPickerField";
+import { ParentOption } from "../../utils/itemTree";
 
 type Props = {
   visible: boolean;
   zones: ZoneWithCount[];
   zoneId: string;
   zoneLocked?: boolean;
+  // Items of the zone the new one can be stored inside. The "Dans :" field
+  // only shows when given (the zone screen does; the map's quick add, whose
+  // zone can change, doesn't).
+  parentOptions?: ParentOption[];
+  // Preselected parent ("Ajouter dedans" from an item's menu).
+  initialParentId?: string | null;
   onCancel: () => void;
   onSave: (
     name: string,
@@ -18,11 +26,21 @@ type Props = {
     season: Season,
     zoneId: string,
     expirationDate: string | null,
-    reminderDays: number
+    reminderDays: number,
+    parentId: string | null
   ) => void;
 };
 
-export function AddItemDialog({ visible, zones, zoneId, zoneLocked = false, onCancel, onSave }: Props) {
+export function AddItemDialog({
+  visible,
+  zones,
+  zoneId,
+  zoneLocked = false,
+  parentOptions,
+  initialParentId = null,
+  onCancel,
+  onSave,
+}: Props) {
   const { t } = useTranslation();
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
@@ -31,6 +49,7 @@ export function AddItemDialog({ visible, zones, zoneId, zoneLocked = false, onCa
   const [zonePickerVisible, setZonePickerVisible] = useState(false);
   const [expirationDate, setExpirationDate] = useState<string | null>(null);
   const [reminderDaysText, setReminderDaysText] = useState("7");
+  const [parentId, setParentId] = useState<string | null>(initialParentId);
   const nameSelection = useTextSelectionFix();
   const notesSelection = useTextSelectionFix();
   const reminderDaysSelection = useTextSelectionFix();
@@ -43,17 +62,26 @@ export function AddItemDialog({ visible, zones, zoneId, zoneLocked = false, onCa
       setSelectedZoneId(zoneId);
       setExpirationDate(null);
       setReminderDaysText("7");
+      setParentId(initialParentId);
       nameSelection.resetSelection();
       notesSelection.resetSelection();
       reminderDaysSelection.resetSelection();
     }
-  }, [visible, zoneId]);
+  }, [visible, zoneId, initialParentId]);
 
   const handleSave = () => {
     const trimmed = name.trim();
     if (!trimmed || !selectedZoneId) return;
     const reminderDays = Math.max(1, parseInt(reminderDaysText, 10) || 7);
-    onSave(trimmed, notes.trim(), season, selectedZoneId, expirationDate, reminderDays);
+    onSave(
+      trimmed,
+      notes.trim(),
+      season,
+      selectedZoneId,
+      expirationDate,
+      reminderDays,
+      parentOptions ? parentId : null
+    );
   };
 
   const selectedZone = zones.find((z) => z.id === selectedZoneId);
@@ -93,6 +121,14 @@ export function AddItemDialog({ visible, zones, zoneId, zoneLocked = false, onCa
                   style={styles.input}
                 />
               </Pressable>
+            )}
+            {!!parentOptions && (parentOptions.length > 0 || parentId !== null) && (
+              <ParentPickerField
+                options={parentOptions}
+                value={parentId}
+                onChange={setParentId}
+                style={styles.input}
+              />
             )}
             <TextInput
               mode="outlined"
