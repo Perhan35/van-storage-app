@@ -140,7 +140,7 @@ export default function OutOfVanScreen() {
         seen.set(item.zone_id, {
           id: item.zone_id,
           name: item.zone_name,
-          color: item.zone_color ?? palette.primary,
+          color: item.zone_color || palette.primary,
           locationIcon: item.location_icon,
         });
       }

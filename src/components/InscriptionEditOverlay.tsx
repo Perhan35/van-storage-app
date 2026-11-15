@@ -173,11 +173,10 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     paddingHorizontal: 8,
     borderRadius: 8,
-    shadowColor: "#000000",
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
+    // `boxShadow` rather than shadow*/elevation: the empty-state pill has a
+    // translucent fill, which makes iOS fall back to a per-pixel shadow and log
+    // "cannot calculate shadow efficiently". Blur = 2× the old shadowRadius.
+    boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.25)",
   },
   label: {
     color: LABEL_INK,

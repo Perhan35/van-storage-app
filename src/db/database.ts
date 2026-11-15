@@ -150,8 +150,24 @@ async function openAndMigrate(): Promise<SQLite.SQLiteDatabase> {
   }
 
   await upgradeLegacyVanOutline(db);
+  await normalizeIsoTimestamps(db);
 
   return db;
+}
+
+// Older imports wrote ISO timestamps ("2026-09-08T17:06:17.334Z") next to
+// SQLite's own "YYYY-MM-DD HH:MM:SS". Text comparison between the two is
+// wrong ("T" sorts after " "), so any ISO value left over is rewritten once in
+// the SQLite form. The WHERE clause makes this a no-op on every later launch.
+async function normalizeIsoTimestamps(db: SQLite.SQLiteDatabase): Promise<void> {
+  for (const table of ["locations", "zones", "items"]) {
+    for (const col of ["created_at", "updated_at"]) {
+      await db.runAsync(
+        `UPDATE ${table} SET ${col} = strftime('%Y-%m-%d %H:%M:%S', ${col})
+         WHERE ${col} LIKE '____-__-__T%' AND strftime('%Y-%m-%d %H:%M:%S', ${col}) IS NOT NULL`
+      );
+    }
+  }
 }
 
 // The first multi-location build stored the van as a chamfered octagon (an

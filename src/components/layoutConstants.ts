@@ -32,3 +32,8 @@ export function getZoneBounds(canvasW: number, canvasH: number) {
 // gap (in SVG units) instead of touching, so aligned layouts stay tidy.
 export const ZONE_SNAP_THRESHOLD_PX = 10;
 export const ZONE_SNAP_GAP_SVG = 6;
+
+// How long a finger must rest on a zone (or one of its resize handles) before
+// it's picked up. Long enough that the first finger of a pinch landing on a
+// zone a beat before the second one doesn't grab it.
+export const ZONE_GRAB_DELAY_MS = 400;

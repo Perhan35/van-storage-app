@@ -1,6 +1,9 @@
 import { withDb, Zone, Item, ZoneWithCount, Season, Location, LocationLabels } from "./database";
 import { DEFAULT_LOCATION_ICON, LayoutTemplate, Outline } from "./templates";
 import i18n from "../i18n";
+import { DEFAULT_ZONE_COLOR, sanitizeHex } from "../utils/color";
+import { normalizeForSearch, matchesSearch } from "../utils/search";
+import { toSqliteTimestamp } from "../utils/date";
 
 export const DEFAULT_FILL_OPACITY = 0.4;
 
@@ -86,7 +89,11 @@ function queryZonesWithCounts<T extends ZoneWithCount = ZoneWithCount>(
         console.warn(`Skipping zone ${r.id}: invalid geometry shape`);
         return [];
       }
-      return [{ ...r, geometry }];
+      // An empty or malformed color (seen in real backups: "") would leave
+      // edit handles, borders and chips invisible wherever the raw value is
+      // used, so it is normalised once here for every consumer.
+      const color = sanitizeHex((r as { color?: string }).color, DEFAULT_ZONE_COLOR);
+      return [{ ...r, geometry, color }];
     });
   });
 }
@@ -163,31 +170,37 @@ const SEARCH_ITEM_QUERY = `
   JOIN locations l ON z.location_id = l.id
 `;
 
+// Matching happens in JS (see normalizeForSearch) rather than with SQL LIKE,
+// whose case folding is ASCII-only: "Éponge" would miss "Eponge". An inventory
+// is a few hundred rows, so loading the candidates and filtering is cheap.
+function filterAndSortSearchResults(
+  rows: SearchResultItem[],
+  query: string
+): SearchResultItem[] {
+  const q = normalizeForSearch(query);
+  return rows
+    .filter((r) => matchesSearch(q, r.name, r.notes))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+}
+
 export function searchItems(
   query: string,
   locationId: string
 ): Promise<SearchResultItem[]> {
-  return withDb((db) => {
-    const escapedQuery = query.replace(/[\\%_]/g, "\\$&");
-    return db.getAllAsync<SearchResultItem>(
+  return withDb(async (db) => {
+    const rows = await db.getAllAsync<SearchResultItem>(
       `${SEARCH_ITEM_QUERY}
-       WHERE l.id = ?2
-       AND (i.name LIKE ?1 ESCAPE '\\' COLLATE NOCASE OR i.notes LIKE ?1 ESCAPE '\\' COLLATE NOCASE)
-       ORDER BY i.name COLLATE NOCASE`,
-      [`%${escapedQuery}%`, locationId]
+       WHERE l.id = ?`,
+      [locationId]
     );
+    return filterAndSortSearchResults(rows, query);
   });
 }
 
 export function searchAllItems(query: string): Promise<SearchResultItem[]> {
-  return withDb((db) => {
-    const escapedQuery = query.replace(/[\\%_]/g, "\\$&");
-    return db.getAllAsync<SearchResultItem>(
-      `${SEARCH_ITEM_QUERY}
-       WHERE (i.name LIKE ?1 ESCAPE '\\' COLLATE NOCASE OR i.notes LIKE ?1 ESCAPE '\\' COLLATE NOCASE)
-       ORDER BY i.name COLLATE NOCASE`,
-      [`%${escapedQuery}%`]
-    );
+  return withDb(async (db) => {
+    const rows = await db.getAllAsync<SearchResultItem>(SEARCH_ITEM_QUERY);
+    return filterAndSortSearchResults(rows, query);
   });
 }
 
@@ -321,7 +334,7 @@ export function updateZone(
   return withDb(async (db) => {
     await db.runAsync(
       "UPDATE zones SET name = ?, color = ?, fill_opacity = ?, checklist = ?, updated_at = datetime('now') WHERE id = ?",
-      [name, color, fillOpacity, checklist ? 1 : 0, zoneId]
+      [name, sanitizeHex(color, DEFAULT_ZONE_COLOR), fillOpacity, checklist ? 1 : 0, zoneId]
     );
   });
 }
@@ -349,7 +362,7 @@ export function insertZone(
       const order = (maxOrder?.m ?? 0) + 1;
       await db.runAsync(
         "INSERT INTO zones (id, name, color, geometry, sort_order, checklist, location_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [id, name, color, JSON.stringify(geometry), order, checklist ? 1 : 0, locationId]
+        [id, name, sanitizeHex(color, DEFAULT_ZONE_COLOR), JSON.stringify(geometry), order, checklist ? 1 : 0, locationId]
       );
     });
   });
@@ -609,8 +622,8 @@ export function importAllData(
             // null on older backups leaves the plan on its built-in defaults.
             (location.labels as string) ?? null,
             (location.sort_order as number) ?? 0,
-            (location.created_at as string) ?? new Date().toISOString(),
-            (location.updated_at as string) ?? new Date().toISOString(),
+            toSqliteTimestamp(location.created_at),
+            toSqliteTimestamp(location.updated_at),
           ]
         );
       }
@@ -621,14 +634,14 @@ export function importAllData(
           [
             zone.id as string,
             zone.name as string,
-            zone.color as string,
+            sanitizeHex(zone.color as string, DEFAULT_ZONE_COLOR),
             zone.geometry as string,
             sanitizeFillOpacity(zone.fill_opacity),
             zone.checklist ? 1 : 0,
             (zone.sort_order as number) ?? 0,
             zone.location_id as string,
-            (zone.created_at as string) ?? new Date().toISOString(),
-            (zone.updated_at as string) ?? new Date().toISOString(),
+            toSqliteTimestamp(zone.created_at),
+            toSqliteTimestamp(zone.updated_at),
           ]
         );
       }
@@ -646,8 +659,8 @@ export function importAllData(
             item.checked ? 1 : 0,
             (item.expiration_date as string) ?? null,
             (item.reminder_days as number) ?? 7,
-            (item.created_at as string) ?? new Date().toISOString(),
-            (item.updated_at as string) ?? new Date().toISOString(),
+            toSqliteTimestamp(item.created_at),
+            toSqliteTimestamp(item.updated_at),
           ]
         );
       }

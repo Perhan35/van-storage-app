@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, StyleSheet, Alert, ScrollView, Platform, ActionSheetIOS } from "react-native";
 import type { ViewInstance } from "react-native";
 import { Text, Button, Divider, SegmentedButtons, Switch } from "react-native-paper";
@@ -15,6 +15,13 @@ import { ContextMenu } from "../src/components/ContextMenu";
 import { SeasonChangeoverDialog } from "../src/components/dialogs/SeasonChangeoverDialog";
 import { ExpirationOverviewDialog } from "../src/components/dialogs/ExpirationOverviewDialog";
 import { runBackupExport } from "../src/utils/backup";
+import {
+  deleteImportSnapshot,
+  getLatestImportSnapshotInfo,
+  ImportSnapshotInfo,
+  readImportSnapshot,
+  saveImportSnapshot,
+} from "../src/utils/importSnapshots";
 
 function pickFileWeb(): Promise<string | null> {
   return new Promise((resolve) => {
@@ -75,6 +82,7 @@ export default function SettingsScreen() {
   const remindersEnabled = useAppStore((s) => s.remindersEnabled);
   const setRemindersEnabled = useAppStore((s) => s.setRemindersEnabled);
   const reloadRemindersEnabled = useAppStore((s) => s.reloadRemindersEnabled);
+  const reconcileRemindersPermission = useAppStore((s) => s.reconcileRemindersPermission);
   const syncRemindersIfEnabled = useAppStore((s) => s.syncRemindersIfEnabled);
   const backupRemindersEnabled = useAppStore((s) => s.backupRemindersEnabled);
   const setBackupRemindersEnabled = useAppStore((s) => s.setBackupRemindersEnabled);
@@ -84,6 +92,7 @@ export default function SettingsScreen() {
   const reloadRecentSearches = useAppStore((s) => s.reloadRecentSearches);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [snapshotInfo, setSnapshotInfo] = useState<ImportSnapshotInfo | null>(null);
   const [changeoverVisible, setChangeoverVisible] = useState(false);
   const [overviewVisible, setOverviewVisible] = useState(false);
   // Android only: the measured rect of the language button, so the dropdown
@@ -159,6 +168,138 @@ export default function SettingsScreen() {
     if (!result.shared) {
       Alert.alert(t("settings.export_success_title"), t("settings.export_success"));
     }
+  };
+
+  const refreshSnapshotInfo = async () => {
+    setSnapshotInfo(await getLatestImportSnapshotInfo());
+  };
+
+  useEffect(() => {
+    refreshSnapshotInfo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Writes the data, then brings every screen's state in line with it.
+  // Returns false only when the data itself couldn't be written — that runs in
+  // a transaction, so nothing changed. Once it's committed the import *has*
+  // happened: each refresh step below is best-effort and can't turn that
+  // into an "import failed" message or stop the steps after it.
+  const applyImport = async (
+    rawLocations: Record<string, unknown>[],
+    rawZones: Record<string, unknown>[],
+    rawItems: Record<string, unknown>[],
+    rawPreferences: Record<string, unknown>[],
+    done: { title: string; message: string; recordAsBackedUp: boolean }
+  ): Promise<boolean> => {
+    try {
+      await importAllData(rawLocations, rawZones, rawItems, rawPreferences);
+    } catch (e) {
+      Alert.alert(t("settings.error"), t("settings.import_error") + " " + (e as Error).message);
+      return false;
+    }
+
+    const step = async (fn: () => Promise<unknown>) => {
+      try {
+        await fn();
+      } catch (e) {
+        console.warn("Post-import refresh step failed", e);
+      }
+    };
+
+    await step(reloadLocations);
+    // The previously active location may not exist in the imported data
+    // (it was replaced wholesale) — fall back to the first location so
+    // the map isn't left pointed at a location_id that no longer exists.
+    await step(async () => {
+      const currentActiveId = useAppStore.getState().activeLocationId;
+      const stillExists = useAppStore
+        .getState()
+        .locations.some((l) => l.id === currentActiveId);
+      if (stillExists) {
+        await loadZones();
+      } else {
+        const first = useAppStore.getState().locations[0];
+        if (first) await setActiveLocation(first.id);
+      }
+    });
+    // The backup carries every preference row, the language among them, so
+    // importing one made on a device set to Italian switches the app to
+    // Italian here rather than on the next launch.
+    await step(reloadLanguagePreference);
+    await step(reloadThemeMode);
+    await step(reloadShowMenuHeader);
+    await step(reloadZoneColorFullScreen);
+    await step(reloadSeasonMode);
+    await step(reloadRemindersEnabled);
+    // The reminders setting may come from another device: if this one doesn't
+    // allow notifications, it's switched off here and the user is told why.
+    let remindersDisabled = false;
+    await step(async () => {
+      remindersDisabled = await reconcileRemindersPermission();
+    });
+    await step(syncRemindersIfEnabled);
+    await step(reloadBackupSettings);
+    await step(reloadRecentSearches);
+    // What's on the device now is exactly what's in the file the user just
+    // imported, so there's nothing new to back up — record it as backed up
+    // rather than let the reminder fire on the next launch.
+    if (done.recordAsBackedUp) await step(recordBackupDone);
+
+    // One alert, not two: back-to-back alerts on iOS can drop the second.
+    const message = remindersDisabled
+      ? done.message + "\n\n" + t("settings.import_reminders_disabled")
+      : done.message;
+    Alert.alert(done.title, message, [
+      {
+        text: t("settings.ok"),
+        onPress: () => {
+          // Data was replaced wholesale, so land back on the all-locations
+          // overview rather than leaving the app pointed at whatever
+          // single-location map happened to be showing before import.
+          useAppStore.getState().setOverviewMode(true);
+          router.replace("/");
+        },
+      },
+    ]);
+    return true;
+  };
+
+  const handleUndoImport = () => {
+    const info = snapshotInfo;
+    if (!info) return;
+    const date = new Date(info.savedAt).toLocaleString(i18n.language);
+    const restore = async () => {
+      setImporting(true);
+      try {
+        const data = await readImportSnapshot(info.id);
+        const ok = await applyImport(
+          data.locations as Record<string, unknown>[],
+          data.zones as Record<string, unknown>[],
+          data.items as Record<string, unknown>[],
+          data.preferences as Record<string, unknown>[],
+          {
+            title: t("settings.undo_import_success_title"),
+            message: t("settings.undo_import_success"),
+            // The restored data is whatever the device held before the
+            // import, which isn't known to be in any backup file.
+            recordAsBackedUp: false,
+          }
+        );
+        if (ok) await deleteImportSnapshot(info.id);
+      } catch (e) {
+        Alert.alert(t("settings.error"), t("settings.import_error") + " " + (e as Error).message);
+      }
+      await refreshSnapshotInfo();
+      setImporting(false);
+    };
+    Alert.alert(
+      t("settings.btn_undo_import"),
+      t("settings.undo_import_confirm_text", { date }),
+      [
+        { text: t("map.cancel"), style: "cancel" },
+        { text: t("settings.undo_import_confirm_btn"), style: "destructive", onPress: restore },
+      ]
+    );
   };
 
   const importData = async (content: string) => {
@@ -301,58 +442,24 @@ export default function SettingsScreen() {
 
     const doImport = async () => {
       setImporting(true);
+      // An import replaces everything on the device, so keep a copy of what's
+      // there first — and refuse to go on without one.
+      let snapshotId: string;
       try {
-        await importAllData(rawLocations, rawZones, rawItems, rawPreferences);
-
-        await reloadLocations();
-        // The previously active location may not exist in the imported data
-        // (it was replaced wholesale) — fall back to the first location so
-        // the map isn't left pointed at a location_id that no longer exists.
-        const currentActiveId = useAppStore.getState().activeLocationId;
-        const stillExists = useAppStore
-          .getState()
-          .locations.some((l) => l.id === currentActiveId);
-        if (stillExists) {
-          await loadZones();
-        } else {
-          const first = useAppStore.getState().locations[0];
-          if (first) await setActiveLocation(first.id);
-        }
-        // The backup carries every preference row, the language among them, so
-        // importing one made on a device set to Italian switches the app to
-        // Italian here rather than on the next launch.
-        await reloadLanguagePreference();
-        await reloadThemeMode();
-        await reloadShowMenuHeader();
-        await reloadZoneColorFullScreen();
-        await reloadSeasonMode();
-        await reloadRemindersEnabled();
-        await syncRemindersIfEnabled();
-        await reloadBackupSettings();
-        await reloadRecentSearches();
-        // What's on the device now is exactly what's in the file the user just
-        // imported, so there's nothing new to back up — record it as backed up
-        // rather than let the reminder fire on the next launch.
-        await recordBackupDone();
-        Alert.alert(
-          t("settings.import_success_title"),
-          t("settings.import_success"),
-          [
-            {
-              text: t("settings.ok"),
-              onPress: () => {
-                // Data was replaced wholesale, so land back on the all-locations
-                // overview rather than leaving the app pointed at whatever
-                // single-location map happened to be showing before import.
-                useAppStore.getState().setOverviewMode(true);
-                router.replace("/");
-              },
-            },
-          ]
-        );
+        snapshotId = await saveImportSnapshot();
       } catch (e) {
-        Alert.alert(t("settings.error"), t("settings.import_error") + " " + (e as Error).message);
+        setImporting(false);
+        Alert.alert(t("settings.error"), t("settings.import_snapshot_error") + " " + (e as Error).message);
+        return;
       }
+      const ok = await applyImport(rawLocations, rawZones, rawItems, rawPreferences, {
+        title: t("settings.import_success_title"),
+        message: t("settings.import_success"),
+        recordAsBackedUp: true,
+      });
+      // Nothing was replaced, so there's nothing to undo.
+      if (!ok) await deleteImportSnapshot(snapshotId).catch(() => {});
+      await refreshSnapshotInfo();
       setImporting(false);
     };
 
@@ -431,6 +538,24 @@ export default function SettingsScreen() {
         >
           {t("settings.btn_import")}
         </Button>
+        {snapshotInfo && (
+          <>
+            <Button
+              mode="text"
+              icon="undo"
+              onPress={handleUndoImport}
+              disabled={importing}
+              style={styles.button}
+            >
+              {t("settings.btn_undo_import")}
+            </Button>
+            <Text variant="bodySmall" style={{ color: palette.onSurfaceVariant }}>
+              {t("settings.undo_import_hint", {
+                date: new Date(snapshotInfo.savedAt).toLocaleString(i18n.language),
+              })}
+            </Text>
+          </>
+        )}
         <View style={[styles.switchRow, styles.switchRowSpaced]}>
           <Text variant="bodyMedium" style={styles.switchLabel}>
             {t("settings.backup_reminders_enabled")}

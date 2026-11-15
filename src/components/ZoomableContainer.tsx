@@ -38,6 +38,21 @@ export type ZoomableContainerHandle = {
   resetZoom: () => void;
 };
 
+// Lets a descendant move the canvas' "rest" view — the transform resetZoom
+// returns to, and the baseline the pinch range is measured from — away from
+// identity. Used by zone editing: its viewBox is wider than the read-mode one
+// (it includes the overflow margin), so at identity the plan would visibly
+// shrink on entering edit mode; resting zoomed-in on the read-mode frame keeps
+// the plan the same size on screen while the margin stays a pan/pinch away.
+//
+// `rect` is in content-space (pre-transform) coordinates, like ZoomRect for
+// zoomToRect; null restores the identity rest view. The switch is instant and
+// carries the user's own zoom on top of the old rest view over to the new one,
+// so what's on screen doesn't jump.
+export type ZoomControl = {
+  setRestRect: (rect: ZoomRect | null) => void;
+};
+
 type Props = {
   children: React.ReactNode;
   enabled?: boolean;
@@ -95,6 +110,21 @@ export function usePanLock() {
   return useContext(PanLockContext);
 }
 
+// True from the moment a second finger lands on the canvas until every finger
+// is back up (see `multiTouch` below). Descendants with their own one-finger
+// drags (a picked-up zone) read it to stand down the moment a pinch starts.
+const MultiTouchContext = createContext<SharedValue<boolean> | null>(null);
+
+export function useMultiTouch() {
+  return useContext(MultiTouchContext);
+}
+
+const ZoomControlContext = createContext<ZoomControl | null>(null);
+
+export function useZoomControl() {
+  return useContext(ZoomControlContext);
+}
+
 function clampTranslate(
   translate: number,
   containerSize: number,
@@ -128,6 +158,11 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
   const dragLock = useSharedValue(false);
   const containerWidth = useSharedValue(1);
   const containerHeight = useSharedValue(1);
+
+  // The rest view (see ZoomControl). Identity unless a descendant moved it.
+  const restScale = useSharedValue(1);
+  const restTranslateX = useSharedValue(0);
+  const restTranslateY = useSharedValue(0);
 
   // Deadline (wall-clock ms) until which a programmatic zoom animation owns the
   // transform and gestures stand down instead of fighting it for it.
@@ -309,9 +344,11 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
         return;
       }
 
+      // The upper bound is relative to the rest view, so a zoomed-in rest
+      // view (zone editing) doesn't eat into how far the user can zoom.
       const next = Math.min(
         Math.max(savedScale.value * e.scale, MIN_SCALE),
-        MAX_SCALE
+        MAX_SCALE * restScale.value
       );
 
       // 1. Follow the centroid, so moving both fingers together drags. Uses
@@ -481,13 +518,57 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
 
       animUntil.value = Date.now() + DIVE_OUT_DURATION + ANIM_LOCKOUT_SLACK;
 
-      rawTranslateX.value = 0;
-      rawTranslateY.value = 0;
+      // Back to the rest view, which is identity except while zone editing —
+      // returning to the map mid-edit must not shrink the plan again.
+      rawTranslateX.value = restTranslateX.value;
+      rawTranslateY.value = restTranslateY.value;
 
       const timingConfig = { duration: DIVE_OUT_DURATION, easing: DIVE_OUT_EASING };
-      scale.value = withTiming(1, timingConfig);
-      translateX.value = withTiming(0, timingConfig);
-      translateY.value = withTiming(0, timingConfig);
+      scale.value = withTiming(restScale.value, timingConfig);
+      translateX.value = withTiming(restTranslateX.value, timingConfig);
+      translateY.value = withTiming(restTranslateY.value, timingConfig);
+    },
+  }), []);
+
+  const zoomControl = useMemo<ZoomControl>(() => ({
+    setRestRect(rect) {
+      const cw = containerWidth.value;
+      const ch = containerHeight.value;
+      let nextScale = 1;
+      let nextTx = 0;
+      let nextTy = 0;
+      if (rect && cw > 1 && ch > 1 && rect.width > 0 && rect.height > 0) {
+        const rawScale = Math.min(cw / rect.width, ch / rect.height);
+        nextScale = Math.min(Math.max(rawScale, 1), MAX_SCALE);
+        nextTx = -(rect.left + rect.width / 2 - cw / 2) * nextScale;
+        nextTy = -(rect.top + rect.height / 2 - ch / 2) * nextScale;
+      }
+
+      // Split the current transform into "old rest view" + "the user's own
+      // zoom/pan on top of it", then re-apply the user's part on top of the
+      // new rest view. (The transform maps a content point p, relative to the
+      // container center, to t + s * p.)
+      const userScale = scale.value / restScale.value;
+      const userTx = translateX.value - userScale * restTranslateX.value;
+      const userTy = translateY.value - userScale * restTranslateY.value;
+
+      restScale.value = nextScale;
+      restTranslateX.value = nextTx;
+      restTranslateY.value = nextTy;
+
+      const s = Math.min(Math.max(userScale * nextScale, MIN_SCALE), MAX_SCALE * nextScale);
+      const tx = clampTranslate(userTx + userScale * nextTx, cw, s);
+      const ty = clampTranslate(userTy + userScale * nextTy, ch, s);
+      // Plain writes, not animations: the viewBox has already switched, so the
+      // compensation must land at once or the plan visibly shrinks and regrows.
+      scale.value = s;
+      translateX.value = tx;
+      translateY.value = ty;
+      rawTranslateX.value = tx;
+      rawTranslateY.value = ty;
+      // Gestures in flight re-baseline from the new transform.
+      pinchPrimed.value = false;
+      panPrimed.value = false;
     },
   }), []);
 
@@ -508,7 +589,11 @@ export const ZoomableContainer = forwardRef<ZoomableContainerHandle, Props>(
         <Animated.View style={[styles.inner, animatedStyle]}>
           <ZoomScaleContext.Provider value={scale}>
             <PanLockContext.Provider value={dragLock}>
-              {children}
+              <MultiTouchContext.Provider value={multiTouch}>
+                <ZoomControlContext.Provider value={zoomControl}>
+                  {children}
+                </ZoomControlContext.Provider>
+              </MultiTouchContext.Provider>
             </PanLockContext.Provider>
           </ZoomScaleContext.Provider>
         </Animated.View>

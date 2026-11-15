@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { View, LayoutChangeEvent, StyleSheet, Pressable } from "react-native";
 import Svg, { Text as SvgText, G } from "react-native-svg";
 import { useSharedValue } from "react-native-reanimated";
@@ -7,7 +7,7 @@ import { ZoneOverlay } from "./ZoneOverlay";
 import { ZoneEditOverlay } from "./ZoneEditOverlay";
 import { OutlineEditOverlay } from "./OutlineEditOverlay";
 import { InscriptionEditOverlay } from "./InscriptionEditOverlay";
-import { useZoomScale } from "./ZoomableContainer";
+import { useZoomScale, useZoomControl } from "./ZoomableContainer";
 import { useAppStore } from "../store/useAppStore";
 import { useAppTheme } from "../theme/useAppTheme";
 import { Zone, ZoneWithCount, LabelSide } from "../db/database";
@@ -180,12 +180,20 @@ export function VanLayoutSVG({ onZonePress, onEditInscription }: Props) {
   // array and outline points on every call, and previously ran on every
   // render — including renders driven by unrelated state (highlight timers,
   // gesture-only updates) while a flight/dive animation is in progress.
-  const { viewBoxMinX, viewBoxMinY, viewBoxW, viewBoxH, svgScale, svgOffsetX, svgOffsetY } =
+  const { viewBoxMinX, viewBoxMinY, viewBoxW, viewBoxH, svgScale, svgOffsetX, svgOffsetY, readFrame } =
     useMemo(() => {
       // Content = the zones plus the outline (with its curve control points).
       // Both views frame this so nothing the user drew — including a curve
       // pushed past the frame — is ever clipped out of view.
       const contentBBox = unionBBox(getZonesBoundingBox(zones), getOutlineBoundingBox(outline))!;
+      // What the read-mode view frames (SVG units). Zone editing rests zoomed
+      // in on this so entering edit mode doesn't shrink the plan.
+      const readFrame = {
+        minX: contentBBox.minX - ZONES_FIT_PADDING,
+        minY: contentBBox.minY - ZONES_FIT_PADDING,
+        w: contentBBox.maxX - contentBBox.minX + ZONES_FIT_PADDING * 2,
+        h: contentBBox.maxY - contentBBox.minY + ZONES_FIT_PADDING * 2,
+      };
 
       let minX: number;
       let minY: number;
@@ -205,10 +213,10 @@ export function VanLayoutSVG({ onZonePress, onEditInscription }: Props) {
         w = bmaxX - bx;
         h = bmaxY - by;
       } else {
-        minX = contentBBox.minX - ZONES_FIT_PADDING;
-        minY = contentBBox.minY - ZONES_FIT_PADDING;
-        w = contentBBox.maxX - contentBBox.minX + ZONES_FIT_PADDING * 2;
-        h = contentBBox.maxY - contentBBox.minY + ZONES_FIT_PADDING * 2;
+        minX = readFrame.minX;
+        minY = readFrame.minY;
+        w = readFrame.w;
+        h = readFrame.h;
       }
 
       let scale = 1;
@@ -228,8 +236,44 @@ export function VanLayoutSVG({ onZonePress, onEditInscription }: Props) {
         svgScale: scale,
         svgOffsetX: offsetX,
         svgOffsetY: offsetY,
+        readFrame,
       };
     }, [zones, outline, editMode, canvasW, canvasH, layout]);
+
+  // Zone editing widens the viewBox to the overflow margin, which on its own
+  // shrinks the plan on screen — and zooming back in by hand meant pinching
+  // over zones that a lingering finger would pick up. Instead the canvas rests
+  // zoomed in on the read-mode frame, so the plan keeps its size; the margin
+  // is still a pan or a pinch-out away. Outline editing keeps the full view
+  // (identity), since its handles are meant to reach the whole margin.
+  //
+  // The read frame is captured on the way in and held for the whole session:
+  // it follows the zones, so tracking it live would re-frame the view after
+  // every committed move.
+  const zoomControl = useZoomControl();
+  const zoneEditActive = editMode && !outlineEditMode;
+  const frozenReadFrame = useRef(readFrame);
+  if (!zoneEditActive) frozenReadFrame.current = readFrame;
+  // null = rest view not set by us yet, so mounting mid-edit still applies it.
+  const restApplied = useRef<boolean | null>(null);
+  useLayoutEffect(() => {
+    if (!zoomControl || !layout) return;
+    if (zoneEditActive) {
+      const f = frozenReadFrame.current;
+      zoomControl.setRestRect({
+        left: f.minX * svgScale + svgOffsetX,
+        top: f.minY * svgScale + svgOffsetY,
+        width: f.w * svgScale,
+        height: f.h * svgScale,
+      });
+      restApplied.current = true;
+    } else if (restApplied.current !== false) {
+      // Only on the way out (or first mount): read mode must not keep
+      // snapping the transform back, or it would fight the zone dive.
+      zoomControl.setRestRect(null);
+      restApplied.current = false;
+    }
+  }, [zoomControl, zoneEditActive, layout, svgScale, svgOffsetX, svgOffsetY]);
 
   const handleGeometryChange = useCallback(
     (zoneId: string, geometry: Zone["geometry"]) => {

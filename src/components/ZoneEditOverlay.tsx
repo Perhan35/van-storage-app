@@ -4,13 +4,18 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedReaction,
   runOnJS,
   withTiming,
   SharedValue,
 } from "react-native-reanimated";
 import { ZoneWithCount, Zone } from "../db/database";
-import { usePanLock } from "./ZoomableContainer";
-import { ZONE_SNAP_THRESHOLD_PX, ZONE_SNAP_GAP_SVG } from "./layoutConstants";
+import { usePanLock, useMultiTouch } from "./ZoomableContainer";
+import {
+  ZONE_SNAP_THRESHOLD_PX,
+  ZONE_SNAP_GAP_SVG,
+  ZONE_GRAB_DELAY_MS,
+} from "./layoutConstants";
 import { triggerHaptic } from "../utils/haptics";
 
 const HANDLE_SIZE = 24;
@@ -120,6 +125,9 @@ function ZoneEditOverlayInner({
   // While this zone is picked up, the ancestor canvas pan stands down so a
   // one-finger drag moves the zone, not the whole map.
   const panLock = usePanLock();
+  // Goes true as soon as a second finger is on the canvas (anywhere, not just
+  // on this zone): that's a pinch, so a grabbed zone lets go — see `grab*`.
+  const multiTouch = useMultiTouch();
 
   // Other zones' edges, split by axis, recomputed whenever the set of
   // zones or their geometry changes (used inside the gesture worklets).
@@ -141,6 +149,13 @@ function ZoneEditOverlayInner({
   // 0 = idle, 1 = zone is "picked up" (long-press held) and moving. Drives the
   // lift feedback so it's obvious the zone is now grabbed vs. just tapped.
   const dragActive = useSharedValue(0);
+
+  // Whether the current gesture actually picked the zone up (reached onStart
+  // with a single finger), and whether it was then called off by a second
+  // finger. A called-off gesture puts the zone back where it was and commits
+  // nothing, so zooming over a zone can't nudge it by accident.
+  const grabbed = useSharedValue(false);
+  const grabCancelled = useSharedValue(false);
 
   // Sync when zone prop changes (e.g. after DB update)
   React.useEffect(() => {
@@ -164,20 +179,104 @@ function ZoneEditOverlayInner({
     });
   };
 
+  // Shared start/stop logic for the three gestures below.
+  const beginGrab = () => {
+    "worklet";
+    // Another of this zone's gestures already holds it (body vs. a handle).
+    if (grabbed.value) return false;
+    grabbed.value = false;
+    grabCancelled.value = false;
+    // The second finger may already be down by the time the hold elapses.
+    if (multiTouch?.value) return false;
+    startX.value = svgX.value;
+    startY.value = svgY.value;
+    startW.value = svgW.value;
+    startH.value = svgH.value;
+    grabbed.value = true;
+    runOnJS(triggerHaptic)();
+    dragActive.value = withTiming(1, { duration: 120 });
+    if (panLock) panLock.value = true;
+    return true;
+  };
+
+  // Restores the pre-gesture geometry and drops the zone.
+  const releaseGrab = (restore: boolean) => {
+    "worklet";
+    if (grabbed.value && restore) {
+      svgX.value = startX.value;
+      svgY.value = startY.value;
+      svgW.value = startW.value;
+      svgH.value = startH.value;
+    }
+    grabbed.value = false;
+    dragActive.value = withTiming(0, { duration: 150 });
+    if (panLock) panLock.value = false;
+  };
+
+  // Called on every update: true if the gesture should keep going. Checks the
+  // canvas-wide flag *and* this gesture's own pointer count, since which of
+  // the two sees the second finger depends on where it lands and the platform.
+  const keepGrab = (numberOfPointers: number) => {
+    "worklet";
+    if (!grabbed.value || grabCancelled.value) return false;
+    if (numberOfPointers > 1 || multiTouch?.value) {
+      grabCancelled.value = true;
+      releaseGrab(true);
+      return false;
+    }
+    return true;
+  };
+
+  const endGrab = (success: boolean) => {
+    "worklet";
+    // multiTouch is a backstop for the reaction below: the order in which
+    // the canvas' touch tracker and this gesture hear about lifted fingers
+    // isn't guaranteed.
+    if (success && grabbed.value && !grabCancelled.value && !multiTouch?.value) {
+      runOnJS(commitGeometry)(
+        svgX.value,
+        svgY.value,
+        svgW.value,
+        svgH.value
+      );
+    }
+  };
+
+  // The usual pinch posture is a thumb resting still on a zone while the other
+  // finger moves — the zone's own gesture then gets no update to notice the
+  // second finger in. Reacting to the canvas-wide flag directly covers that.
+  useAnimatedReaction(
+    () => multiTouch?.value ?? false,
+    (isMulti) => {
+      if (isMulti && grabbed.value && !grabCancelled.value) {
+        grabCancelled.value = true;
+        releaseGrab(true);
+      }
+    }
+  );
+
+  // Always drop the zone back down and release the canvas lock, even if the
+  // gesture is cancelled or interrupted before onEnd. Anything not committed
+  // goes back to where it started.
+  const finalizeGrab = (success: boolean) => {
+    "worklet";
+    const committed = success && !grabCancelled.value;
+    if (grabbed.value) releaseGrab(!committed);
+    grabCancelled.value = false;
+  };
+
   // --- Drag gesture (move entire zone) ---
   // Requires a short press-and-hold before it activates, so a single-finger
   // touch that's really meant for panning/zooming the canvas doesn't drag a
   // zone by accident. The zone visibly lifts once the hold registers.
   const dragGesture = Gesture.Pan()
-    .activateAfterLongPress(250)
+    .activateAfterLongPress(ZONE_GRAB_DELAY_MS)
+    .maxPointers(1)
     .onStart(() => {
-      runOnJS(triggerHaptic)();
-      startX.value = svgX.value;
-      startY.value = svgY.value;
-      dragActive.value = withTiming(1, { duration: 120 });
-      if (panLock) panLock.value = true;
+      beginGrab();
     })
     .onUpdate((e) => {
+      if (!keepGrab(e.numberOfPointers)) return;
       const scale = fitScale * zoomScale.value;
       const dx = e.translationX / scale;
       const dy = e.translationY / scale;
@@ -225,34 +324,25 @@ function ZoneEditOverlayInner({
       svgX.value = Math.min(Math.max(minX, newX), maxX - w);
       svgY.value = Math.min(Math.max(minY, newY), maxY - h);
     })
-    .onEnd(() => {
-      runOnJS(commitGeometry)(
-        svgX.value,
-        svgY.value,
-        svgW.value,
-        svgH.value
-      );
+    .onEnd((_e, success) => {
+      endGrab(success);
     })
-    .onFinalize(() => {
-      // Always drop the zone back down and release the canvas lock, even if the
-      // gesture is cancelled or interrupted before onEnd.
-      dragActive.value = withTiming(0, { duration: 150 });
-      if (panLock) panLock.value = false;
+    .onFinalize((_e, success) => {
+      finalizeGrab(success);
     });
 
   // --- Resize gesture (bottom-right handle) ---
-  // Same press-and-hold gate as the move gesture, so a single-finger touch
-  // meant for panning/zooming the canvas doesn't start a resize by accident.
+  // Same press-and-hold gate (and second-finger cancel) as the move gesture,
+  // so a touch meant for panning/zooming the canvas doesn't start a resize by
+  // accident.
   const resizeGesture = Gesture.Pan()
-    .activateAfterLongPress(250)
+    .activateAfterLongPress(ZONE_GRAB_DELAY_MS)
+    .maxPointers(1)
     .onStart(() => {
-      runOnJS(triggerHaptic)();
-      startW.value = svgW.value;
-      startH.value = svgH.value;
-      dragActive.value = withTiming(1, { duration: 120 });
-      if (panLock) panLock.value = true;
+      beginGrab();
     })
     .onUpdate((e) => {
+      if (!keepGrab(e.numberOfPointers)) return;
       const scale = fitScale * zoomScale.value;
       const dw = e.translationX / scale;
       const dh = e.translationY / scale;
@@ -286,32 +376,22 @@ function ZoneEditOverlayInner({
       svgW.value = Math.min(Math.max(MIN_ZONE_SIZE_SVG, endX - x), maxW);
       svgH.value = Math.min(Math.max(MIN_ZONE_SIZE_SVG, endY - y), maxH);
     })
-    .onEnd(() => {
-      runOnJS(commitGeometry)(
-        svgX.value,
-        svgY.value,
-        svgW.value,
-        svgH.value
-      );
+    .onEnd((_e, success) => {
+      endGrab(success);
     })
-    .onFinalize(() => {
-      dragActive.value = withTiming(0, { duration: 150 });
-      if (panLock) panLock.value = false;
+    .onFinalize((_e, success) => {
+      finalizeGrab(success);
     });
 
   // --- Resize gesture (top-left handle) ---
   const resizeTLGesture = Gesture.Pan()
-    .activateAfterLongPress(250)
+    .activateAfterLongPress(ZONE_GRAB_DELAY_MS)
+    .maxPointers(1)
     .onStart(() => {
-      runOnJS(triggerHaptic)();
-      startX.value = svgX.value;
-      startY.value = svgY.value;
-      startW.value = svgW.value;
-      startH.value = svgH.value;
-      dragActive.value = withTiming(1, { duration: 120 });
-      if (panLock) panLock.value = true;
+      beginGrab();
     })
     .onUpdate((e) => {
+      if (!keepGrab(e.numberOfPointers)) return;
       const scale = fitScale * zoomScale.value;
       const dx = e.translationX / scale;
       const dy = e.translationY / scale;
@@ -361,17 +441,11 @@ function ZoneEditOverlayInner({
       svgW.value = newW;
       svgH.value = newH;
     })
-    .onEnd(() => {
-      runOnJS(commitGeometry)(
-        svgX.value,
-        svgY.value,
-        svgW.value,
-        svgH.value
-      );
+    .onEnd((_e, success) => {
+      endGrab(success);
     })
-    .onFinalize(() => {
-      dragActive.value = withTiming(0, { duration: 150 });
-      if (panLock) panLock.value = false;
+    .onFinalize((_e, success) => {
+      finalizeGrab(success);
     });
 
   // Animated style for the zone body (moves + resizes in real time).
@@ -483,6 +557,12 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.1)",
   },
   // Overlaid solid ring + shadow that opacity-fades in when the zone is grabbed.
+  // `boxShadow`, not shadow*/elevation: the fill is translucent, so iOS can't
+  // derive a shadowPath and falls back to a per-pixel offscreen shadow (and
+  // logs an "(ADVICE) ... cannot calculate shadow efficiently" warning for
+  // every zone). boxShadow is drawn from the border path regardless of the
+  // background. Blur is 2× the old shadowRadius since RN maps
+  // shadowRadius = blur / 2 on iOS.
   grabbedRing: {
     position: "absolute",
     top: 0,
@@ -493,11 +573,7 @@ const styles = StyleSheet.create({
     borderStyle: "solid",
     borderRadius: 8,
     backgroundColor: "rgba(255,255,255,0.22)",
-    shadowColor: "#000000",
-    shadowOpacity: 0.35,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 10,
+    boxShadow: "0px 6px 28px rgba(0, 0, 0, 0.35)",
   },
   // Size, radius and border width are zoom-compensated in the animated style;
   // only the colour lives here. No `opacity`: a translucent layer can be

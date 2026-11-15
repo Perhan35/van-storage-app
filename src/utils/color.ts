@@ -24,6 +24,9 @@ export function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
 }
 
+// Shown for a zone whose stored color is empty or malformed.
+export const DEFAULT_ZONE_COLOR = "#78909C";
+
 export function sanitizeHex(input: string | undefined | null, fallback = "#4A90D9"): string {
   if (typeof input !== "string") return fallback;
   const trimmed = input.trim();
