@@ -1,4 +1,14 @@
-import { withDb, Zone, Item, ZoneWithCount, Season, Location, LocationLabels } from "./database";
+import {
+  withDb,
+  Zone,
+  Item,
+  ZoneWithCount,
+  Season,
+  KitSeason,
+  Location,
+  LocationLabels,
+  WantedItem,
+} from "./database";
 import { DEFAULT_LOCATION_ICON, LayoutTemplate, Outline } from "./templates";
 import i18n from "../i18n";
 import { DEFAULT_ZONE_COLOR, sanitizeHex } from "../utils/color";
@@ -213,6 +223,16 @@ export function setItemOutOfVan(itemId: string, outOfVan: boolean): Promise<void
   });
 }
 
+export function setItemsOutOfVan(itemIds: string[], outOfVan: boolean): Promise<void> {
+  return withDb(async (db) => {
+    const placeholders = itemIds.map(() => "?").join(", ");
+    await db.runAsync(
+      `UPDATE items SET out_of_van = ?, updated_at = datetime('now') WHERE id IN (${placeholders})`,
+      [outOfVan ? 1 : 0, ...itemIds]
+    );
+  });
+}
+
 export function setItemChecked(itemId: string, checked: boolean): Promise<void> {
   return withDb(async (db) => {
     await db.runAsync(
@@ -293,6 +313,104 @@ export function listSeasonalItems(): Promise<SeasonalItem[]> {
        ORDER BY i.name COLLATE NOCASE`
     )
   );
+}
+
+export function sanitizeKitSeason(v: unknown): KitSeason {
+  return v === "summer" ? "summer" : "winter";
+}
+
+// Every item (any season) with where it lives, plus every wanted item — the
+// whole picture the kit screen derives its groups from, in one queue slot.
+export type KitItem = SeasonalItem & { location_id: string };
+export type KitData = { items: KitItem[]; wanted: WantedItem[] };
+
+export function getKitData(): Promise<KitData> {
+  return withDb(async (db) => {
+    const items = await db.getAllAsync<KitItem>(
+      `SELECT i.*, z.name as zone_name, l.id as location_id, l.name as location_name, l.icon as location_icon
+       FROM items i
+       JOIN zones z ON i.zone_id = z.id
+       JOIN locations l ON z.location_id = l.id
+       ORDER BY i.name COLLATE NOCASE`
+    );
+    const wanted = await db.getAllAsync<WantedItem>(
+      "SELECT id, name, season, notes, created_at FROM wanted_items ORDER BY name COLLATE NOCASE"
+    );
+    return { items, wanted };
+  });
+}
+
+export function insertWantedItem(
+  id: string,
+  name: string,
+  season: KitSeason,
+  notes: string
+): Promise<void> {
+  return withDb(async (db) => {
+    await db.runAsync(
+      "INSERT INTO wanted_items (id, name, season, notes) VALUES (?, ?, ?, ?)",
+      [id, name, season, notes]
+    );
+  });
+}
+
+export function updateWantedItem(
+  id: string,
+  name: string,
+  season: KitSeason,
+  notes: string
+): Promise<void> {
+  return withDb(async (db) => {
+    await db.runAsync(
+      "UPDATE wanted_items SET name = ?, season = ?, notes = ?, updated_at = datetime('now') WHERE id = ?",
+      [name, season, notes, id]
+    );
+  });
+}
+
+export function deleteWantedItem(id: string): Promise<void> {
+  return withDb(async (db) => {
+    await db.runAsync("DELETE FROM wanted_items WHERE id = ?", [id]);
+  });
+}
+
+// "Je l'ai": the wanted row becomes a real item in the chosen zone, keeping
+// its name, season and notes. One transaction, so a failure never leaves the
+// thing both wanted and owned (or neither).
+export function fulfillWantedItem(
+  wantedId: string,
+  newItemId: string,
+  zoneId: string,
+  outOfVan: boolean
+): Promise<void> {
+  return withDb(async (db) => {
+    await db.withTransactionAsync(async () => {
+      const wanted = await db.getFirstAsync<WantedItem>(
+        "SELECT id, name, season, notes, created_at FROM wanted_items WHERE id = ?",
+        [wantedId]
+      );
+      if (!wanted) throw new Error("Wanted item not found");
+      await db.runAsync(
+        "INSERT INTO items (id, name, zone_id, notes, season, out_of_van) VALUES (?, ?, ?, ?, ?, ?)",
+        [newItemId, wanted.name, zoneId, wanted.notes, wanted.season, outOfVan ? 1 : 0]
+      );
+      await db.runAsync("DELETE FROM wanted_items WHERE id = ?", [wantedId]);
+    });
+  });
+}
+
+// Wanted items aren't tied to a location, so search shows them from any
+// screen. Same accent-insensitive JS matching as searchItems.
+export function searchWantedItems(query: string): Promise<WantedItem[]> {
+  return withDb(async (db) => {
+    const rows = await db.getAllAsync<WantedItem>(
+      "SELECT id, name, season, notes, created_at FROM wanted_items"
+    );
+    const q = normalizeForSearch(query);
+    return rows
+      .filter((r) => matchesSearch(q, r.name, r.notes))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  });
 }
 
 export type ItemWithExpiration = Item & { zone_name: string; location_name: string };
@@ -542,28 +660,38 @@ export function getDataFingerprint(): Promise<DataFingerprint> {
       location_count: number;
       zone_count: number;
       item_count: number;
+      wanted_count: number;
       locations_at: string;
       zones_at: string;
       items_at: string;
+      wanted_at: string;
     }>(
       `SELECT
          (SELECT COUNT(*) FROM locations) AS location_count,
          (SELECT COUNT(*) FROM zones) AS zone_count,
          (SELECT COUNT(*) FROM items) AS item_count,
+         (SELECT COUNT(*) FROM wanted_items) AS wanted_count,
          (SELECT COALESCE(MAX(updated_at), '') FROM locations) AS locations_at,
          (SELECT COALESCE(MAX(updated_at), '') FROM zones) AS zones_at,
-         (SELECT COALESCE(MAX(updated_at), '') FROM items) AS items_at`
+         (SELECT COALESCE(MAX(updated_at), '') FROM items) AS items_at,
+         (SELECT COALESCE(MAX(updated_at), '') FROM wanted_items) AS wanted_at`
     );
     if (!row) return { fingerprint: "", itemCount: 0 };
+    const parts: (string | number)[] = [
+      row.location_count,
+      row.zone_count,
+      row.item_count,
+      row.locations_at,
+      row.zones_at,
+      row.items_at,
+    ];
+    // Only added once the wanted list has ever held something, so a device
+    // that never used it keeps the exact fingerprint it had before the table
+    // existed — otherwise updating the app alone would look like a data change
+    // and wake the backup reminder.
+    if (row.wanted_count > 0) parts.push(row.wanted_count, row.wanted_at);
     return {
-      fingerprint: [
-        row.location_count,
-        row.zone_count,
-        row.item_count,
-        row.locations_at,
-        row.zones_at,
-        row.items_at,
-      ].join("|"),
+      fingerprint: parts.join("|"),
       itemCount: row.item_count,
     };
   });
@@ -575,6 +703,8 @@ export type ExportedData = {
   locations: unknown[];
   zones: unknown[];
   items: unknown[];
+  // Optional: backups made before the season kit existed don't have it.
+  wantedItems?: unknown[];
   preferences: unknown[];
 };
 
@@ -583,12 +713,21 @@ export function exportAllData(appVersion: string): Promise<ExportedData> {
     const locations = await db.getAllAsync("SELECT * FROM locations ORDER BY sort_order");
     const zones = await db.getAllAsync("SELECT * FROM zones ORDER BY sort_order");
     const items = await db.getAllAsync("SELECT * FROM items ORDER BY name");
+    const wantedItems = await db.getAllAsync("SELECT * FROM wanted_items ORDER BY name");
     // activeLocationId is which location this device happens to have open —
     // session state, not a setting worth carrying into another device/backup.
     const preferences = (
       await db.getAllAsync<{ key: string; value: string }>("SELECT * FROM preferences")
     ).filter((p) => p.key !== "activeLocationId");
-    return { appVersion, exportedAt: new Date().toISOString(), locations, zones, items, preferences };
+    return {
+      appVersion,
+      exportedAt: new Date().toISOString(),
+      locations,
+      zones,
+      items,
+      wantedItems,
+      preferences,
+    };
   });
 }
 
@@ -596,10 +735,14 @@ export function importAllData(
   rawLocations: Record<string, unknown>[],
   rawZones: Record<string, unknown>[],
   rawItems: Record<string, unknown>[],
-  rawPreferences: Record<string, unknown>[]
+  rawPreferences: Record<string, unknown>[],
+  rawWantedItems: Record<string, unknown>[] = []
 ): Promise<void> {
   return withDb(async (db) => {
     await db.withTransactionAsync(async () => {
+      // An older backup has no wanted list: importing it leaves an empty one,
+      // the same "replace everything" rule as every other table.
+      await db.runAsync("DELETE FROM wanted_items");
       await db.runAsync("DELETE FROM items");
       await db.runAsync("DELETE FROM zones");
       await db.runAsync("DELETE FROM locations");
@@ -661,6 +804,20 @@ export function importAllData(
             (item.reminder_days as number) ?? 7,
             toSqliteTimestamp(item.created_at),
             toSqliteTimestamp(item.updated_at),
+          ]
+        );
+      }
+
+      for (const wanted of rawWantedItems) {
+        await db.runAsync(
+          "INSERT INTO wanted_items (id, name, season, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+          [
+            wanted.id as string,
+            wanted.name as string,
+            sanitizeKitSeason(wanted.season),
+            typeof wanted.notes === "string" ? wanted.notes : "",
+            toSqliteTimestamp(wanted.created_at),
+            toSqliteTimestamp(wanted.updated_at),
           ]
         );
       }

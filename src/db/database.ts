@@ -256,6 +256,17 @@ export type Location = {
 
 export type Season = "summer" | "winter" | "none";
 
+// A season a kit can be shown for: "none" items have no kit of their own.
+export type KitSeason = Exclude<Season, "none">;
+
+export type WantedItem = {
+  id: string;
+  name: string;
+  season: KitSeason;
+  notes: string;
+  created_at: string;
+};
+
 export type Item = {
   id: string;
   name: string;

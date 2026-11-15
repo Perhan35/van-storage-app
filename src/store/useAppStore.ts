@@ -5,6 +5,7 @@ import {
   Zone,
   ZoneWithCount,
   Season,
+  KitSeason,
   Location,
   LabelSide,
   LabelDef,
@@ -134,6 +135,10 @@ type AppState = {
   // undo/redo steps happened in between.
   editSessionSnapshot: ZoneGeometrySnapshot | null;
   themeMode: ThemeMode;
+  // True once the stored theme has been read at startup (or startup failed),
+  // so the native splash can stay up until the first frame is in the right
+  // light/dark colors.
+  themeLoaded: boolean;
   seasonMode: SeasonMode;
   showMenuHeader: boolean;
   // Whether a zone's color washes the whole zone-detail screen (true, the
@@ -251,6 +256,16 @@ type AppState = {
   ) => Promise<void>;
   moveItem: (itemId: string, newZoneId: string) => Promise<void>;
   setItemOutOfVan: (itemId: string, outOfVan: boolean) => Promise<void>;
+  // Same as setItemOutOfVan for several items at once ("Tout charger").
+  setItemsOutOfVan: (itemIds: string[], outOfVan: boolean) => Promise<void>;
+  // Things still needed for a season's kit. They carry no zone and no count,
+  // so — unlike the item mutations — there is no store state to refresh: the
+  // kit and search screens read them straight from the repository.
+  addWantedItem: (name: string, season: KitSeason, notes: string) => Promise<void>;
+  updateWantedItem: (id: string, name: string, season: KitSeason, notes: string) => Promise<void>;
+  deleteWantedItem: (id: string) => Promise<void>;
+  // "Je l'ai": turns a wanted item into a real item in zoneId.
+  fulfillWantedItem: (wantedId: string, zoneId: string, outOfVan: boolean) => Promise<void>;
   setItemChecked: (itemId: string, checked: boolean) => Promise<void>;
   resetChecklist: (zoneId: string) => Promise<void>;
   setHighlightedZoneId: (zoneId: string | null) => void;
@@ -312,6 +327,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   editSessionSnapshot: null,
   discardPrompt: null,
   themeMode: "auto",
+  themeLoaded: false,
   seasonMode: "summer",
   showMenuHeader: true,
   zoneColorFullScreen: true,
@@ -348,6 +364,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         // the device language, matching what getDb() just seeded.
         await get().reloadLanguagePreference();
         await get().reloadThemeMode();
+        set({ themeLoaded: true });
         await get().reloadShowMenuHeader();
         await get().reloadZoneColorFullScreen();
         await get().reloadSeasonMode();
@@ -395,7 +412,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         const tutorialShown = await getPreference("tutorialShown");
         set({ initialized: true, tutorialVisible: tutorialShown !== "yes" });
       } catch (err) {
-        set({ initError: err instanceof Error ? err.message : String(err) });
+        set({
+          initError: err instanceof Error ? err.message : String(err),
+          themeLoaded: true,
+        });
       }
     })();
     initRun = run;
@@ -865,6 +885,34 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setItemOutOfVan: async (itemId, outOfVan) => {
     await repo.setItemOutOfVan(itemId, outOfVan);
+    await get().loadZones();
+  },
+
+  setItemsOutOfVan: async (itemIds, outOfVan) => {
+    if (itemIds.length === 0) return;
+    await repo.setItemsOutOfVan(itemIds, outOfVan);
+    // The kit spans every location, so the items may not all sit in the
+    // active one: refresh every location's tiles, then the active zones.
+    await get().reloadZonesByLocation();
+    await get().loadZones();
+  },
+
+  addWantedItem: async (name, season, notes) => {
+    await repo.insertWantedItem(generateId(), name, season, notes);
+  },
+
+  updateWantedItem: async (id, name, season, notes) => {
+    await repo.updateWantedItem(id, name, season, notes);
+  },
+
+  deleteWantedItem: async (id) => {
+    await repo.deleteWantedItem(id);
+  },
+
+  fulfillWantedItem: async (wantedId, zoneId, outOfVan) => {
+    await repo.fulfillWantedItem(wantedId, generateId(), zoneId, outOfVan);
+    // The chosen zone can belong to any location (see setItemsOutOfVan).
+    await get().reloadZonesByLocation();
     await get().loadZones();
   },
 
