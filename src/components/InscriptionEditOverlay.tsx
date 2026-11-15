@@ -18,6 +18,13 @@ import { triggerHaptic } from "../utils/haptics";
 const BOX_LONG = 132;
 const BOX_SHORT = 40;
 
+// Pill metrics at rest, and how much bigger it gets while held (in layout).
+const PILL_PAD_V = 3;
+const PILL_PAD_H = 8;
+const PILL_RADIUS = 8;
+const LABEL_FONT_SIZE = 13;
+const GRAB_LIFT = 0.08;
+
 type Props = {
   side: LabelSide;
   // Resolved text ignoring the hidden flag — "" only for a truly empty side
@@ -121,13 +128,33 @@ export function InscriptionEditOverlay({
   // The box always lays the text out horizontally at BOX_LONG x BOX_SHORT;
   // the rotate transform (about the center) turns left/right vertical. So the
   // centering offset uses the same pre-rotation size for every side.
+  //
+  // The grab "lift" is not a `scale` transform here: a view carrying its own
+  // scale transform gets flattened into a low-resolution bitmap on iOS, which
+  // made a held label visibly blurry (same fix as the zone lift in
+  // ZoneEditOverlay). The pill and its text are grown in layout instead, see
+  // pillStyle/labelStyle. The rotation stays a transform, since nothing else
+  // can turn the left/right labels vertical.
   const boxStyle = useAnimatedStyle(() => ({
     position: "absolute" as const,
     left: sx.value * fitScale + offsetX - BOX_LONG / 2,
     top: sy.value * fitScale + offsetY - BOX_SHORT / 2,
     width: BOX_LONG,
     height: BOX_SHORT,
-    transform: [{ rotate: `${rotate}deg` }, { scale: 1 + dragActive.value * 0.08 }],
+    transform: [{ rotate: `${rotate}deg` }],
+  }));
+
+  const pillStyle = useAnimatedStyle(() => {
+    const k = 1 + dragActive.value * GRAB_LIFT;
+    return {
+      paddingVertical: PILL_PAD_V * k,
+      paddingHorizontal: PILL_PAD_H * k,
+      borderRadius: PILL_RADIUS * k,
+    };
+  });
+
+  const labelStyle = useAnimatedStyle(() => ({
+    fontSize: LABEL_FONT_SIZE * (1 + dragActive.value * GRAB_LIFT),
   }));
 
   return (
@@ -145,9 +172,10 @@ export function InscriptionEditOverlay({
             faded
               ? { borderColor: LABEL_INK, borderStyle: "dashed", borderWidth: 1.5, backgroundColor: `${accentColor}66` }
               : { backgroundColor: accentColor },
+            pillStyle,
           ]}
         >
-          <Animated.Text numberOfLines={1} style={styles.label}>
+          <Animated.Text numberOfLines={1} style={[styles.label, labelStyle]}>
             {empty ? "+" : text}
           </Animated.Text>
           <Icon source="pencil" size={12} color={LABEL_INK} />
@@ -170,9 +198,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    borderRadius: 8,
+    paddingVertical: PILL_PAD_V,
+    paddingHorizontal: PILL_PAD_H,
+    borderRadius: PILL_RADIUS,
     // `boxShadow` rather than shadow*/elevation: the empty-state pill has a
     // translucent fill, which makes iOS fall back to a per-pixel shadow and log
     // "cannot calculate shadow efficiently". Blur = 2× the old shadowRadius.
@@ -180,7 +208,7 @@ const styles = StyleSheet.create({
   },
   label: {
     color: LABEL_INK,
-    fontSize: 13,
+    fontSize: LABEL_FONT_SIZE,
     fontWeight: "bold",
     letterSpacing: 0.5,
   },

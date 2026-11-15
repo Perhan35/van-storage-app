@@ -5,6 +5,14 @@ import { Text, Button, Divider, SegmentedButtons, Switch } from "react-native-pa
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { importAllData, isValidGeometry, isValidOutline } from "../src/db/repository";
 import { getTemplate } from "../src/db/templates";
 import { useAppStore, ThemeMode, SeasonMode } from "../src/store/useAppStore";
@@ -14,7 +22,9 @@ import { useAppTheme } from "../src/theme/useAppTheme";
 import { ContextMenu } from "../src/components/ContextMenu";
 import { SeasonChangeoverDialog } from "../src/components/dialogs/SeasonChangeoverDialog";
 import { ExpirationOverviewDialog } from "../src/components/dialogs/ExpirationOverviewDialog";
+import { GameUnlockOverlay } from "../src/components/game/GameUnlockOverlay";
 import { runBackupExport } from "../src/utils/backup";
+import { triggerLightHaptic } from "../src/utils/haptics";
 import {
   deleteImportSnapshot,
   getLatestImportSnapshotInfo,
@@ -60,6 +70,15 @@ export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const lastVersionTapRef = useRef(0);
+  const [gameUnlocking, setGameUnlocking] = useState(false);
+  const reducedMotion = useReducedMotion();
+  // First tap on the version gives a tiny hint (bump + wiggle) that something
+  // is hiding there; the second tap launches the unlock animation.
+  const versionScale = useSharedValue(1);
+  const versionRotate = useSharedValue(0);
+  const versionHintStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: versionScale.value }, { rotate: `${versionRotate.value}deg` }],
+  }));
   const loadZones = useAppStore((s) => s.loadZones);
   const reloadLocations = useAppStore((s) => s.reloadLocations);
   const setActiveLocation = useAppStore((s) => s.setActiveLocation);
@@ -141,13 +160,32 @@ export default function SettingsScreen() {
   };
 
   const handleVersionTap = () => {
+    if (gameUnlocking) return;
     const now = Date.now();
     if (now - lastVersionTapRef.current < DOUBLE_TAP_WINDOW_MS) {
       lastVersionTapRef.current = 0;
-      router.push("/game");
+      setGameUnlocking(true);
     } else {
       lastVersionTapRef.current = now;
+      triggerLightHaptic();
+      if (!reducedMotion) {
+        versionScale.value = withSequence(
+          withTiming(1.25, { duration: 90 }),
+          withSpring(1, { damping: 5, stiffness: 260 })
+        );
+        versionRotate.value = withSequence(
+          withTiming(-6, { duration: 50 }),
+          withTiming(6, { duration: 80 }),
+          withTiming(-3, { duration: 70 }),
+          withTiming(0, { duration: 60 })
+        );
+      }
     }
+  };
+
+  const handleGameUnlockFinish = () => {
+    setGameUnlocking(false);
+    router.push("/game");
   };
 
   const handleSeasonModeChange = (mode: SeasonMode) => {
@@ -509,269 +547,275 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: palette.surface }]}
-      contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
-    >
-      <View style={styles.section}>
-        <Text variant="titleMedium" style={styles.sectionTitle}>
-          {t("settings.title_data")}
-        </Text>
-        <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
-          {t("settings.desc_data")}
-        </Text>
-        <Button
-          mode="contained"
-          icon="export"
-          onPress={handleExport}
-          loading={exporting}
-          style={styles.button}
-        >
-          {t("settings.btn_export")}
-        </Button>
-        <Button
-          mode="outlined"
-          icon="import"
-          onPress={handleImport}
-          loading={importing}
-          style={styles.button}
-        >
-          {t("settings.btn_import")}
-        </Button>
-        {snapshotInfo && (
-          <>
-            <Button
-              mode="text"
-              icon="undo"
-              onPress={handleUndoImport}
-              disabled={importing}
-              style={styles.button}
-            >
-              {t("settings.btn_undo_import")}
-            </Button>
-            <Text variant="bodySmall" style={{ color: palette.onSurfaceVariant }}>
-              {t("settings.undo_import_hint", {
-                date: new Date(snapshotInfo.savedAt).toLocaleString(i18n.language),
-              })}
-            </Text>
-          </>
-        )}
-        <View style={[styles.switchRow, styles.switchRowSpaced]}>
-          <Text variant="bodyMedium" style={styles.switchLabel}>
-            {t("settings.backup_reminders_enabled")}
+    <View style={styles.container}>
+      <ScrollView
+        style={[styles.container, { backgroundColor: palette.surface }]}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+      >
+        <View style={styles.section}>
+          <Text variant="titleMedium" style={styles.sectionTitle}>
+            {t("settings.title_data")}
           </Text>
-          <Switch value={backupRemindersEnabled} onValueChange={setBackupRemindersEnabled} />
-        </View>
-        <Text variant="bodySmall" style={{ color: palette.onSurfaceVariant }}>
-          {t("settings.backup_reminders_hint")}
-        </Text>
-        <Text variant="bodySmall" style={[styles.lastBackup, { color: palette.onSurfaceVariant }]}>
-          {lastBackupAt
-            ? t("settings.last_backup", {
-                date: new Date(lastBackupAt).toLocaleDateString(i18n.language),
-              })
-            : t("settings.last_backup_never")}
-        </Text>
-      </View>
-      <Divider />
-      <View style={styles.section}>
-        <Text variant="titleMedium" style={styles.sectionTitle}>
-          {t("settings.title_appearance")}
-        </Text>
-        <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
-          {t("settings.desc_appearance")}
-        </Text>
-        <SegmentedButtons
-          value={themeMode}
-          onValueChange={(v) => setThemeMode(v as ThemeMode)}
-          buttons={[
-            { value: "auto", label: t("settings.theme_auto"), icon: "theme-light-dark" },
-            { value: "light", label: t("settings.theme_light"), icon: "weather-sunny" },
-            { value: "dark", label: t("settings.theme_dark"), icon: "weather-night" },
-          ]}
-        />
-        <View style={[styles.switchRow, styles.switchRowSpaced]}>
-          <Text variant="bodyMedium">{t("settings.menu_header_label")}</Text>
-          <Switch value={showMenuHeader} onValueChange={setShowMenuHeader} />
-        </View>
-        <View style={[styles.switchRow, styles.switchRowSpaced]}>
-          <Text variant="bodyMedium">{t("settings.zone_color_full_screen_label")}</Text>
-          <Switch value={zoneColorFullScreen} onValueChange={setZoneColorFullScreen} />
-        </View>
-      </View>
-      <Divider />
-      <View style={styles.section}>
-        <Text variant="titleMedium" style={styles.sectionTitle}>
-          {t("settings.title_season")}
-        </Text>
-        <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
-          {t("settings.desc_season")}
-        </Text>
-        <SegmentedButtons
-          value={seasonMode}
-          onValueChange={(v) => handleSeasonModeChange(v as SeasonMode)}
-          buttons={[
-            { value: "summer", label: t("settings.season_summer"), icon: "weather-sunny" },
-            { value: "winter", label: t("settings.season_winter"), icon: "snowflake" },
-          ]}
-        />
-        <Button
-          mode="text"
-          icon="clipboard-list-outline"
-          onPress={() => setChangeoverVisible(true)}
-          style={[styles.button, { marginTop: 16 }]}
-        >
-          {t("settings.season_reopen")}
-        </Button>
-      </View>
-      <Divider />
-      <View style={styles.section}>
-        <Text variant="titleMedium" style={styles.sectionTitle}>
-          {t("settings.title_reminders")}
-        </Text>
-        <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
-          {t("settings.desc_reminders")}
-        </Text>
-        <View style={styles.switchRow}>
-          <Text variant="bodyMedium">{t("settings.reminders_enabled")}</Text>
-          <Switch value={remindersEnabled} onValueChange={handleToggleReminders} />
-        </View>
-        <Button
-          mode="text"
-          icon="calendar-clock"
-          onPress={() => setOverviewVisible(true)}
-          style={styles.button}
-        >
-          {t("settings.view_expirations")}
-        </Button>
-      </View>
-      <Divider />
-      <View style={styles.section}>
-        <Text variant="titleMedium" style={styles.sectionTitle}>
-          {t("settings.title_help")}
-        </Text>
-        <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
-          {t("settings.desc_help")}
-        </Text>
-        <Button
-          mode="outlined"
-          icon="school-outline"
-          onPress={() => {
-            router.push("/");
-            showTutorial();
-          }}
-          style={styles.button}
-        >
-          {t("settings.btn_tutorial")}
-        </Button>
-      </View>
-      <Divider />
-      <View style={styles.section}>
-        <Text variant="titleMedium" style={styles.sectionTitle}>
-          {t("settings.title_language")}
-        </Text>
-        <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
-          {t("settings.desc_language")}
-        </Text>
-        {/* The trigger looks the same everywhere; what it opens is the
-            platform's own picker — an action sheet on iOS, the browser's
-            select on web, the app's Material dropdown on Android. */}
-        <View ref={languageButtonRef} style={styles.languageTrigger}>
+          <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
+            {t("settings.desc_data")}
+          </Text>
+          <Button
+            mode="contained"
+            icon="export"
+            onPress={handleExport}
+            loading={exporting}
+            style={styles.button}
+          >
+            {t("settings.btn_export")}
+          </Button>
           <Button
             mode="outlined"
-            icon="translate"
-            onPress={Platform.OS === "web" ? undefined : openLanguagePicker}
+            icon="import"
+            onPress={handleImport}
+            loading={importing}
+            style={styles.button}
           >
-            {languageLabel(languagePreference)}
+            {t("settings.btn_import")}
           </Button>
-          {Platform.OS === "web" &&
-            // Invisible native <select> stacked over the Paper Button so the
-            // browser's own dropdown opens on click, while the visible control
-            // still matches the rest of the screen. Mirrors the date input in
-            // ExpirationField.
-            React.createElement(
-              "select",
-              {
-                value: languagePreference,
-                onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
-                  setLanguagePreference(e.target.value as LanguagePreference),
-                style: {
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  width: "100%",
-                  height: "100%",
-                  opacity: 0,
-                  cursor: "pointer",
-                  border: "none",
-                },
-              },
-              LANGUAGE_OPTIONS.map((option) =>
-                React.createElement("option", { key: option, value: option }, languageLabel(option))
-              )
-            )}
+          {snapshotInfo && (
+            <>
+              <Button
+                mode="text"
+                icon="undo"
+                onPress={handleUndoImport}
+                disabled={importing}
+                style={styles.button}
+              >
+                {t("settings.btn_undo_import")}
+              </Button>
+              <Text variant="bodySmall" style={{ color: palette.onSurfaceVariant }}>
+                {t("settings.undo_import_hint", {
+                  date: new Date(snapshotInfo.savedAt).toLocaleString(i18n.language),
+                })}
+              </Text>
+            </>
+          )}
+          <View style={[styles.switchRow, styles.switchRowSpaced]}>
+            <Text variant="bodyMedium" style={styles.switchLabel}>
+              {t("settings.backup_reminders_enabled")}
+            </Text>
+            <Switch value={backupRemindersEnabled} onValueChange={setBackupRemindersEnabled} />
+          </View>
+          <Text variant="bodySmall" style={{ color: palette.onSurfaceVariant }}>
+            {t("settings.backup_reminders_hint")}
+          </Text>
+          <Text variant="bodySmall" style={[styles.lastBackup, { color: palette.onSurfaceVariant }]}>
+            {lastBackupAt
+              ? t("settings.last_backup", {
+                  date: new Date(lastBackupAt).toLocaleDateString(i18n.language),
+                })
+              : t("settings.last_backup_never")}
+          </Text>
         </View>
-      </View>
-      <Divider />
-      <View style={styles.section}>
-        <Text variant="titleMedium" style={styles.sectionTitle}>
-          {t("settings.title_about")}
-        </Text>
-        <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
-          {t("settings.desc_about")}
-        </Text>
-        <Text
-          variant="bodySmall"
-          onPress={handleVersionTap}
-          style={{ color: palette.onSurfaceVariant }}
-        >
-          {t("settings.version_label", { version: Constants.expoConfig?.version ?? "" })}
-        </Text>
-      </View>
-      <SeasonChangeoverDialog
-        visible={changeoverVisible}
-        season={seasonMode}
-        onDismiss={() => setChangeoverVisible(false)}
-      />
-      <ExpirationOverviewDialog
-        visible={overviewVisible}
-        categories={["expired", "soon", "ok"]}
-        title={t("expiration.overview_title")}
-        onDismiss={() => setOverviewVisible(false)}
-      />
-      {/* Android's language picker: the app's own Material dropdown, since
-          React Native exposes no native spinner. Never opened on iOS or web,
-          which have their own pickers above. */}
-      <ContextMenu
-        visible={!!languageAnchor}
-        onDismiss={() => setLanguageAnchor(null)}
-        anchor={languageAnchor ?? { x: 0, y: 0 }}
-        dropdown
-        items={[
-          ...LANGUAGE_OPTIONS.map((option, index) => ({
-            icon: option === "system" ? "cellphone-cog" : "translate",
-            label: languageLabel(option),
-            selected: languagePreference === option,
-            onPress: () => setLanguagePreference(option),
-            // Separates "System" from the language list below it.
-            dividerBefore: index === 1,
-          })),
-          {
-            icon: "close",
-            label: t("map.cancel"),
-            onPress: () => {},
-            dividerBefore: true,
-          },
-        ]}
-      />
-    </ScrollView>
+        <Divider />
+        <View style={styles.section}>
+          <Text variant="titleMedium" style={styles.sectionTitle}>
+            {t("settings.title_appearance")}
+          </Text>
+          <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
+            {t("settings.desc_appearance")}
+          </Text>
+          <SegmentedButtons
+            value={themeMode}
+            onValueChange={(v) => setThemeMode(v as ThemeMode)}
+            buttons={[
+              { value: "auto", label: t("settings.theme_auto"), icon: "theme-light-dark" },
+              { value: "light", label: t("settings.theme_light"), icon: "weather-sunny" },
+              { value: "dark", label: t("settings.theme_dark"), icon: "weather-night" },
+            ]}
+          />
+          <View style={[styles.switchRow, styles.switchRowSpaced]}>
+            <Text variant="bodyMedium">{t("settings.menu_header_label")}</Text>
+            <Switch value={showMenuHeader} onValueChange={setShowMenuHeader} />
+          </View>
+          <View style={[styles.switchRow, styles.switchRowSpaced]}>
+            <Text variant="bodyMedium">{t("settings.zone_color_full_screen_label")}</Text>
+            <Switch value={zoneColorFullScreen} onValueChange={setZoneColorFullScreen} />
+          </View>
+        </View>
+        <Divider />
+        <View style={styles.section}>
+          <Text variant="titleMedium" style={styles.sectionTitle}>
+            {t("settings.title_season")}
+          </Text>
+          <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
+            {t("settings.desc_season")}
+          </Text>
+          <SegmentedButtons
+            value={seasonMode}
+            onValueChange={(v) => handleSeasonModeChange(v as SeasonMode)}
+            buttons={[
+              { value: "summer", label: t("settings.season_summer"), icon: "weather-sunny" },
+              { value: "winter", label: t("settings.season_winter"), icon: "snowflake" },
+            ]}
+          />
+          <Button
+            mode="text"
+            icon="clipboard-list-outline"
+            onPress={() => setChangeoverVisible(true)}
+            style={[styles.button, { marginTop: 16 }]}
+          >
+            {t("settings.season_reopen")}
+          </Button>
+        </View>
+        <Divider />
+        <View style={styles.section}>
+          <Text variant="titleMedium" style={styles.sectionTitle}>
+            {t("settings.title_reminders")}
+          </Text>
+          <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
+            {t("settings.desc_reminders")}
+          </Text>
+          <View style={styles.switchRow}>
+            <Text variant="bodyMedium">{t("settings.reminders_enabled")}</Text>
+            <Switch value={remindersEnabled} onValueChange={handleToggleReminders} />
+          </View>
+          <Button
+            mode="text"
+            icon="calendar-clock"
+            onPress={() => setOverviewVisible(true)}
+            style={styles.button}
+          >
+            {t("settings.view_expirations")}
+          </Button>
+        </View>
+        <Divider />
+        <View style={styles.section}>
+          <Text variant="titleMedium" style={styles.sectionTitle}>
+            {t("settings.title_help")}
+          </Text>
+          <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
+            {t("settings.desc_help")}
+          </Text>
+          <Button
+            mode="outlined"
+            icon="school-outline"
+            onPress={() => {
+              router.push("/");
+              showTutorial();
+            }}
+            style={styles.button}
+          >
+            {t("settings.btn_tutorial")}
+          </Button>
+        </View>
+        <Divider />
+        <View style={styles.section}>
+          <Text variant="titleMedium" style={styles.sectionTitle}>
+            {t("settings.title_language")}
+          </Text>
+          <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
+            {t("settings.desc_language")}
+          </Text>
+          {/* The trigger looks the same everywhere; what it opens is the
+              platform's own picker — an action sheet on iOS, the browser's
+              select on web, the app's Material dropdown on Android. */}
+          <View ref={languageButtonRef} style={styles.languageTrigger}>
+            <Button
+              mode="outlined"
+              icon="translate"
+              onPress={Platform.OS === "web" ? undefined : openLanguagePicker}
+            >
+              {languageLabel(languagePreference)}
+            </Button>
+            {Platform.OS === "web" &&
+              // Invisible native <select> stacked over the Paper Button so the
+              // browser's own dropdown opens on click, while the visible control
+              // still matches the rest of the screen. Mirrors the date input in
+              // ExpirationField.
+              React.createElement(
+                "select",
+                {
+                  value: languagePreference,
+                  onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
+                    setLanguagePreference(e.target.value as LanguagePreference),
+                  style: {
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    width: "100%",
+                    height: "100%",
+                    opacity: 0,
+                    cursor: "pointer",
+                    border: "none",
+                  },
+                },
+                LANGUAGE_OPTIONS.map((option) =>
+                  React.createElement("option", { key: option, value: option }, languageLabel(option))
+                )
+              )}
+          </View>
+        </View>
+        <Divider />
+        <View style={styles.section}>
+          <Text variant="titleMedium" style={styles.sectionTitle}>
+            {t("settings.title_about")}
+          </Text>
+          <Text variant="bodySmall" style={[styles.description, { color: palette.onSurfaceVariant }]}>
+            {t("settings.desc_about")}
+          </Text>
+          <Animated.View style={[styles.versionWrap, versionHintStyle]}>
+            <Text
+              variant="bodySmall"
+              onPress={handleVersionTap}
+              style={{ color: palette.onSurfaceVariant }}
+            >
+              {t("settings.version_label", { version: Constants.expoConfig?.version ?? "" })}
+            </Text>
+          </Animated.View>
+        </View>
+        <SeasonChangeoverDialog
+          visible={changeoverVisible}
+          season={seasonMode}
+          onDismiss={() => setChangeoverVisible(false)}
+        />
+        <ExpirationOverviewDialog
+          visible={overviewVisible}
+          categories={["expired", "soon", "ok"]}
+          title={t("expiration.overview_title")}
+          onDismiss={() => setOverviewVisible(false)}
+        />
+        {/* Android's language picker: the app's own Material dropdown, since
+            React Native exposes no native spinner. Never opened on iOS or web,
+            which have their own pickers above. */}
+        <ContextMenu
+          visible={!!languageAnchor}
+          onDismiss={() => setLanguageAnchor(null)}
+          anchor={languageAnchor ?? { x: 0, y: 0 }}
+          dropdown
+          items={[
+            ...LANGUAGE_OPTIONS.map((option, index) => ({
+              icon: option === "system" ? "cellphone-cog" : "translate",
+              label: languageLabel(option),
+              selected: languagePreference === option,
+              onPress: () => setLanguagePreference(option),
+              // Separates "System" from the language list below it.
+              dividerBefore: index === 1,
+            })),
+            {
+              icon: "close",
+              label: t("map.cancel"),
+              onPress: () => {},
+              dividerBefore: true,
+            },
+          ]}
+        />
+      </ScrollView>
+      {gameUnlocking && <GameUnlockOverlay onFinish={handleGameUnlockFinish} />}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  versionWrap: { alignSelf: "flex-start" },
   section: { padding: 20 },
   sectionTitle: { marginBottom: 8 },
   description: { marginBottom: 16 },

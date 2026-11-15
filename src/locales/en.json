@@ -147,6 +147,7 @@
   "backup.reminder_off_text": "Backup reminders can be turned back on at any time in Settings.",
 
   "game.title": "Game Mode",
+  "game.unlocked": "Secret game mode unlocked!",
   "game.score": "Score",
   "game.streak": "Streak",
   "game.question_zone": "Which zone is \"{{item}}\" in?",

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import { Rect, G, Text as SvgText, TSpan } from "react-native-svg";
 import Animated, {
   useSharedValue,
@@ -124,52 +124,52 @@ type Props = {
   zone: ZoneWithCount;
   highlighted: boolean;
   dimmed: boolean;
+  // Zone editing: draw the dashed "editable" outline (see EditDashOutline).
+  editing?: boolean;
 };
 
-function ZoneOverlayInner({ zone, highlighted, dimmed }: Props) {
-  const { isDark } = useAppTheme();
+// The dashed outline zone editing puts on every zone. It used to be a dashed
+// RN border on ZoneEditOverlay's body, but iOS draws non-solid borders into a
+// bitmap, which the zoomed canvas then magnified into blocky dashes; drawn
+// here it's part of the SVG, which the sharp layer redraws at screen
+// resolution. Same look as that border: 2 wide, dash = gap = 3x width (RN's
+// pattern), inset so it sits inside the edge like a border does.
+function EditDashOutline({ geometry, color }: { geometry: ZoneWithCount["geometry"]; color: string }) {
+  const { x, y, w, h } = geometry;
+  return (
+    <Rect
+      x={x + 1}
+      y={y + 1}
+      width={Math.max(w - 2, 0)}
+      height={Math.max(h - 2, 0)}
+      rx={7}
+      ry={7}
+      fill="none"
+      stroke={color}
+      strokeWidth={2}
+      strokeDasharray="6 6"
+    />
+  );
+}
+
+type ZoneLabelLayout = {
+  lines: string[];
+  fontSize: number;
+  lineHeight: number;
+  textCx: number;
+  textCy: number;
+  firstBaselineY: number;
+  rotation: number;
+  badgeCx: number;
+  badgeCy: number;
+};
+
+// Where the name and the item-count badge go inside a zone. Pure, so the
+// animated zone and the still one (StaticZoneOverlay) lay out identically.
+function zoneLabelLayout(zone: ZoneWithCount): ZoneLabelLayout {
   const { x, y, w, h } = zone.geometry;
   const cx = x + w / 2;
   const cy = y + h / 2;
-
-  const zoneColor = zone.color || DEFAULT_ZONE_COLOR;
-  const restOpacity = zone.fill_opacity ?? DEFAULT_FILL_OPACITY;
-  const opacity = useSharedValue(restOpacity);
-  const strokeWidth = useSharedValue(1.5);
-  const strokeOpacity = useSharedValue(1);
-
-  useEffect(() => {
-    if (highlighted) {
-      opacity.value = withRepeat(withTiming(1, { duration: 350 }), -1, true);
-      strokeWidth.value = withRepeat(
-        withTiming(6, { duration: 350 }),
-        -1,
-        true
-      );
-      strokeOpacity.value = withTiming(1, { duration: 200 });
-    } else if (dimmed) {
-      cancelAnimation(opacity);
-      cancelAnimation(strokeWidth);
-      opacity.value = withTiming(restOpacity * 0.15, { duration: 300 });
-      strokeWidth.value = withTiming(1.5, { duration: 300 });
-      strokeOpacity.value = withTiming(0.15, { duration: 300 });
-    } else {
-      cancelAnimation(opacity);
-      cancelAnimation(strokeWidth);
-      opacity.value = withTiming(restOpacity, { duration: 300 });
-      strokeWidth.value = withTiming(1.5, { duration: 300 });
-      strokeOpacity.value = withTiming(1, { duration: 300 });
-    }
-  }, [highlighted, dimmed, restOpacity]);
-
-  const animatedProps = useAnimatedProps(() => ({
-    opacity: opacity.value,
-  }));
-
-  const animatedStrokeProps = useAnimatedProps(() => ({
-    strokeWidth: strokeWidth.value,
-    opacity: strokeOpacity.value,
-  }));
 
   // Badge: small, hugging the top-right corner.
   const count = zone.item_count;
@@ -213,19 +213,130 @@ function ZoneOverlayInner({ zone, highlighted, dimmed }: Props) {
     textCy = cy;
   }
 
-  // Word-wrapping tries up to 4 font sizes per call — worth memoizing since it
-  // otherwise reran every time this component rendered, including renders
-  // where zone.name/w/h haven't actually changed (see the React.memo below).
-  const { lines, fontSize, lineHeight } = useMemo(
-    () => fitText(zone.name, textMaxWidth, textMaxHeight),
-    [zone.name, textMaxWidth, textMaxHeight]
-  );
+  const { lines, fontSize, lineHeight } = fitText(zone.name, textMaxWidth, textMaxHeight);
 
   // Center the multi-line block on (textCx, textCy). For SVG text the y
   // coordinate is the baseline of the first line.
   const textBlockHeight = lines.length * lineHeight;
   const firstBaselineY =
     textCy - textBlockHeight / 2 + fontSize * 0.85;
+
+  return {
+    lines,
+    fontSize,
+    lineHeight,
+    textCx,
+    textCy,
+    firstBaselineY,
+    rotation,
+    badgeCx,
+    badgeCy,
+  };
+}
+
+function ZoneLabel({
+  label,
+  color,
+  count,
+}: {
+  label: ZoneLabelLayout;
+  color: string;
+  count: number;
+}) {
+  const { lines, fontSize, lineHeight, textCx, textCy, firstBaselineY, rotation } = label;
+  return (
+    <>
+      <SvgText
+        x={textCx}
+        y={firstBaselineY}
+        textAnchor="middle"
+        fill={color}
+        fontSize={fontSize}
+        fontWeight="600"
+        transform={
+          rotation !== 0
+            ? `rotate(${rotation} ${textCx} ${textCy})`
+            : undefined
+        }
+      >
+        {lines.map((line, i) => (
+          <TSpan key={i} x={textCx} dy={i === 0 ? 0 : lineHeight}>
+            {line}
+          </TSpan>
+        ))}
+      </SvgText>
+      <ItemCountBadge cx={label.badgeCx} cy={label.badgeCy} count={count} />
+    </>
+  );
+}
+
+function ZoneOverlayInner({ zone, highlighted, dimmed, editing }: Props) {
+  const { isDark } = useAppTheme();
+  const { x, y, w, h } = zone.geometry;
+
+  const zoneColor = zone.color || DEFAULT_ZONE_COLOR;
+  const restOpacity = zone.fill_opacity ?? DEFAULT_FILL_OPACITY;
+  const opacity = useSharedValue(restOpacity);
+  const strokeWidth = useSharedValue(1.5);
+  const strokeOpacity = useSharedValue(1);
+
+  // The shared values above already start at rest. Without this, mounting a
+  // zone at rest ran the "back to rest" branch below anyway: three 300 ms
+  // timings from each value to itself. Invisible, but with two dozen zones that
+  // was 60 animations pushing SVG prop updates every frame — on app start and,
+  // worse, on every van opening, right on top of the opening flight.
+  const isFirstRun = useRef(true);
+
+  useEffect(() => {
+    if (isFirstRun.current) {
+      isFirstRun.current = false;
+      if (!highlighted && !dimmed) return;
+    }
+    if (highlighted) {
+      opacity.value = withRepeat(withTiming(1, { duration: 350 }), -1, true);
+      strokeWidth.value = withRepeat(
+        withTiming(6, { duration: 350 }),
+        -1,
+        true
+      );
+      strokeOpacity.value = withTiming(1, { duration: 200 });
+    } else if (dimmed) {
+      cancelAnimation(opacity);
+      cancelAnimation(strokeWidth);
+      opacity.value = withTiming(restOpacity * 0.15, { duration: 300 });
+      strokeWidth.value = withTiming(1.5, { duration: 300 });
+      strokeOpacity.value = withTiming(0.15, { duration: 300 });
+    } else {
+      cancelAnimation(opacity);
+      cancelAnimation(strokeWidth);
+      opacity.value = withTiming(restOpacity, { duration: 300 });
+      strokeWidth.value = withTiming(1.5, { duration: 300 });
+      strokeOpacity.value = withTiming(1, { duration: 300 });
+    }
+  }, [highlighted, dimmed, restOpacity]);
+
+  const animatedProps = useAnimatedProps(() => ({
+    opacity: opacity.value,
+  }));
+
+  const animatedStrokeProps = useAnimatedProps(() => ({
+    strokeWidth: strokeWidth.value,
+    opacity: strokeOpacity.value,
+  }));
+
+  // Word-wrapping tries up to 4 font sizes per call — worth memoizing since it
+  // otherwise reran every time this component rendered, including renders
+  // where the zone's name/size/count haven't actually changed (see the
+  // React.memo below).
+  const label = useMemo(
+    () => zoneLabelLayout(zone),
+    [zone.name, x, y, w, h, zone.item_count]
+  );
+  const textColor = getReadableTextColor(
+    zoneColor,
+    restOpacity,
+    isDark ? darkPalette.background : lightPalette.background
+  );
 
   return (
     <G>
@@ -250,30 +361,8 @@ function ZoneOverlayInner({ zone, highlighted, dimmed }: Props) {
         stroke={highlighted ? "#FFFFFF" : zoneColor}
         animatedProps={animatedStrokeProps}
       />
-      <SvgText
-        x={textCx}
-        y={firstBaselineY}
-        textAnchor="middle"
-        fill={getReadableTextColor(
-          zoneColor,
-          zone.fill_opacity ?? DEFAULT_FILL_OPACITY,
-          isDark ? darkPalette.background : lightPalette.background
-        )}
-        fontSize={fontSize}
-        fontWeight="600"
-        transform={
-          rotation !== 0
-            ? `rotate(${rotation} ${textCx} ${textCy})`
-            : undefined
-        }
-      >
-        {lines.map((line, i) => (
-          <TSpan key={i} x={textCx} dy={i === 0 ? 0 : lineHeight}>
-            {line}
-          </TSpan>
-        ))}
-      </SvgText>
-      <ItemCountBadge cx={badgeCx} cy={badgeCy} count={count} />
+      <ZoneLabel label={label} color={textColor} count={zone.item_count} />
+      {editing && <EditDashOutline geometry={zone.geometry} color={zoneColor} />}
     </G>
   );
 }
@@ -284,3 +373,50 @@ function ZoneOverlayInner({ zone, highlighted, dimmed }: Props) {
 // every zone repeated the text-fit + animated-prop work above on every one of
 // those renders.
 export const ZoneOverlay = React.memo(ZoneOverlayInner);
+
+// The zone exactly as ZoneOverlay draws it at rest, with no animation at all:
+// no shared values, no animated props, no mount-time transitions. For short-
+// lived copies of the plan (the edit-mode transition cover), where mounting
+// two dozen animated zones — each one then running its three mount
+// transitions on every frame — made entering edit mode visibly slow.
+function StaticZoneOverlayInner({
+  zone,
+  editing,
+}: {
+  zone: ZoneWithCount;
+  editing?: boolean;
+}) {
+  const { isDark } = useAppTheme();
+  const { x, y, w, h } = zone.geometry;
+  const zoneColor = zone.color || DEFAULT_ZONE_COLOR;
+  const restOpacity = zone.fill_opacity ?? DEFAULT_FILL_OPACITY;
+  const label = useMemo(
+    () => zoneLabelLayout(zone),
+    [zone.name, x, y, w, h, zone.item_count]
+  );
+  const textColor = getReadableTextColor(
+    zoneColor,
+    restOpacity,
+    isDark ? darkPalette.background : lightPalette.background
+  );
+  return (
+    <G>
+      <Rect x={x} y={y} width={w} height={h} rx={8} ry={8} fill={zoneColor} opacity={restOpacity} />
+      <Rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        rx={8}
+        ry={8}
+        fill="none"
+        stroke={zoneColor}
+        strokeWidth={1.5}
+      />
+      <ZoneLabel label={label} color={textColor} count={zone.item_count} />
+      {editing && <EditDashOutline geometry={zone.geometry} color={zoneColor} />}
+    </G>
+  );
+}
+
+export const StaticZoneOverlay = React.memo(StaticZoneOverlayInner);

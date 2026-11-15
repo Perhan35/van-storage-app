@@ -147,6 +147,7 @@
   "backup.reminder_off_text": "Los avisos de copia de seguridad se pueden volver a activar en cualquier momento desde los ajustes.",
 
   "game.title": "Modo juego",
+  "game.unlocked": "¡Modo juego secreto desbloqueado!",
   "game.score": "Puntuación",
   "game.streak": "Racha",
   "game.question_zone": "¿En qué zona está «{{item}}»?",
